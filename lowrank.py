@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import datetime
+from random import shuffle
 import test
 
 weight_postfix = '_weight.npy'
@@ -47,24 +48,29 @@ def ParseOutputLayer(y_4d, subset=None):
         return (y_2d[subset], subset)
     return y_2d[subset]
 
-def MakeOutputData(image_path, layer, net_true, net_approx, img_id):
-    sample = test.PreprocessImage(image_path % img_id)
+def MakeOutputData(image_name, input_size, mean_img, layer, net_true, net_approx):
+    sample = test.PreprocessImage(image_name, input_size, mean_img)
     test.Forward(net_true, sample, layer)
     test.Forward(net_approx, sample, layer)
     y_true, subset = ParseOutputLayer(net_true.blobs[layer].data)
     y_approx = ParseOutputLayer(net_approx.blobs[layer].data, subset)
     return (y_true, y_approx)
 
-def MakeOutputDataset(image_path, layer, net_true, net_approx, img_id_list):
-    y, y_approx = MakeOutputData(image_path, layer, net_true, net_approx, img_id_list[0])
-    Y_true = np.zeros((len(img_id_list), y.shape[0], y.shape[1]), dtype=np.float32)
-    Y_approx = np.zeros((len(img_id_list), y.shape[0], y.shape[1]), dtype=np.float32)
+def MakeOutputDataset(data_info, layer, net_true, net_approx):
+    image_names = [line.split() for line in open(data_info['train'], 'r').readlines()]
+    shuffle(image_names)
+    if len(image_names) > num_train_images:
+        image_names = image_names[:num_train_images]
+    y, y_approx = MakeOutputData(image_names[0], data_info['input_size'], data_info['mean_img'], \
+                                 layer, net_true, net_approx)
+    Y_true = np.zeros((len(image_names), y.shape[0], y.shape[1]), dtype=np.float32)
+    Y_approx = np.zeros((len(image_names), y.shape[0], y.shape[1]), dtype=np.float32)
     Y_true[0] = y
     Y_approx[0] = y_approx
 
     start_time = datetime.datetime.now()
-    for i, img_id in enumerate(img_id_list[1:]):
-        Y_true[i+1], Y_approx[i+1] = MakeOutputData(image_path, layer, net_true, net_approx, img_id)
+    for i in range(1, len(image_names)):
+        Y_true[i+1], Y_approx[i+1] = MakeOutputData(image_names[i], layer, net_true, net_approx)
 
         if (i+1) % 100 == 0:
             end_time = datetime.datetime.now()
@@ -265,31 +271,31 @@ def SaveFCParams(path, layer, P, QT):
     np.save(os.path.join(path, layer + '_2' + weight_postfix), W2_low)
     np.save(os.path.join(path, layer + '_2' + bias_postfix), b2_low)
 
-def PrepareDataset(path, layer, net_true, net_approx, image_path):
-    Y_true, Y_approx = MakeOutputDataset(image_path, layer, net_true, net_approx, range(1, num_train_images + 1))
-    np.save(os.path.join(path, layer), Y_true)
-    np.save(os.path.join(path, layer + data_approx_postfix), Y_approx)
+def PrepareDataset(dump_path, data_info, layer, net_true, net_approx):
+    Y_true, Y_approx = MakeOutputDataset(data_info, layer, net_true, net_approx)
+    np.save(os.path.join(dump_path, layer), Y_true)
+    np.save(os.path.join(dump_path, layer + data_approx_postfix), Y_approx)
 
-def Run(path, layer, rank, net_true, net_approx, image_path):
+def Run(dump_path, data_info, layer, rank, net_true, net_approx):
     if 'conv' in layer:
-        PrepareDataset(path, layer, net_true, net_approx, image_path)
-        M, b, P, QT = NonlinearLowRank(path, layer, rank)
-        SaveLowRankParams(path, layer, b, P, QT)
+        PrepareDataset(dump_path, data_info, layer, net_true, net_approx)
+        M, b, P, QT = NonlinearLowRank(dump_path, layer, rank)
+        SaveLowRankParams(dump_path, layer, b, P, QT)
 
     if 'fc' in layer:
-        W_2d = np.load(os.path.join(path, layer + weight_postfix))
+        W_2d = np.load(os.path.join(dump_path, layer + weight_postfix))
         P, QT = SVD(W_2d, rank)
-        SaveFCParams(path, layer, P, QT)
+        SaveFCParams(dump_path, layer, P, QT)
 
-def UpdateNetLayerParams(path, layer, net):
+def UpdateNetLayerParams(dump_path, layer, net):
     for layer_postfix in ['_1', '_2']:
-        weight = np.load(os.path.join(path, layer + layer_postfix + weight_postfix))
-        bias = np.load(os.path.join(path, layer + layer_postfix + bias_postfix))
+        weight = np.load(os.path.join(dump_path, layer + layer_postfix + weight_postfix))
+        bias = np.load(os.path.join(dump_path, layer + layer_postfix + bias_postfix))
         net.params[layer + layer_postfix][0].data[:] = weight.copy()
         net.params[layer + layer_postfix][1].data[:] = bias.copy()
 
-def DumpParams(path, net):
+def DumpParams(dump_path, net):
     layers = net.params.keys()
     for layer in layers:
-        np.save(os.path.join(path, layer + weight_postfix), net.params[layer][0].data)
-        np.save(os.path.join(path, layer + bias_postfix), net.params[layer][1].data)
+        np.save(os.path.join(dump_path, layer + weight_postfix), net.params[layer][0].data)
+        np.save(os.path.join(dump_path, layer + bias_postfix), net.params[layer][1].data)

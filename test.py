@@ -5,8 +5,7 @@ import os
 import sys
 import datetime
 import caffe
-from pva import model_cfg
-from ilsvrc2012 import data_info
+import config
 
 caffe.set_mode_gpu()
 #caffe.set_device(3)
