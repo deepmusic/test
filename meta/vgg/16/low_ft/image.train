@@ -10,10 +10,10 @@ layer {
   transform_param {
     mirror: true
     crop_size: 224
-    mean_file: "imagenet/meta/imagenet_mean.binaryproto"
+    mean_file: "meta/imagenet/imagenet_mean.binaryproto"
   }
   image_data_param {
-    source: "imagenet/train.txt"
+    source: "meta/imagenet/train.txt"
     batch_size: 10
     shuffle: true
     new_height: 256
@@ -31,10 +31,10 @@ layer {
   transform_param {
     mirror: false
     crop_size: 224
-    mean_file: "imagenet/meta/imagenet_mean.binaryproto"
+    mean_file: "meta/imagenet/imagenet_mean.binaryproto"
   }
   image_data_param {
-    source: "imagenet/val.txt"
+    source: "meta/imagenet/val.txt"
     batch_size: 10
     shuffle: true
     new_height: 256

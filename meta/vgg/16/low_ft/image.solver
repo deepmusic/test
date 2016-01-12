@@ -1,4 +1,4 @@
-net: "vgg_ft/vggnet.train"
+net: "meta/vgg/16/low_ft/image.train"
 test_iter: 100
 test_interval: 1000
 # lr for fine-tuning should be lower than when starting from scratch
@@ -12,6 +12,6 @@ max_iter: 100000
 momentum: 0.9
 weight_decay: 0.0005
 snapshot: 10000
-snapshot_prefix: "vgg_ft/vggnet_train"
+snapshot_prefix: "data/vgg/16/low_ft/"
 # uncomment the following to default to CPU mode solving
 solver_mode: GPU

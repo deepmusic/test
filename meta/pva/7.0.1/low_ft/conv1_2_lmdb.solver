@@ -1,4 +1,4 @@
-net: "pvanet/7.0.1/conv1_2_lmdb.train"
+net: "meta/pva/7.0.1/low_ft/conv1_2_lmdb.train"
 test_iter: 100
 test_interval: 1000
 base_lr: 0.00000001
@@ -10,7 +10,7 @@ max_iter: 900000
 momentum: 0.9
 weight_decay: 0.0005
 snapshot: 10000
-snapshot_prefix: "pvanet/7.0.1/conv1_2_train"
+snapshot_prefix: "data/pva/7.0.1/low_ft/conv1_2"
 #log_path: "experiments/logs"
 solver_mode: GPU
 #solver_type: SGD
