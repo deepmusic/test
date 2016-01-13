@@ -1,6 +1,9 @@
+import numpy as np
+from random import shuffle
+
 model_ = {
     'pva': {
-        'layers': [('conv1_1', 32), ('conv1_2', 16), ('conv2_1', 8), ('conv2_2', 16), \
+        'layers': [('conv1_1', 32), ('conv1_2', 16), ('conv2_1', 16), ('conv2_2', 16), \
                    ('conv3_1', 16), ('conv3_2', 32), ('conv4_1', 32), ('conv4_2', 64), \
                    ('conv5_1', 64), ('conv5_2', 128), ('fc6', 512)], \
         'input_size': (192, 192), \
@@ -20,26 +23,60 @@ model_ = {
 data_ = {
     'imagenet': {
         'train': 'meta/imagenet/train.txt', \
-        'test': 'meta/imagenet/test.txt', \
+        'test': 'meta/imagenet/val.txt', \
+        'image_size': (256, 256), \
     }, \
 }
 
-meta_path = ''
-data_path = ''
-dump_path = ''
-layers = None
-data_info = {}
+class Config(object):
+    def __init__(self, model_name, version, data_name):
+        base_path = model_name + '/' + version + '/low'
+        self.meta_path = 'meta/' + base_path
+        self.data_path = 'data/' + base_path
+        self.dump_path = self.data_path + '/dump'
 
-def Initialize(model_name, version, data_name):
-    base_path = os.path.join(model_name, version, 'low')
-    meta_path = os.path.join('meta', base_path)
-    data_path = os.path.join('data', base_path)
-    dump_path = os.path.join(data_path, 'dump')
+        data = data_[data_name]
+        self.train = data['train']
+        self.test = data['test']
+        self.image_size = data['image_size']
 
-    model = model_[model_name]
-    data = data_[data_name]
-    layers = model['layers']
-    data_info['train'] = data['train']
-    data_info['test'] = data['test']
-    data_info['input_size'] = model['input_size']
-    data_info['mean_img'] = model['mean_img']
+        model = model_[model_name]
+        self.layers = model['layers']
+        self.input_size = model['input_size']
+        self.mean_img = model['mean_img']
+        self.Mean2Tensor()
+
+    def Mean2Tensor(self):
+        mean_img = np.asarray(self.mean_img, dtype=np.float32)
+        if len(mean_img.shape) == 1:
+            if len(mean_img) == 1:
+                mean_img = np.tile(mean_img, (3,))
+            mean_img = mean_img[:3].reshape((3, 1, 1))
+            mean_img = np.tile(mean_img, (1, self.input_size[0], self.input_size[1]))
+        self.mean_img = mean_img
+
+    def TrainImageNames(self, do_shuffle=True):
+        image_names = [line.strip().split(' ')[0] for line in open(self.train, 'r').readlines()]
+        if do_shuffle:
+            shuffle(image_names)
+        return image_names
+
+    def TestImageNames(self, do_shuffle=True):
+        image_names = [line.strip().split(' ')[0] for line in open(self.test, 'r').readlines()]
+        if do_shuffle:
+            shuffle(image_names)
+        return image_names
+
+    def TrainImageNameLabelPairs(self, do_shuffle=True):
+        pairs = [line.strip().split(' ') for line in open(self.train, 'r').readlines()]
+        pairs = [(pair[0], int(pair[1])) for pair in pairs]
+        if do_shuffle:
+            shuffle(pairs)
+        return pairs
+
+    def TestImageNameLabelPairs(self, do_shuffle=True):
+        pairs = [line.strip().split(' ') for line in open(self.test, 'r').readlines()]
+        pairs = [(pair[0], int(pair[1])) for pair in pairs]
+        if do_shuffle:
+            shuffle(pairs)
+        return pairs

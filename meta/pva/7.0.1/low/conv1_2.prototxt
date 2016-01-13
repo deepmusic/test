@@ -24,12 +24,12 @@ layer {
   name: "relu1_1"
   type: "ReLU"
   bottom: "conv1_1"
-  top: "relu1_1"
+  top: "conv1_1"
 }
 layer {
   name: "conv1_2_1"
   type: "Convolution"
-  bottom: "relu1_1"
+  bottom: "conv1_1"
   top: "conv1_2_1"
   convolution_param {
     num_output: 16
@@ -54,7 +54,7 @@ layer {
   name: "relu1_2"
   type: "ReLU"
   bottom: "conv1_2_2"
-  top: "relu1_2"
+  top: "conv1_2_2"
 }
 
 ################################################################################
@@ -63,7 +63,7 @@ layer {
 layer {
   name: "conv2_1"
   type: "Convolution"
-  bottom: "relu1_2"
+  bottom: "conv1_2_2"
   top: "conv2_1"
   convolution_param {
     num_output: 32
@@ -94,7 +94,7 @@ layer {
   name: "relu2_2"
   type: "ReLU"
   bottom: "conv2_2"
-  top: "relu2_2"
+  top: "conv2_2"
 }
 
 ################################################################################
@@ -103,7 +103,7 @@ layer {
 layer {
   name: "conv3_1"
   type: "Convolution"
-  bottom: "relu2_2"
+  bottom: "conv2_2"
   top: "conv3_1"
   convolution_param {
     num_output: 64
@@ -116,12 +116,12 @@ layer {
   name: "relu3_1"
   type: "ReLU"
   bottom: "conv3_1"
-  top: "relu3_1"
+  top: "conv3_1"
 }
 layer {
   name: "conv3_2"
   type: "Convolution"
-  bottom: "relu3_1"
+  bottom: "conv3_1"
   top: "conv3_2"
   convolution_param {
     num_output: 128
@@ -134,7 +134,7 @@ layer {
   name: "relu3_2"
   type: "ReLU"
   bottom: "conv3_2"
-  top: "relu3_2"
+  top: "conv3_2"
 }
 
 ################################################################################
@@ -143,7 +143,7 @@ layer {
 layer {
   name: "conv4_1"
   type: "Convolution"
-  bottom: "relu3_2"
+  bottom: "conv3_2"
   top: "conv4_1"
   convolution_param {
     num_output: 128
@@ -156,12 +156,12 @@ layer {
   name: "relu4_1"
   type: "ReLU"
   bottom: "conv4_1"
-  top: "relu4_1"
+  top: "conv4_1"
 }
 layer {
   name: "conv4_2"
   type: "Convolution"
-  bottom: "relu4_1"
+  bottom: "conv4_1"
   top: "conv4_2"
   convolution_param {
     num_output: 256
@@ -174,7 +174,7 @@ layer {
   name: "relu4_2"
   type: "ReLU"
   bottom: "conv4_2"
-  top: "relu4_2"
+  top: "conv4_2"
 }
 
 ################################################################################
@@ -183,7 +183,7 @@ layer {
 layer {
   name: "conv5_1"
   type: "Convolution"
-  bottom: "relu4_2"
+  bottom: "conv4_2"
   top: "conv5_1"
   convolution_param {
     num_output: 256
@@ -196,12 +196,12 @@ layer {
   name: "relu5_1"
   type: "ReLU"
   bottom: "conv5_1"
-  top: "relu5_1"
+  top: "conv5_1"
 }
 layer {
   name: "conv5_2"
   type: "Convolution"
-  bottom: "relu5_1"
+  bottom: "conv5_1"
   top: "conv5_2"
   convolution_param {
     num_output: 512
@@ -214,7 +214,7 @@ layer {
   name: "relu5_2"
   type: "ReLU"
   bottom: "conv5_2"
-  top: "relu5_2"
+  top: "conv5_2"
 }
 
 ################################################################################
@@ -223,7 +223,7 @@ layer {
 layer {
   name: "fc6"
   type: "InnerProduct"
-  bottom: "relu5_2"
+  bottom: "conv5_2"
   top: "fc6"
   param {
     lr_mult: 1

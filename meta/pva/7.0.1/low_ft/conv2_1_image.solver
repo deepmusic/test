@@ -1,0 +1,16 @@
+net: "meta/pva/7.0.1/low_ft/conv2_1_image.train"
+test_iter: 100
+test_interval: 1000
+base_lr: 0.00000001
+lr_policy: "step"
+gamma: 0.9773
+stepsize: 3000
+display: 20
+max_iter: 900000
+momentum: 0.9
+weight_decay: 0.0005
+snapshot: 10000
+snapshot_prefix: "data/pva/7.0.1/low_ft/conv2_1"
+#log_path: "experiments/logs"
+solver_mode: GPU
+#solver_type: SGD

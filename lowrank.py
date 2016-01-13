@@ -1,7 +1,6 @@
 import numpy as np
 import os
 import datetime
-from random import shuffle
 import test
 
 weight_postfix = '_weight.npy'
@@ -48,21 +47,21 @@ def ParseOutputLayer(y_4d, subset=None):
         return (y_2d[subset], subset)
     return y_2d[subset]
 
-def MakeOutputData(image_name, input_size, mean_img, layer, net_true, net_approx):
-    sample = test.PreprocessImage(image_name, input_size, mean_img)
+def MakeOutputData(image_name, mean_img, layer, net_true, net_approx):
+    sample = test.PreprocessImage(image_name, mean_img)
     test.Forward(net_true, sample, layer)
     test.Forward(net_approx, sample, layer)
     y_true, subset = ParseOutputLayer(net_true.blobs[layer].data)
     y_approx = ParseOutputLayer(net_approx.blobs[layer].data, subset)
     return (y_true, y_approx)
 
-def MakeOutputDataset(data_info, layer, net_true, net_approx):
-    image_names = [line.split() for line in open(data_info['train'], 'r').readlines()]
-    shuffle(image_names)
+def MakeOutputDataset(config, layer, net_true, net_approx):
+    image_names = config.TrainImageNames()
     if len(image_names) > num_train_images:
         image_names = image_names[:num_train_images]
-    y, y_approx = MakeOutputData(image_names[0], data_info['input_size'], data_info['mean_img'], \
-                                 layer, net_true, net_approx)
+    mean_img = config.mean_img
+
+    y, y_approx = MakeOutputData(image_names[0], mean_img, layer, net_true, net_approx)
     Y_true = np.zeros((len(image_names), y.shape[0], y.shape[1]), dtype=np.float32)
     Y_approx = np.zeros((len(image_names), y.shape[0], y.shape[1]), dtype=np.float32)
     Y_true[0] = y
@@ -70,12 +69,13 @@ def MakeOutputDataset(data_info, layer, net_true, net_approx):
 
     start_time = datetime.datetime.now()
     for i in range(1, len(image_names)):
-        Y_true[i+1], Y_approx[i+1] = MakeOutputData(image_names[i], layer, net_true, net_approx)
+        Y_true[i], Y_approx[i] = \
+                MakeOutputData(image_names[i], mean_img, layer, net_true, net_approx)
 
         if (i+1) % 100 == 0:
             end_time = datetime.datetime.now()
             elapsed_time = (end_time - start_time).total_seconds()
-            print '%d: %.2fs' % (i+1, elapsed_time)
+            print '[%6d image processed] Time=%.2fs' % (i+1, elapsed_time)
             start_time = end_time
     return (Y_true, Y_approx)
 
@@ -236,6 +236,10 @@ def NonlinearLowRank(path, layer, rank):
         M, b, P, QT = NonlinearLowRankSub(path, layer, rank, 0.01, M, b)
     for i in range(25):
         M, b, P, QT = NonlinearLowRankSub(path, layer, rank, 1.0, M, b)
+    for i in range(25):
+        M, b, P, QT = NonlinearLowRankSub(path, layer, rank, 10.0, M, b)
+    for i in range(25):
+        M, b, P, QT = NonlinearLowRankSub(path, layer, rank, 100.0, M, b)
     return (M, b, P, QT)
 
 def SaveLowRankParams(path, layer, b, P, QT):
@@ -271,21 +275,21 @@ def SaveFCParams(path, layer, P, QT):
     np.save(os.path.join(path, layer + '_2' + weight_postfix), W2_low)
     np.save(os.path.join(path, layer + '_2' + bias_postfix), b2_low)
 
-def PrepareDataset(dump_path, data_info, layer, net_true, net_approx):
-    Y_true, Y_approx = MakeOutputDataset(data_info, layer, net_true, net_approx)
-    np.save(os.path.join(dump_path, layer), Y_true)
-    np.save(os.path.join(dump_path, layer + data_approx_postfix), Y_approx)
+def PrepareDataset(config, layer, net_true, net_approx):
+    Y_true, Y_approx = MakeOutputDataset(config, layer, net_true, net_approx)
+    np.save(os.path.join(config.dump_path, layer), Y_true)
+    np.save(os.path.join(config.dump_path, layer + data_approx_postfix), Y_approx)
 
-def Run(dump_path, data_info, layer, rank, net_true, net_approx):
+def Run(config, layer, rank, net_true, net_approx):
     if 'conv' in layer:
-        PrepareDataset(dump_path, data_info, layer, net_true, net_approx)
-        M, b, P, QT = NonlinearLowRank(dump_path, layer, rank)
-        SaveLowRankParams(dump_path, layer, b, P, QT)
+        PrepareDataset(config, layer, net_true, net_approx)
+        M, b, P, QT = NonlinearLowRank(config.dump_path, layer, rank)
+        SaveLowRankParams(config.dump_path, layer, b, P, QT)
 
     if 'fc' in layer:
-        W_2d = np.load(os.path.join(dump_path, layer + weight_postfix))
+        W_2d = np.load(os.path.join(config.dump_path, layer + weight_postfix))
         P, QT = SVD(W_2d, rank)
-        SaveFCParams(dump_path, layer, P, QT)
+        SaveFCParams(config.dump_path, layer, P, QT)
 
 def UpdateNetLayerParams(dump_path, layer, net):
     for layer_postfix in ['_1', '_2']:
