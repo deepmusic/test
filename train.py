@@ -27,10 +27,14 @@ def TrainLayer(config, net_true, layer_idx):
     layer_prev = config.layers[layer_idx-1][0]
     layer_now, rank = config.layers[layer_idx]
 
-    proto_prev = os.path.join(config.meta_path, layer_prev + '.prototxt')
-    model_prev = os.path.join(config.data_path, layer_prev + '.caffemodel')
-    proto_new = os.path.join(config.meta_path, layer_now + '.prototxt')
-    model_new = os.path.join(config.data_path, layer_now + '.caffemodel')
+    #proto_prev = os.path.join(config.meta_path, layer_prev + '.prototxt')
+    #model_prev = os.path.join(config.data_path, layer_prev + '.caffemodel')
+    #proto_new = os.path.join(config.meta_path, layer_now + '.prototxt')
+    #model_new = os.path.join(config.data_path, layer_now + '.caffemodel')
+    proto_prev = os.path.join(config.meta_path, 'approx.prototxt')
+    model_prev = os.path.join(config.data_path, 'approx.caffemodel')
+    proto_new = os.path.join(config.meta_path, 'approx.prototxt')
+    model_new = os.path.join(config.data_path, 'approx.caffemodel')
 
     print '########### Learning Layer: %s ###########' % layer_now
     net = caffe.Net(proto_prev, model_prev, caffe.TEST)
@@ -40,10 +44,10 @@ def TrainLayer(config, net_true, layer_idx):
 if __name__ == "__main__":
     model_name = 'pva'
     version = '7.0.1'
-    data_name = 'imagenet'
-    layer_idx = 2
+    data_name = 'voc2007'
+    layer_idx = 0
     config = Config(model_name, version, data_name)
 
-    net_true = TrueNet(config)
+    net_true = TrueNet(config, filename='true')
     for i in range(layer_idx, len(config.layers)):
         TrainLayer(config, net_true, i)

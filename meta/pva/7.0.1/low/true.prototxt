@@ -24,37 +24,25 @@ layer {
   name: "relu1_1"
   type: "ReLU"
   bottom: "conv1_1"
-  top: "conv1_1"
+  top: "relu1_1"
 }
 layer {
-  name: "conv1_2_1"
+  name: "conv1_2"
   type: "Convolution"
-  bottom: "conv1_1"
-  top: "conv1_2_1"
+  bottom: "relu1_1"
+  top: "conv1_2"
   convolution_param {
-    num_output: 16
+    num_output: 32
     kernel_size: 3
     pad: 1
     stride: 1
   }
 }
 layer {
-  name: "conv1_2_2"
-  type: "Convolution"
-  bottom: "conv1_2_1"
-  top: "conv1_2_2"
-  convolution_param {
-    num_output: 32
-    kernel_size: 1
-    pad: 0
-    stride: 1
-  }
-}
-layer {
   name: "relu1_2"
   type: "ReLU"
-  bottom: "conv1_2_2"
-  top: "conv1_2_2"
+  bottom: "conv1_2"
+  top: "relu1_2"
 }
 
 ################################################################################
@@ -63,7 +51,7 @@ layer {
 layer {
   name: "conv2_1"
   type: "Convolution"
-  bottom: "conv1_2_2"
+  bottom: "relu1_2"
   top: "conv2_1"
   convolution_param {
     num_output: 32
@@ -76,12 +64,12 @@ layer {
   name: "relu2_1"
   type: "ReLU"
   bottom: "conv2_1"
-  top: "conv2_1"
+  top: "relu2_1"
 }
 layer {
   name: "conv2_2"
   type: "Convolution"
-  bottom: "conv2_1"
+  bottom: "relu2_1"
   top: "conv2_2"
   convolution_param {
     num_output: 64
@@ -116,12 +104,12 @@ layer {
   name: "relu3_1"
   type: "ReLU"
   bottom: "conv3_1"
-  top: "conv3_1"
+  top: "relu3_1"
 }
 layer {
   name: "conv3_2"
   type: "Convolution"
-  bottom: "conv3_1"
+  bottom: "relu3_1"
   top: "conv3_2"
   convolution_param {
     num_output: 128
@@ -134,7 +122,7 @@ layer {
   name: "relu3_2"
   type: "ReLU"
   bottom: "conv3_2"
-  top: "conv3_2"
+  top: "relu3_2"
 }
 
 ################################################################################
@@ -143,7 +131,7 @@ layer {
 layer {
   name: "conv4_1"
   type: "Convolution"
-  bottom: "conv3_2"
+  bottom: "relu3_2"
   top: "conv4_1"
   convolution_param {
     num_output: 128
@@ -156,12 +144,12 @@ layer {
   name: "relu4_1"
   type: "ReLU"
   bottom: "conv4_1"
-  top: "conv4_1"
+  top: "relu4_1"
 }
 layer {
   name: "conv4_2"
   type: "Convolution"
-  bottom: "conv4_1"
+  bottom: "relu4_1"
   top: "conv4_2"
   convolution_param {
     num_output: 256
@@ -174,7 +162,7 @@ layer {
   name: "relu4_2"
   type: "ReLU"
   bottom: "conv4_2"
-  top: "conv4_2"
+  top: "relu4_2"
 }
 
 ################################################################################
@@ -183,7 +171,7 @@ layer {
 layer {
   name: "conv5_1"
   type: "Convolution"
-  bottom: "conv4_2"
+  bottom: "relu4_2"
   top: "conv5_1"
   convolution_param {
     num_output: 256
@@ -196,12 +184,12 @@ layer {
   name: "relu5_1"
   type: "ReLU"
   bottom: "conv5_1"
-  top: "conv5_1"
+  top: "relu5_1"
 }
 layer {
   name: "conv5_2"
   type: "Convolution"
-  bottom: "conv5_1"
+  bottom: "relu5_1"
   top: "conv5_2"
   convolution_param {
     num_output: 512
@@ -214,25 +202,34 @@ layer {
   name: "relu5_2"
   type: "ReLU"
   bottom: "conv5_2"
-  top: "conv5_2"
+  top: "relu5_2"
 }
 
 ################################################################################
 ## fc 6
 ################################################################################
 layer {
-  name: "fc6"
+  name: "fc6_1"
   type: "InnerProduct"
-  bottom: "conv5_2"
-  top: "fc6"
-  param {
-    lr_mult: 1
-    decay_mult: 1
+  bottom: "relu5_2"
+  top: "fc6_1"
+  inner_product_param {
+    num_output: 512
+    weight_filler {
+      type: "xavier"
+      std: 0.005
+    }
+    bias_filler {
+      type: "constant"
+      value: 0.1
+    }
   }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
+}
+layer {
+  name: "fc6_2"
+  type: "InnerProduct"
+  bottom: "fc6_1"
+  top: "fc6_2"
   inner_product_param {
     num_output: 4096
     weight_filler {
@@ -248,14 +245,14 @@ layer {
 layer {
   name: "relu6"
   type: "ReLU"
-  bottom: "fc6"
-  top: "fc6"
+  bottom: "fc6_2"
+  top: "fc6_2"
 }
 layer {
   name: "drop6"
   type: "Dropout"
-  bottom: "fc6"
-  top: "fc6"
+  bottom: "fc6_2"
+  top: "fc6_2"
   dropout_param {
     dropout_ratio: 0.5
   }
@@ -267,7 +264,7 @@ layer {
 layer {
   name: "fc7"
   type: "InnerProduct"
-  bottom: "fc6"
+  bottom: "fc6_2"
   top: "fc7"
   param {
     lr_mult: 1
