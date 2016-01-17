@@ -303,3 +303,42 @@ def DumpParams(dump_path, net):
     for layer in layers:
         np.save(os.path.join(dump_path, layer + weight_postfix), net.params[layer][0].data)
         np.save(os.path.join(dump_path, layer + bias_postfix), net.params[layer][1].data)
+
+def LowRankKernelSub(W, rank, H=None, G=None):
+    if H is None:
+        H = np.random.normal(size=(W.shape[1]*W.shape[2], rank))
+
+    W_G = W.swapaxes(2, 3).swapaxes(1, 2).reshape((W.shape[0]*W.shape[3], W.shape[1]*W.shape[2]))
+    W_H = W.swapaxes(0, 1).swapaxes(1, 2).reshape((W.shape[1]*W.shape[2], W.shape[0]*W.shape[3]))
+    G = np.dot(W_G, np.dot(H, np.linalg.inv(np.tensordot(H, H, (0, 0)))))
+    H = np.dot(W_H, np.dot(G, np.linalg.inv(np.tensordot(G, G, (0, 0)))))
+
+    G_3d = G.reshape((W.shape[0], W.shape[3], rank))
+    H_3d = H.reshape((W.shape[1], W.shape[2], rank))
+    err = 0.0
+    for n in range(W.shape[0]):
+        for c in range(W.shape[1]):
+            err += ((W[n, c] - np.tensordot(H_3d[c], G_3d[n], (1, 1))) ** 2).sum()
+    print 'Low rank kernel approximation error = %.4f' % err
+    return (H, G)
+
+def LowRankKernel(dump_path, layer, rank):
+    W_4d = np.load(os.path.join(path, layer + weight_postfix))
+    b_1d = np.load(os.path.join(path, layer + bias_postfix))
+
+    H, G = LowRankKernelSub(W, rank)
+    for i in range(1, 30):
+        H, G = LowRankKernelSub(W, rank, H, G)
+
+    W1_low = H.reshape((1, W_4d.shape[1], W_4d.shape[2], rank)).swapaxes(0, 3).copy()
+    W1_low = np.asarray(W1_low, dtype=np.float32)
+    b1_low = np.zeros((rank,), dtype=np.float32)
+    W2_low = G.reshape((W_4d.shape[0], W_4d.shape[3], 1, rank)).swapaxes(1, 3).copy()
+    W2_low = np.asarray(W2_low, dtype=np.float32)
+    b2_low = np.asarray(b_1d, dtype=np.float32)
+
+    np.save(os.path.join(path, layer + '_1' + weight_postfix), W1_low)
+    np.save(os.path.join(path, layer + '_1' + bias_postfix), b1_low)
+    np.save(os.path.join(path, layer + '_2' + weight_postfix), W2_low)
+    np.save(os.path.join(path, layer + '_2' + bias_postfix), b2_low)
+
