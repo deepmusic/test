@@ -55,8 +55,8 @@ layer {
   bottom: "data"
   top: "conv1_1"
   param {
-    lr_mult: 0
-    decay_mult: 0
+    lr_mult: 1
+    decay_mult: 1
   }
   convolution_param {
     num_output: 16
@@ -77,8 +77,8 @@ layer {
   bottom: "conv1_1"
   top: "conv1_2_1"
   param {
-    lr_mult: 0
-    decay_mult: 0
+    lr_mult: 1
+    decay_mult: 1
   }
   convolution_param {
     num_output: 16
@@ -93,8 +93,8 @@ layer {
   bottom: "conv1_2_1"
   top: "conv1_2_2"
   param {
-    lr_mult: 0
-    decay_mult: 0
+    lr_mult: 1
+    decay_mult: 1
   }
   convolution_param {
     num_output: 32

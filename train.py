@@ -23,7 +23,7 @@ def UpdateNet(proto_new, model, layer, model_new):
     lowrank.UpdateNetLayerParams(config.dump_path, layer, net)
     net.save(model_new)
 
-def TrainLayer(config, net_true, layer_idx):
+def TrainLayer(config, net_true, layer_idx, already_learned=False):
     layer_prev = config.layers[layer_idx-1][0]
     layer_now, rank = config.layers[layer_idx]
 
@@ -38,16 +38,19 @@ def TrainLayer(config, net_true, layer_idx):
 
     print '########### Learning Layer: %s ###########' % layer_now
     net = caffe.Net(proto_prev, model_prev, caffe.TEST)
-    lowrank.Run(config, layer_now, rank, net_true, net)
+    if not already_learned:
+        lowrank.Run(config, layer_now, rank, net_true, net)
     UpdateNet(proto_new, model_prev, layer_now, model_new)
 
 if __name__ == "__main__":
     model_name = 'pva'
-    version = '7.0.1'
-    data_name = 'voc2007'
+    version = '8.1.2'
+    data_name = 'imagenet'
     layer_idx = 0
     config = Config(model_name, version, data_name)
 
     net_true = TrueNet(config, filename='true')
+    for i in range(layer_idx):
+        TrainLayer(config, net_true, i, already_learned=True)
     for i in range(layer_idx, len(config.layers)):
         TrainLayer(config, net_true, i)

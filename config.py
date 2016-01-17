@@ -2,14 +2,22 @@ import numpy as np
 from random import shuffle
 
 model_ = {
-    'pva': {
-        'layers': [('conv1_2', 24), ('conv2_2', 48), \
-                   ('conv3_2', 96), ('conv4_2', 192), \
-                   ('conv5_2', 384)], \
+    'pva/7.0.1': {
+        'layers': [('conv1_2', 16), ('conv2_2', 32), \
+                   ('conv3_2', 64), ('conv4_2', 128), \
+                   ('conv5_2', 256)], \
         'input_size': (192, 192), \
         'mean_img': [103.939, 116.779, 123.68], \
     }, \
-    'vgg': {
+    'pva/8.1.2': {
+        'layers': [('conv1_1', 16), ('conv3_1', 48)], \
+#        'layers': [('conv3_2', 32), ('conv3_3', 32), \
+#                   ('conv4_1', 54), ('conv4_2', 110), ('conv4_3', 110), \
+#                   ('conv5_1', 220)], \
+        'input_size': (224, 224), \
+        'mean_img': [103.939, 116.779, 123.68], \
+    }, \
+    'vgg/16': {
         'layers': [('conv1_1', 64), ('conv1_2', 11), ('conv2_1', 25), ('conv2_2', 28), \
                    ('conv3_1', 52), ('conv3_2', 46), ('conv3_3', 56), \
                    ('conv4_1', 104), ('conv4_2', 92), ('conv4_3', 100), \
@@ -45,7 +53,7 @@ class Config(object):
         self.test = data['test']
         self.image_size = data['image_size']
 
-        model = model_[model_name]
+        model = model_[model_name + '/' + version]
         self.layers = model['layers']
         self.input_size = model['input_size']
         self.mean_img = model['mean_img']

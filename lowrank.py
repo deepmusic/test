@@ -232,13 +232,13 @@ def NonlinearError(path, layer, M, b):
 
 def NonlinearLowRank(path, layer, rank):
     M, b, P, QT = NonlinearLowRankSub(path, layer, rank)
-    for i in range(25):
+    for i in range(5):
         M, b, P, QT = NonlinearLowRankSub(path, layer, rank, 0.01, M, b)
-    for i in range(25):
+    for i in range(5):
         M, b, P, QT = NonlinearLowRankSub(path, layer, rank, 1.0, M, b)
-    for i in range(25):
+    for i in range(5):
         M, b, P, QT = NonlinearLowRankSub(path, layer, rank, 10.0, M, b)
-    for i in range(25):
+    for i in range(5):
         M, b, P, QT = NonlinearLowRankSub(path, layer, rank, 100.0, M, b)
     return (M, b, P, QT)
 

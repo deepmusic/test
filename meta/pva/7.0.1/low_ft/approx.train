@@ -1,9 +1,47 @@
 name: "PVA-Net"
-input: "data"
-input_dim: 10
-input_dim: 3
-input_dim: 192
-input_dim: 192
+layer {
+
+  name: "data"
+  type: "Data"
+  top: "data"
+  top: "label"
+  include {
+    phase: TRAIN
+  }
+  transform_param {
+    crop_size: 192
+    mean_value: 104
+    mean_value: 117
+    mean_value: 123
+    mirror: true
+  }
+  data_param {
+    source: "data/imagenet/ilsvrc12_train_lmdb"
+    batch_size: 50
+    backend: LMDB
+  }
+}
+layer {
+  name: "data"
+  type: "Data"
+  top: "data"
+  top: "label"
+  include {
+    phase: TEST
+  }
+  transform_param {
+    crop_size: 192
+    mean_value: 104
+    mean_value: 117
+    mean_value: 123
+    mirror: false
+  }
+  data_param {
+    source: "data/imagenet/ilsvrc12_val_lmdb"
+    batch_size: 50
+    backend: LMDB
+  }
+}
 
 ################################################################################
 ## Conv 1
@@ -25,18 +63,6 @@ layer {
   type: "ReLU"
   bottom: "conv1_1"
   top: "conv1_1"
-}
-layer {
-  name: "conv1_2"
-  type: "Convolution"
-  bottom: "conv1_1"
-  top: "conv1_2"
-  convolution_param {
-    num_output: 32
-    kernel_size: 3
-    pad: 1
-    stride: 1
-  }
 }
 layer {
   name: "conv1_2_1"
@@ -91,18 +117,6 @@ layer {
   top: "conv2_1"
 }
 layer {
-  name: "conv2_2"
-  type: "Convolution"
-  bottom: "conv2_1"
-  top: "conv2_2"
-  convolution_param {
-    num_output: 64
-    kernel_size: 3
-    pad: 1
-    stride: 1
-  }
-}
-layer {
   name: "conv2_2_1"
   type: "Convolution"
   bottom: "conv2_1"
@@ -153,18 +167,6 @@ layer {
   type: "ReLU"
   bottom: "conv3_1"
   top: "conv3_1"
-}
-layer {
-  name: "conv3_2"
-  type: "Convolution"
-  bottom: "conv3_1"
-  top: "conv3_2"
-  convolution_param {
-    num_output: 128
-    kernel_size: 3
-    pad: 1
-    stride: 1
-  }
 }
 layer {
   name: "conv3_2_1"
@@ -219,18 +221,6 @@ layer {
   top: "conv4_1"
 }
 layer {
-  name: "conv4_2"
-  type: "Convolution"
-  bottom: "conv4_1"
-  top: "conv4_2"
-  convolution_param {
-    num_output: 256
-    kernel_size: 3
-    pad: 1
-    stride: 1
-  }
-}
-layer {
   name: "conv4_2_1"
   type: "Convolution"
   bottom: "conv4_1"
@@ -281,18 +271,6 @@ layer {
   type: "ReLU"
   bottom: "conv5_1"
   top: "conv5_1"
-}
-layer {
-  name: "conv5_2"
-  type: "Convolution"
-  bottom: "conv5_1"
-  top: "conv5_2"
-  convolution_param {
-    num_output: 512
-    kernel_size: 3
-    pad: 1
-    stride: 1
-  }
 }
 layer {
   name: "conv5_2_1"
@@ -451,8 +429,22 @@ layer {
   }
 }
 layer {
-  name: "prob"
-  type: "Softmax"
+  name: "accuracy"
+  type: "Accuracy"
   bottom: "fc8"
-  top: "prob"
+  bottom: "label"
+  top: "accuracy"
+  include {
+    phase: TEST
+  }
+  accuracy_param {
+    top_k: 1
+  }
+}
+layer {
+  name: "loss"
+  type: "SoftmaxWithLoss"
+  bottom: "fc8"
+  bottom: "label"
+  top: "loss"
 }

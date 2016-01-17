@@ -22,7 +22,7 @@ layer {
   }
   data_param {
     source: "data/imagenet/ilsvrc12_train_lmdb"
-    batch_size: 128
+    batch_size: 64
     backend: LMDB
   }
 }
@@ -545,10 +545,35 @@ layer {
 ## fc 6
 ################################################################################
 layer {
-  name: "fc6"
+  name: "fc6_1"
   type: "InnerProduct"
   bottom: "pool5_3"
-  top: "fc6"
+  top: "fc6_1"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  inner_product_param {
+    num_output: 512
+    weight_filler {
+      type: "xavier"
+      std: 0.1
+    }
+    bias_filler {
+      type: "constant"
+      value: 0.1
+    }
+  }
+}
+layer {
+  name: "fc6_2"
+  type: "InnerProduct"
+  bottom: "fc6_1"
+  top: "fc6_2"
   param {
     lr_mult: 1
     decay_mult: 1
@@ -572,13 +597,13 @@ layer {
 layer {
   name: "relu6"
   type: "ReLU"
-  bottom: "fc6"
-  top: "fc6"
+  bottom: "fc6_2"
+  top: "fc6_2"
 }
 layer {
   name: "fc6_bn"
   type: "BatchNorm"
-  bottom: "fc6"
+  bottom: "fc6_2"
   top: "fc6_bn"
   param { lr_mult: 0  decay_mult: 0 }
   param { lr_mult: 0  decay_mult: 0 }
