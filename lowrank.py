@@ -50,9 +50,9 @@ def ParseOutputLayer(y_4d, subset=None):
 def MakeOutputData(image_name, mean_img, layer, net_true, net_approx):
     sample = test.PreprocessImage(image_name, mean_img)
     test.Forward(net_true, sample, layer)
-    test.Forward(net_approx, sample, layer)
+    test.Forward(net_approx, sample, layer + 'b')
     y_true, subset = ParseOutputLayer(net_true.blobs[layer].data)
-    y_approx = ParseOutputLayer(net_approx.blobs[layer].data, subset)
+    y_approx = ParseOutputLayer(net_approx.blobs[layer + 'b'].data, subset)
     return (y_true, y_approx)
 
 def MakeOutputDataset(config, layer, net_true, net_approx):
@@ -131,7 +131,8 @@ def LinearLowRank(path, layer, rank):
 
     err, cossim = NonlinearError(path, layer, M, b)
     elapsed_time = (datetime.datetime.now() - start_time).total_seconds()
-    print 'Sum of squared errors = %.4f, Average cosine similarity = %.4f, Elapsed time = %.2f' % (err, cossim, elapsed_time)
+    print 'Sum of squared errors = %.4f, Average cosine similarity = %.4f, Elapsed time = %.2f' \
+          % (err, cossim, elapsed_time)
     return (M, b)
 
 def NonlinearLowRankAuxiliary(Y, Y_approx, M, b, penalty):
@@ -205,7 +206,8 @@ def NonlinearLowRankSub(path, layer, rank, penalty=None, M=None, b=None):
 
     err, cossim = NonlinearError(path, layer, M_new, b_new)
     elapsed_time = (datetime.datetime.now() - start_time).total_seconds()
-    print 'Sum of squared errors = %.4f, Average cosine similarity = %.4f, Elapsed time = %.2f' % (err, cossim, elapsed_time)
+    print 'Sum of squared errors = %.4f, Average cosine similarity = %.4f, Elapsed time = %.2f' \
+          % (err, cossim, elapsed_time)
     return (M_new, b_new, P, QT)
 
 def NonlinearError(path, layer, M, b):
@@ -243,8 +245,8 @@ def NonlinearLowRank(path, layer, rank):
     return (M, b, P, QT)
 
 def SaveLowRankParams(path, layer, b, P, QT):
-    W_4d = np.load(os.path.join(path, layer + weight_postfix))
-    b_4d = np.load(os.path.join(path, layer + bias_postfix))
+    W_4d = np.load(os.path.join(path, layer + 'b' + weight_postfix))
+    b_4d = np.load(os.path.join(path, layer + 'b' + bias_postfix))
     W_2d = W_4d.reshape((W_4d.shape[0], np.prod(W_4d.shape[1:])))
     b_1d = b_4d.reshape((b_4d.shape[0],))
 
@@ -256,10 +258,10 @@ def SaveLowRankParams(path, layer, b, P, QT):
         W1_low = W1_low.reshape((QT.shape[0], W_4d.shape[1], W_4d.shape[2], W_4d.shape[3]))
         W2_low = W2_low.reshape((P.shape[0], P.shape[1], 1, 1))
 
-    np.save(os.path.join(path, layer + '_1' + weight_postfix), W1_low)
-    np.save(os.path.join(path, layer + '_1' + bias_postfix), b1_low)
-    np.save(os.path.join(path, layer + '_2' + weight_postfix), W2_low)
-    np.save(os.path.join(path, layer + '_2' + bias_postfix), b2_low)
+    np.save(os.path.join(path, layer + 'b1' + weight_postfix), W1_low)
+    np.save(os.path.join(path, layer + 'b1' + bias_postfix), b1_low)
+    np.save(os.path.join(path, layer + 'b2' + weight_postfix), W2_low)
+    np.save(os.path.join(path, layer + 'b2' + bias_postfix), b2_low)
 
 def SaveFCParams(path, layer, P, QT):
     W_2d = np.load(os.path.join(path, layer + weight_postfix))
@@ -282,6 +284,8 @@ def PrepareDataset(config, layer, net_true, net_approx):
 
 def Run(config, layer, rank, net_true, net_approx):
     if 'conv' in layer:
+        LowRankKernel(config.dump_path, layer, rank)
+        UpdateNetLayerParams(config.dump_path, layer, net_approx, ['a', 'b'])
         PrepareDataset(config, layer, net_true, net_approx)
         M, b, P, QT = NonlinearLowRank(config.dump_path, layer, rank)
         SaveLowRankParams(config.dump_path, layer, b, P, QT)
@@ -291,8 +295,14 @@ def Run(config, layer, rank, net_true, net_approx):
         P, QT = SVD(W_2d, rank)
         SaveFCParams(config.dump_path, layer, P, QT)
 
-def UpdateNetLayerParams(dump_path, layer, net):
-    for layer_postfix in ['_1', '_2']:
+def UpdateNetLayerParams(dump_path, layer, net, layer_postfixs=None):
+    if layer_postfixs is None:
+        if 'conv' in layer:
+            layer_postfixs = ['a', 'b1', 'b2']
+        else:
+            layer_postfixs = ['_1', '_2']
+
+    for layer_postfix in layer_postfixs:
         weight = np.load(os.path.join(dump_path, layer + layer_postfix + weight_postfix))
         bias = np.load(os.path.join(dump_path, layer + layer_postfix + bias_postfix))
         net.params[layer + layer_postfix][0].data[:] = weight.copy()
@@ -305,6 +315,8 @@ def DumpParams(dump_path, net):
         np.save(os.path.join(dump_path, layer + bias_postfix), net.params[layer][1].data)
 
 def LowRankKernelSub(W, rank, H=None, G=None):
+    start_time = datetime.datetime.now()
+
     if H is None:
         H = np.random.normal(size=(W.shape[1]*W.shape[2], rank))
 
@@ -313,22 +325,18 @@ def LowRankKernelSub(W, rank, H=None, G=None):
     G = np.dot(W_G, np.dot(H, np.linalg.inv(np.tensordot(H, H, (0, 0)))))
     H = np.dot(W_H, np.dot(G, np.linalg.inv(np.tensordot(G, G, (0, 0)))))
 
-    G_3d = G.reshape((W.shape[0], W.shape[3], rank))
-    H_3d = H.reshape((W.shape[1], W.shape[2], rank))
-    err = 0.0
-    for n in range(W.shape[0]):
-        for c in range(W.shape[1]):
-            err += ((W[n, c] - np.tensordot(H_3d[c], G_3d[n], (1, 1))) ** 2).sum()
-    print 'Low rank kernel approximation error = %.4f' % err
+    err = ((W_G - np.tensordot(G, H, (1, 1))) ** 2).sum()
+    elapsed_time = (datetime.datetime.now() - start_time).total_seconds()
+    print 'Kernel approximation error = %.4f, Elapsed time = %.2f' % (err, elapsed_time)
     return (H, G)
 
 def LowRankKernel(dump_path, layer, rank):
-    W_4d = np.load(os.path.join(path, layer + weight_postfix))
-    b_1d = np.load(os.path.join(path, layer + bias_postfix))
+    W_4d = np.load(os.path.join(dump_path, layer + weight_postfix))
+    b_1d = np.load(os.path.join(dump_path, layer + bias_postfix))
 
-    H, G = LowRankKernelSub(W, rank)
+    H, G = LowRankKernelSub(W_4d, rank)
     for i in range(1, 30):
-        H, G = LowRankKernelSub(W, rank, H, G)
+        H, G = LowRankKernelSub(W_4d, rank, H, G)
 
     W1_low = H.reshape((1, W_4d.shape[1], W_4d.shape[2], rank)).swapaxes(0, 3).copy()
     W1_low = np.asarray(W1_low, dtype=np.float32)
@@ -337,8 +345,7 @@ def LowRankKernel(dump_path, layer, rank):
     W2_low = np.asarray(W2_low, dtype=np.float32)
     b2_low = np.asarray(b_1d, dtype=np.float32)
 
-    np.save(os.path.join(path, layer + '_1' + weight_postfix), W1_low)
-    np.save(os.path.join(path, layer + '_1' + bias_postfix), b1_low)
-    np.save(os.path.join(path, layer + '_2' + weight_postfix), W2_low)
-    np.save(os.path.join(path, layer + '_2' + bias_postfix), b2_low)
-
+    np.save(os.path.join(dump_path, layer + 'a' + weight_postfix), W1_low)
+    np.save(os.path.join(dump_path, layer + 'a' + bias_postfix), b1_low)
+    np.save(os.path.join(dump_path, layer + 'b' + weight_postfix), W2_low)
+    np.save(os.path.join(dump_path, layer + 'b' + bias_postfix), b2_low)

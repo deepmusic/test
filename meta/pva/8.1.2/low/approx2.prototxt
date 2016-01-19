@@ -9,41 +9,10 @@ input_dim: 224
 ## Conv 1
 ################################################################################
 layer {
-  name: "conv1_1a"
+  name: "conv1_1"
   type: "Convolution"
   bottom: "data"
-  top: "conv1_1a"
-  param {
-    lr_mult: 1
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
-  convolution_param {
-    num_output: 16
-    kernel_h: 7
-    pad_h: 3
-    stride_h: 2
-    kernel_w: 1
-    pad_w: 0
-    stride_w: 1
-    weight_filler {
-      type: "xavier"
-      std: 0.1
-    }
-    bias_filler {
-      type: "constant"
-      value: 0.1
-    }
-  }
-}
-layer {
-  name: "conv1_1b"
-  type: "Convolution"
-  bottom: "conv1_1a"
-  top: "conv1_1b"
+  top: "conv1_1"
   param {
     lr_mult: 1
     decay_mult: 1
@@ -54,12 +23,9 @@ layer {
   }
   convolution_param {
     num_output: 64
-    kernel_h: 1
-    pad_h: 0
-    stride_h: 1
-    kernel_w: 7
-    pad_w: 3
-    stride_w: 2
+    kernel_size: 7
+    pad: 3
+    stride: 2
     weight_filler {
       type: "xavier"
       std: 0.1
@@ -71,10 +37,10 @@ layer {
   }
 }
 layer {
-  name: "conv1_1b1"
+  name: "conv1_1_1"
   type: "Convolution"
-  bottom: "conv1_1a"
-  top: "conv1_1b1"
+  bottom: "data"
+  top: "conv1_1_1"
   param {
     lr_mult: 1
     decay_mult: 1
@@ -85,12 +51,9 @@ layer {
   }
   convolution_param {
     num_output: 16
-    kernel_h: 1
-    pad_h: 0
-    stride_h: 1
-    kernel_w: 7
-    pad_w: 3
-    stride_w: 2
+    kernel_size: 7
+    pad: 3
+    stride: 2
     weight_filler {
       type: "xavier"
       std: 0.1
@@ -102,10 +65,10 @@ layer {
   }
 }
 layer {
-  name: "conv1_1b2"
+  name: "conv1_1_2"
   type: "Convolution"
-  bottom: "conv1_1b1"
-  top: "conv1_1b2"
+  bottom: "conv1_1_1"
+  top: "conv1_1_2"
   param {
     lr_mult: 1
     decay_mult: 1
@@ -132,13 +95,13 @@ layer {
 layer {
   name: "relu1_1"
   type: "ReLU"
-  bottom: "conv1_1b2"
-  top: "conv1_1b2"
+  bottom: "conv1_1_2"
+  top: "conv1_1_2"
 }
 layer {
   name: "conv1_1_bn"
   type: "BatchNorm"
-  bottom: "conv1_1b2"
+  bottom: "conv1_1_2"
   top: "conv1_1_bn"
   param { lr_mult: 0  decay_mult: 0 }
   param { lr_mult: 0  decay_mult: 0 }
@@ -206,67 +169,42 @@ layer {
 
 ## Conv 3
 layer {
-  name: "conv3_1a"
+  name: "conv3_1"
   type: "Convolution"
   bottom: "conv2_1_bn"
-  top: "conv3_1a"
-  param { lr_mult: 1  decay_mult: 1 }
-  param { lr_mult: 2  decay_mult: 0 }
-  convolution_param {
-    num_output: 48
-    kernel_h: 5
-    pad_h: 2
-    stride_h: 2
-    kernel_w: 1
-    pad_w: 0
-    stride_w: 1
-    weight_filler { type: "xavier" }
-    bias_filler { type: "constant"  value: 0.1 }
-  }
-}
-layer {
-  name: "conv3_1b"
-  type: "Convolution"
-  bottom: "conv3_1a"
-  top: "conv3_1b"
+  top: "conv3_1"
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
     num_output: 96
-    kernel_h: 1
-    pad_h: 0
-    stride_h: 1
-    kernel_w: 5
-    pad_w: 2
-    stride_w: 2
+    kernel_size: 5
+    pad: 2
+    stride: 2
     weight_filler { type: "xavier" }
     bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
-  name: "conv3_1b1"
+  name: "conv3_1_1"
   type: "Convolution"
-  bottom: "conv3_1a"
-  top: "conv3_1b1"
+  bottom: "conv2_1_bn"
+  top: "conv3_1_1"
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
     num_output: 48
-    kernel_h: 1
-    pad_h: 0
-    stride_h: 1
-    kernel_w: 5
-    pad_w: 2
-    stride_w: 2
+    kernel_size: 5
+    pad: 2
+    stride: 2
     weight_filler { type: "xavier" }
     bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
-  name: "conv3_1b2"
+  name: "conv3_1_2"
   type: "Convolution"
-  bottom: "conv3_1b1"
-  top: "conv3_1b2"
+  bottom: "conv3_1_1"
+  top: "conv3_1_2"
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
@@ -281,13 +219,13 @@ layer {
 layer {
   name: "relu3_1"
   type: "ReLU"
-  bottom: "conv3_1b2"
-  top: "conv3_1b2"
+  bottom: "conv3_1_2"
+  top: "conv3_1_2"
 }
 layer {
   name: "conv3_1_bn"
   type: "BatchNorm"
-  bottom: "conv3_1b2"
+  bottom: "conv3_1_2"
   top: "conv3_1_bn"
   param { lr_mult: 0  decay_mult: 0 }
   param { lr_mult: 0  decay_mult: 0 }
@@ -295,67 +233,42 @@ layer {
 }
 
 layer {
-  name: "conv3_2a"
+  name: "conv3_2"
   type: "Convolution"
   bottom: "conv3_1_bn"
-  top: "conv3_2a"
-  param { lr_mult: 1  decay_mult: 1 }
-  param { lr_mult: 2  decay_mult: 0 }
-  convolution_param {
-    num_output: 32
-    kernel_h: 3
-    pad_h: 1
-    stride_h: 1
-    kernel_w: 1
-    pad_w: 0
-    stride_w: 1
-    weight_filler { type: "xavier" }
-    bias_filler { type: "constant"  value: 0.1 }
-  }
-}
-layer {
-  name: "conv3_2b"
-  type: "Convolution"
-  bottom: "conv3_2a"
-  top: "conv3_2b"
+  top: "conv3_2"
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
     num_output: 96
-    kernel_h: 1
-    pad_h: 0
-    stride_h: 1
-    kernel_w: 3
-    pad_w: 1
-    stride_w: 1
+    kernel_size: 3
+    pad: 1
+    stride: 1
     weight_filler { type: "xavier" }
     bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
-  name: "conv3_2b1"
+  name: "conv3_2_1"
   type: "Convolution"
-  bottom: "conv3_2a"
-  top: "conv3_2b1"
+  bottom: "conv3_1_bn"
+  top: "conv3_2_1"
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
     num_output: 32
-    kernel_h: 1
-    pad_h: 0
-    stride_h: 1
-    kernel_w: 3
-    pad_w: 1
-    stride_w: 1
+    kernel_size: 3
+    pad: 1
+    stride: 1
     weight_filler { type: "xavier" }
     bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
-  name: "conv3_2b2"
+  name: "conv3_2_2"
   type: "Convolution"
-  bottom: "conv3_2b1"
-  top: "conv3_2b2"
+  bottom: "conv3_2_1"
+  top: "conv3_2_2"
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
@@ -370,13 +283,13 @@ layer {
 layer {
   name: "relu3_2"
   type: "ReLU"
-  bottom: "conv3_2b2"
-  top: "conv3_2b2"
+  bottom: "conv3_2_2"
+  top: "conv3_2_2"
 }
 layer {
   name: "conv3_2_bn"
   type: "BatchNorm"
-  bottom: "conv3_2b2"
+  bottom: "conv3_2_2"
   top: "conv3_2_bn"
   param { lr_mult: 0  decay_mult: 0 }
   param { lr_mult: 0  decay_mult: 0 }
@@ -384,67 +297,42 @@ layer {
 }
 
 layer {
-  name: "conv3_3a"
+  name: "conv3_3"
   type: "Convolution"
   bottom: "conv3_2_bn"
-  top: "conv3_3a"
-  param { lr_mult: 1  decay_mult: 1 }
-  param { lr_mult: 2  decay_mult: 0 }
-  convolution_param {
-    num_output: 32
-    kernel_h: 3
-    pad_h: 1
-    stride_h: 1
-    kernel_w: 1
-    pad_w: 0
-    stride_w: 1
-    weight_filler { type: "xavier" }
-    bias_filler { type: "constant"  value: 0.1 }
-  }
-}
-layer {
-  name: "conv3_3b"
-  type: "Convolution"
-  bottom: "conv3_3a"
-  top: "conv3_3b"
+  top: "conv3_3"
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
     num_output: 96
-    kernel_h: 1
-    pad_h: 0
-    stride_h: 1
-    kernel_w: 3
-    pad_w: 1
-    stride_w: 1
+    kernel_size: 3
+    pad: 1
+    stride: 1
     weight_filler { type: "xavier" }
     bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
-  name: "conv3_3b1"
+  name: "conv3_3_1"
   type: "Convolution"
-  bottom: "conv3_3a"
-  top: "conv3_3b1"
+  bottom: "conv3_2_bn"
+  top: "conv3_3_1"
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
     num_output: 32
-    kernel_h: 1
-    pad_h: 0
-    stride_h: 1
-    kernel_w: 3
-    pad_w: 1
-    stride_w: 1
+    kernel_size: 3
+    pad: 1
+    stride: 1
     weight_filler { type: "xavier" }
     bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
-  name: "conv3_3b2"
+  name: "conv3_3_2"
   type: "Convolution"
-  bottom: "conv3_3b1"
-  top: "conv3_3b2"
+  bottom: "conv3_3_1"
+  top: "conv3_3_2"
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
@@ -459,13 +347,13 @@ layer {
 layer {
   name: "relu3_3"
   type: "ReLU"
-  bottom: "conv3_3b2"
-  top: "conv3_3b2"
+  bottom: "conv3_3_2"
+  top: "conv3_3_2"
 }
 layer {
   name: "conv3_3_bn"
   type: "BatchNorm"
-  bottom: "conv3_3b2"
+  bottom: "conv3_3_2"
   top: "conv3_3_bn"
   param { lr_mult: 0  decay_mult: 0 }
   param { lr_mult: 0  decay_mult: 0 }
@@ -521,67 +409,42 @@ layer {
 
 ## Conv 4
 layer {
-  name: "conv4_1a"
+  name: "conv4_1"
   type: "Convolution"
   bottom: "pool3"
-  top: "conv4_1a"
-  param { lr_mult: 1  decay_mult: 1 }
-  param { lr_mult: 2  decay_mult: 0 }
-  convolution_param {
-    num_output: 54
-    kernel_h: 3
-    pad_h: 1
-    stride_h: 1
-    kernel_w: 1
-    pad_w: 0
-    stride_w: 1
-    weight_filler { type: "xavier" }
-    bias_filler { type: "constant"  value: 0.1 }
-  }
-}
-layer {
-  name: "conv4_1b"
-  type: "Convolution"
-  bottom: "conv4_1a"
-  top: "conv4_1b"
+  top: "conv4_1"
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
     num_output: 144
-    kernel_h: 1
-    pad_h: 0
-    stride_h: 1
-    kernel_w: 3
-    pad_w: 1
-    stride_w: 1
+    kernel_size: 3
+    pad: 1
+    stride: 1
     weight_filler { type: "xavier" }
     bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
-  name: "conv4_1b1"
+  name: "conv4_1_1"
   type: "Convolution"
-  bottom: "conv4_1a"
-  top: "conv4_1b1"
+  bottom: "pool3"
+  top: "conv4_1_1"
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
     num_output: 54
-    kernel_h: 1
-    pad_h: 0
-    stride_h: 1
-    kernel_w: 3
-    pad_w: 1
-    stride_w: 1
+    kernel_size: 3
+    pad: 1
+    stride: 1
     weight_filler { type: "xavier" }
     bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
-  name: "conv4_1b2"
+  name: "conv4_1_2"
   type: "Convolution"
-  bottom: "conv4_1b1"
-  top: "conv4_1b2"
+  bottom: "conv4_1_1"
+  top: "conv4_1_2"
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
@@ -596,13 +459,13 @@ layer {
 layer {
   name: "relu4_1"
   type: "ReLU"
-  bottom: "conv4_1b2"
-  top: "conv4_1b2"
+  bottom: "conv4_1_2"
+  top: "conv4_1_2"
 }
 layer {
   name: "conv4_1_bn"
   type: "BatchNorm"
-  bottom: "conv4_1b2"
+  bottom: "conv4_1_2"
   top: "conv4_1_bn"
   param { lr_mult: 0  decay_mult: 0 }
   param { lr_mult: 0  decay_mult: 0 }
