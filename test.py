@@ -8,7 +8,7 @@ import caffe
 from config import Config
 
 caffe.set_mode_gpu()
-#caffe.set_device(3)
+caffe.set_device(0)
 
 def PreprocessImage(path, mean_img, show_img=False):
     img = io.imread(path)

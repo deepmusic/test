@@ -5,7 +5,7 @@ import sys
 from config import Config
 
 caffe.set_mode_gpu()
-#caffe.set_device(3)
+caffe.set_device(0)
 
 def TrueNet(config, filename=None):
     if filename is None:
