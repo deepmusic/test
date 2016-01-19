@@ -22,7 +22,7 @@ layer {
   }
   data_param {
     source: "data/imagenet/ilsvrc12_train_lmdb"
-    batch_size: 28
+    batch_size: 40
     backend: LMDB
   }
 }
@@ -49,7 +49,7 @@ layer {
   }
   data_param {
     source: "data/imagenet/ilsvrc12_val_lmdb"
-    batch_size: 28
+    batch_size: 32
     backend: LMDB
   }
 }
@@ -62,14 +62,8 @@ layer {
   type: "Convolution"
   bottom: "data"
   top: "conv1_1a"
-  param {
-    lr_mult: 1
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
   convolution_param {
     num_output: 11
     kernel_h: 7
@@ -93,14 +87,8 @@ layer {
   type: "Convolution"
   bottom: "conv1_1a"
   top: "conv1_1b1"
-  param {
-    lr_mult: 1
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
   convolution_param {
     num_output: 11
     kernel_h: 1
@@ -124,14 +112,8 @@ layer {
   type: "Convolution"
   bottom: "conv1_1b1"
   top: "conv1_1b2"
-  param {
-    lr_mult: 1
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
   convolution_param {
     num_output: 64
     kernel_size: 1
@@ -158,6 +140,9 @@ layer {
   type: "BatchNorm"
   bottom: "conv1_1b2"
   top: "conv1_1_bn"
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
 }
 layer {
   name: "pool1"
@@ -179,14 +164,8 @@ layer {
   type: "Convolution"
   bottom: "pool1_1"
   top: "conv2_1"
-  param {
-    lr_mult: 1
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
   convolution_param {
     num_output: 64
     kernel_size: 1
@@ -213,6 +192,9 @@ layer {
   type: "BatchNorm"
   bottom: "conv2_1"
   top: "conv2_1_bn"
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
 }
 
 
@@ -222,8 +204,8 @@ layer {
   type: "Convolution"
   bottom: "conv2_1_bn"
   top: "conv3_1a"
-  param { lr_mult: 1  decay_mult: 1 }
-  param { lr_mult: 2  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
   convolution_param {
     num_output: 48
     kernel_h: 5
@@ -241,8 +223,8 @@ layer {
   type: "Convolution"
   bottom: "conv3_1a"
   top: "conv3_1b1"
-  param { lr_mult: 1  decay_mult: 1 }
-  param { lr_mult: 2  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
   convolution_param {
     num_output: 48
     kernel_h: 1
@@ -260,8 +242,8 @@ layer {
   type: "Convolution"
   bottom: "conv3_1b1"
   top: "conv3_1b2"
-  param { lr_mult: 1  decay_mult: 1 }
-  param { lr_mult: 2  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
   convolution_param {
     num_output: 96
     kernel_size: 1
@@ -282,6 +264,9 @@ layer {
   type: "BatchNorm"
   bottom: "conv3_1b2"
   top: "conv3_1_bn"
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
 }
 
 layer {
@@ -289,8 +274,8 @@ layer {
   type: "Convolution"
   bottom: "conv3_1_bn"
   top: "conv3_2a"
-  param { lr_mult: 1  decay_mult: 1 }
-  param { lr_mult: 2  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
   convolution_param {
     num_output: 64
     kernel_h: 3
@@ -308,8 +293,8 @@ layer {
   type: "Convolution"
   bottom: "conv3_2a"
   top: "conv3_2b1"
-  param { lr_mult: 1  decay_mult: 1 }
-  param { lr_mult: 2  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
   convolution_param {
     num_output: 64
     kernel_h: 1
@@ -327,8 +312,8 @@ layer {
   type: "Convolution"
   bottom: "conv3_2b1"
   top: "conv3_2b2"
-  param { lr_mult: 1  decay_mult: 1 }
-  param { lr_mult: 2  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
   convolution_param {
     num_output: 96
     kernel_size: 1
@@ -349,6 +334,9 @@ layer {
   type: "BatchNorm"
   bottom: "conv3_2b2"
   top: "conv3_2_bn"
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
 }
 
 layer {
@@ -356,8 +344,8 @@ layer {
   type: "Convolution"
   bottom: "conv3_2_bn"
   top: "conv3_3a"
-  param { lr_mult: 1  decay_mult: 1 }
-  param { lr_mult: 2  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
   convolution_param {
     num_output: 48
     kernel_h: 3
@@ -375,8 +363,8 @@ layer {
   type: "Convolution"
   bottom: "conv3_3a"
   top: "conv3_3b1"
-  param { lr_mult: 1  decay_mult: 1 }
-  param { lr_mult: 2  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
   convolution_param {
     num_output: 48
     kernel_h: 1
@@ -394,8 +382,8 @@ layer {
   type: "Convolution"
   bottom: "conv3_3b1"
   top: "conv3_3b2"
-  param { lr_mult: 1  decay_mult: 1 }
-  param { lr_mult: 2  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
   convolution_param {
     num_output: 96
     kernel_size: 1
@@ -416,6 +404,9 @@ layer {
   type: "BatchNorm"
   bottom: "conv3_3b2"
   top: "conv3_3_bn"
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
 }
 
 layer {
@@ -423,8 +414,8 @@ layer {
   type: "Convolution"
   bottom: "conv3_3_bn"
   top: "conv3_4"
-  param { lr_mult: 1  decay_mult: 1 }
-  param { lr_mult: 2  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
   convolution_param {
     num_output: 144
     kernel_size: 1
@@ -445,6 +436,9 @@ layer {
   type: "BatchNorm"
   bottom: "conv3_4"
   top: "conv3_4_bn"
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
 }
 
 
@@ -468,8 +462,8 @@ layer {
   type: "Convolution"
   bottom: "pool3"
   top: "conv4_1a"
-  param { lr_mult: 1  decay_mult: 1 }
-  param { lr_mult: 2  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
   convolution_param {
     num_output: 110
     kernel_h: 3
@@ -487,8 +481,8 @@ layer {
   type: "Convolution"
   bottom: "conv4_1a"
   top: "conv4_1b1"
-  param { lr_mult: 1  decay_mult: 1 }
-  param { lr_mult: 2  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
   convolution_param {
     num_output: 110
     kernel_h: 1
@@ -506,8 +500,8 @@ layer {
   type: "Convolution"
   bottom: "conv4_1b1"
   top: "conv4_1b2"
-  param { lr_mult: 1  decay_mult: 1 }
-  param { lr_mult: 2  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
   convolution_param {
     num_output: 144
     kernel_size: 1
