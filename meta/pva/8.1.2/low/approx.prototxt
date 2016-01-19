@@ -22,7 +22,7 @@ layer {
     decay_mult: 0
   }
   convolution_param {
-    num_output: 16
+    num_output: 11
     kernel_h: 7
     pad_h: 3
     stride_h: 2
@@ -84,7 +84,7 @@ layer {
     decay_mult: 0
   }
   convolution_param {
-    num_output: 16
+    num_output: 11
     kernel_h: 1
     pad_h: 0
     stride_h: 1
@@ -293,7 +293,7 @@ layer {
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
-    num_output: 32
+    num_output: 64
     kernel_h: 3
     pad_h: 1
     stride_h: 1
@@ -331,7 +331,7 @@ layer {
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
-    num_output: 32
+    num_output: 64
     kernel_h: 1
     pad_h: 0
     stride_h: 1
@@ -379,7 +379,7 @@ layer {
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
-    num_output: 32
+    num_output: 48
     kernel_h: 3
     pad_h: 1
     stride_h: 1
@@ -417,7 +417,7 @@ layer {
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
-    num_output: 32
+    num_output: 48
     kernel_h: 1
     pad_h: 0
     stride_h: 1
@@ -510,7 +510,7 @@ layer {
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
-    num_output: 54
+    num_output: 110
     kernel_h: 3
     pad_h: 1
     stride_h: 1
@@ -548,7 +548,7 @@ layer {
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
-    num_output: 54
+    num_output: 110
     kernel_h: 1
     pad_h: 0
     stride_h: 1

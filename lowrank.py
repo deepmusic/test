@@ -7,8 +7,8 @@ weight_postfix = '_weight.npy'
 bias_postfix = '_bias.npy'
 data_approx_postfix = '_approx'
 
-num_train_images = 3000
-sample_per_image = 16
+num_train_images = 500
+sample_per_image = 96
 max_num_data = 50000
 
 def ParseInputLayer(x_4d_chw, k_h, k_w, s_h=1, s_w=1):
