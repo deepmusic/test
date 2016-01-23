@@ -1,7 +1,7 @@
-net: "meta/pva/8.1.2/low_ft/approx.train"
+net: "meta/pva/8.1.2/low_ft/approx4.train"
 test_iter: 200
 test_interval: 1000
-base_lr: 0.0001
+base_lr: 0.00001
 lr_policy: "step"
 gamma: 0.9773
 stepsize: 3000
