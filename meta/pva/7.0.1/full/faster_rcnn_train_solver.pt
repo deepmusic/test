@@ -1,0 +1,18 @@
+train_net: "models/PVANET7.0.1/faster_rcnn_once/faster_rcnn_train.pt"
+
+base_lr: 0.001
+lr_policy: "step"
+gamma: 0.9773
+stepsize: 3000
+stepreset: 100
+display: 20
+average_loss: 100
+momentum: 0.9
+weight_decay: 0.0005
+
+# We disable standard caffe solver snapshotting and implement our own snapshot
+# function
+snapshot: 0
+# We still use the snapshot prefix, though
+snapshot_prefix: "PVANET7.0.1_faster_rcnn"
+log_path: "experiments/logs"
