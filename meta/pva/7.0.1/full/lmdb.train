@@ -4,14 +4,10 @@ layer {
   type: "Data"
   top: "data"
   top: "label"
-  include {
-    phase: TRAIN
-  }
+  include { phase: TRAIN }
   transform_param {
     crop_size: 192
-    mean_value: 104
-    mean_value: 117
-    mean_value: 123
+    mean_value: 104  mean_value: 117  mean_value: 123
     mirror: true
   }
   data_param {
@@ -25,14 +21,10 @@ layer {
   type: "Data"
   top: "data"
   top: "label"
-  include {
-    phase: TEST
-  }
+  include { phase: TEST }
   transform_param {
     crop_size: 192
-    mean_value: 104
-    mean_value: 117
-    mean_value: 123
+    mean_value: 104  mean_value: 117  mean_value: 123
     mirror: false
   }
   data_param {
@@ -50,27 +42,13 @@ layer {
   type: "Convolution"
   bottom: "data"
   top: "conv1_1"
-  param {
-    lr_mult: 1
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
     num_output: 16
-    kernel_size: 3
-    pad: 1
-    stride: 2
-    weight_filler {
-      type: "xavier"
-      std: 0.1
-    }
-    bias_filler {
-      type: "constant"
-      value: 0.1
-    }
+    kernel_size: 3  pad: 1  stride: 2
+    weight_filler { type: "xavier"  std: 0.1 }
+    bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
@@ -84,27 +62,13 @@ layer {
   type: "Convolution"
   bottom: "conv1_1"
   top: "conv1_2"
-  param {
-    lr_mult: 1
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
     num_output: 32
-    kernel_size: 3
-    pad: 1
-    stride: 1
-    weight_filler {
-      type: "xavier"
-      std: 0.1
-    }
-    bias_filler {
-      type: "constant"
-      value: 0.1
-    }
+    kernel_size: 3  pad: 1  stride: 1
+    weight_filler { type: "xavier"  std: 0.1 }
+    bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
@@ -122,27 +86,13 @@ layer {
   type: "Convolution"
   bottom: "conv1_2"
   top: "conv2_1"
-  param {
-    lr_mult: 1
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
     num_output: 32
-    kernel_size: 3
-    pad: 1
-    stride: 2
-    weight_filler {
-      type: "xavier"
-      std: 0.1
-    }
-    bias_filler {
-      type: "constant"
-      value: 0.1
-    }
+    kernel_size: 3  pad: 1  stride: 2
+    weight_filler { type: "xavier"  std: 0.1 }
+    bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
@@ -156,27 +106,13 @@ layer {
   type: "Convolution"
   bottom: "conv2_1"
   top: "conv2_2"
-  param {
-    lr_mult: 1
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
     num_output: 64
-    kernel_size: 3
-    pad: 1
-    stride: 1
-    weight_filler {
-      type: "xavier"
-      std: 0.1
-    }
-    bias_filler {
-      type: "constant"
-      value: 0.1
-    }
+    kernel_size: 3  pad: 1  stride: 1
+    weight_filler { type: "xavier"  std: 0.1 }
+    bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
@@ -194,27 +130,13 @@ layer {
   type: "Convolution"
   bottom: "conv2_2"
   top: "conv3_1"
-  param {
-    lr_mult: 1
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
     num_output: 64
-    kernel_size: 3
-    pad: 1
-    stride: 2
-    weight_filler {
-      type: "xavier"
-      std: 0.1
-    }
-    bias_filler {
-      type: "constant"
-      value: 0.1
-    }
+    kernel_size: 3  pad: 1  stride: 2
+    weight_filler { type: "xavier"  std: 0.1 }
+    bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
@@ -228,27 +150,13 @@ layer {
   type: "Convolution"
   bottom: "conv3_1"
   top: "conv3_2"
-  param {
-    lr_mult: 1
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
     num_output: 128
-    kernel_size: 3
-    pad: 1
-    stride: 1
-    weight_filler {
-      type: "xavier"
-      std: 0.1
-    }
-    bias_filler {
-      type: "constant"
-      value: 0.1
-    }
+    kernel_size: 3  pad: 1  stride: 1
+    weight_filler { type: "xavier"  std: 0.1 }
+    bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
@@ -266,27 +174,13 @@ layer {
   type: "Convolution"
   bottom: "conv3_2"
   top: "conv4_1"
-  param {
-    lr_mult: 1
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
     num_output: 128
-    kernel_size: 3
-    pad: 1
-    stride: 2
-    weight_filler {
-      type: "xavier"
-      std: 0.1
-    }
-    bias_filler {
-      type: "constant"
-      value: 0.1
-    }
+    kernel_size: 3  pad: 1  stride: 2
+    weight_filler { type: "xavier"  std: 0.1 }
+    bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
@@ -300,27 +194,13 @@ layer {
   type: "Convolution"
   bottom: "conv4_1"
   top: "conv4_2"
-  param {
-    lr_mult: 1
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
     num_output: 256
-    kernel_size: 3
-    pad: 1
-    stride: 1
-    weight_filler {
-      type: "xavier"
-      std: 0.1
-    }
-    bias_filler {
-      type: "constant"
-      value: 0.1
-    }
+    kernel_size: 3  pad: 1  stride: 1
+    weight_filler { type: "xavier"  std: 0.1 }
+    bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
@@ -338,27 +218,13 @@ layer {
   type: "Convolution"
   bottom: "conv4_2"
   top: "conv5_1"
-  param {
-    lr_mult: 1
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
     num_output: 256
-    kernel_size: 3
-    pad: 1
-    stride: 2
-    weight_filler {
-      type: "xavier"
-      std: 0.1
-    }
-    bias_filler {
-      type: "constant"
-      value: 0.1
-    }
+    kernel_size: 3  pad: 1  stride: 2
+    weight_filler { type: "xavier"  std: 0.1 }
+    bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
@@ -372,27 +238,13 @@ layer {
   type: "Convolution"
   bottom: "conv5_1"
   top: "conv5_2"
-  param {
-    lr_mult: 1
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
     num_output: 512
-    kernel_size: 3
-    pad: 1
-    stride: 1
-    weight_filler {
-      type: "xavier"
-      std: 0.1
-    }
-    bias_filler {
-      type: "constant"
-      value: 0.1
-    }
+    kernel_size: 3  pad: 1  stride: 1
+    weight_filler { type: "xavier"  std: 0.1 }
+    bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
@@ -410,24 +262,12 @@ layer {
   type: "InnerProduct"
   bottom: "conv5_2"
   top: "fc6"
-  param {
-    lr_mult: 1
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
   inner_product_param {
     num_output: 4096
-    weight_filler {
-      type: "xavier"
-      std: 0.005
-    }
-    bias_filler {
-      type: "constant"
-      value: 0.1
-    }
+    weight_filler { type: "xavier"  std: 0.005 }
+    bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
@@ -441,9 +281,7 @@ layer {
   type: "Dropout"
   bottom: "fc6"
   top: "fc6"
-  dropout_param {
-    dropout_ratio: 0.5
-  }
+  dropout_param { dropout_ratio: 0.5 }
 }
 
 ################################################################################
@@ -454,24 +292,12 @@ layer {
   type: "InnerProduct"
   bottom: "fc6"
   top: "fc7"
-  param {
-    lr_mult: 1
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
   inner_product_param {
     num_output: 4096
-    weight_filler {
-      type: "xavier"
-      std: 0.005
-    }
-    bias_filler {
-      type: "constant"
-      value: 0.1
-    }
+    weight_filler { type: "xavier"  std: 0.005 }
+    bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
@@ -485,9 +311,7 @@ layer {
   type: "Dropout"
   bottom: "fc7"
   top: "fc7"
-  dropout_param {
-    dropout_ratio: 0.5
-  }
+  dropout_param { dropout_ratio: 0.5 }
 }
 
 ################################################################################
@@ -498,24 +322,12 @@ layer {
   type: "InnerProduct"
   bottom: "fc7"
   top: "fc8"
-  param {
-    lr_mult: 1
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2
-    decay_mult: 0
-  }
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
   inner_product_param {
     num_output: 1000
-    weight_filler {
-      type: "xavier"
-      std: 0.1
-    }
-    bias_filler {
-      type: "constant"
-      value: 0.1
-    }
+    weight_filler { type: "xavier"  std: 0.1 }
+    bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
@@ -524,12 +336,17 @@ layer {
   bottom: "fc8"
   bottom: "label"
   top: "accuracy"
-  include {
-    phase: TEST
-  }
-  accuracy_param {
-    top_k: 1
-  }
+  include { phase: TEST }
+  accuracy_param { top_k: 1 }
+}
+layer {
+  name: "acc_top5"
+  type: "Accuracy"
+  bottom: "fc8"
+  bottom: "label"
+  top: "accuracy"
+  include { phase: TEST }
+  accuracy_param { top_k: 5 }
 }
 layer {
   name: "loss"
