@@ -344,7 +344,7 @@ layer {
   type: "Accuracy"
   bottom: "fc8"
   bottom: "label"
-  top: "accuracy"
+  top: "acc_top5"
   include { phase: TEST }
   accuracy_param { top_k: 5 }
 }
