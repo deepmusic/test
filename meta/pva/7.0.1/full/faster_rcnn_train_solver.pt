@@ -1,4 +1,4 @@
-train_net: "models/PVANET7.0.1/faster_rcnn_once/faster_rcnn_train.pt"
+train_net: "../test/meta/pva/7.0.1/full/faster_rcnn_train_anchor9.pt"
 
 base_lr: 0.001
 lr_policy: "step"
@@ -14,5 +14,5 @@ weight_decay: 0.0005
 # function
 snapshot: 0
 # We still use the snapshot prefix, though
-snapshot_prefix: "PVANET7.0.1_faster_rcnn"
+snapshot_prefix: "../test/data/pva/7.0.1/full/faster_rcnn"
 log_path: "experiments/logs"
