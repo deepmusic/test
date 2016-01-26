@@ -10,6 +10,14 @@ def conv(prev_top, num_layer, num_filter):
     relu2 = mx.symbol.Activation(name='relu{:d}_1'.format(num_layer), data=conv2, act_type="relu")
     return relu2
 
+def fc(prev_top, num_layer, num_hidden, dropout=True):
+    fc = mx.symbol.FullyConnected(name='fc{:d}'.format(num_layer), data=prev_top, num_hidden=num_hidden)
+    relu = mx.symbol.Activation(name='relu{:d}'.format(num_layer), data=fc, act_type="relu")
+    if dropout:
+        drop = mx.symbol.Dropout(name='drop{:d}'.format(num_layer), data=relu, p=0.5)
+        return drop
+    return relu
+
 def get_symbol(num_classes = 1000):
     layer = mx.symbol.Variable(name='data')
     layer = conv(layer, 1, 16)
@@ -17,6 +25,11 @@ def get_symbol(num_classes = 1000):
     layer = conv(layer, 3, 64)
     layer = conv(layer, 4, 128)
     layer = conv(layer, 5, 256)
+    layer = mx.symbol.Flatten(data=layer)
+    layer = fc(layer, 6, 4096)
+    layer = fc(layer, 7, 4096)
+    layer = fc(layer, 8, num_classes, dropout=False)
+    layer = mx.symbol.SoftmaxOutput(name='prob', data=layer)
     return layer
 
 def load_model(caffeproto, caffemodel):
@@ -28,7 +41,7 @@ def load_model(caffeproto, caffemodel):
     arg_params = {}
     is_first_conv = True
     for layer_name in caffe_net.params.keys():
-        if layer_name.startswith('data') or layer_name.startswith('fc'):
+        if layer_name.startswith('data'):
             continue
 
         print 'Loading {} parameters'.format(layer_name)
