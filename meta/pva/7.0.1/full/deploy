@@ -227,13 +227,77 @@ layer {
   top: "conv5_2"
 }
 
+layer {
+  name: "downsample"
+  type: "Pooling"
+  bottom: "conv3_2"
+  top: "downsample"
+  pooling_param {
+    kernel_size: 3  pad: 0  stride: 2
+    pool: MAX
+  }
+}
+layer {
+  name: "upsample"
+  type: "Deconvolution"
+  bottom: "conv5_2"
+  top: "upsample"
+  convolution_param {
+    num_output: 512
+    kernel_size: 4  pad: 1  stride: 2
+    group: 512
+    weight_filler: { type: "bilinear" } 
+    bias_term: false
+  }
+  param { lr_mult: 1  decay_mult: 1 }
+}
+layer {
+  name: "concat"
+  type: "Concat"
+  bottom: "downsample"
+  bottom: "conv4_2"
+  bottom: "upsample"
+  top: "concat"
+  concat_param { axis: 1 }
+}
+layer {
+  name: "convf"
+  type: "Convolution"
+  bottom: "concat"
+  top: "convf"
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
+  convolution_param {
+    num_output: 512
+    kernel_size: 1  pad: 0  stride: 1
+    weight_filler { type: "xavier"  std: 0.1 }
+    bias_filler { type: "constant"  value: 0.1 }
+  }
+}
+layer {
+  name: "reluf"
+  type: "ReLU"
+  bottom: "convf"
+  top: "convf"
+}
+layer {
+  name: "poolf"
+  type: "Pooling"
+  bottom: "convf"
+  top: "poolf"
+  pooling_param {
+    kernel_size: 2  pad: 0  stride: 2
+    pool: MAX
+  }
+}
+
 ################################################################################
 ## fc 6
 ################################################################################
 layer {
   name: "fc6"
   type: "InnerProduct"
-  bottom: "conv5_2"
+  bottom: "poolf"
   top: "fc6"
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }

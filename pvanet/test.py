@@ -9,7 +9,8 @@ import logging
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
 
-prefix = '../data/pva/7.0.1/full/caffemodel.mx'
+#prefix = '../data/pva/7.0.1/full/caffemodel.mx'
+prefix = '../data/pva/7.0.1/full/PVANET7.0.1_pre1.7_anchor9_faster_rcnn_once_iter_1500000.caffemodel.mx'
 num_round = 1
 model = mx.model.FeedForward.load(prefix, num_round, ctx=mx.gpu(), numpy_batch_size=1)
 
