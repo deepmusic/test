@@ -355,21 +355,25 @@ layer {
 ## fc 8
 ################################################################################
 layer {
-  name: "fc8"
+  name: "cls_score"
   type: "InnerProduct"
   bottom: "fc7"
-  top: "fc8"
+  top: "cls_score"
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   inner_product_param {
-    num_output: 1000
+    num_output: 21
     weight_filler { type: "xavier"  std: 0.1 }
     bias_filler { type: "constant"  value: 0.1 }
   }
 }
 layer {
-  name: "prob"
+  name: "cls_prob"
   type: "Softmax"
-  bottom: "fc8"
-  top: "prob"
+  bottom: "cls_score"
+  top: "cls_prob"
+  loss_param {
+    ignore_label: -1
+    normalize: true
+  }
 }
