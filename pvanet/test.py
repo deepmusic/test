@@ -55,6 +55,7 @@ def Prediction(net, img_paths, gt_labels):
         batch[i] = PreprocessImage('../' + img_path)
     start_time = datetime.datetime.now()
     probs = model.predict(batch)
+    print probs
     elapsed_time = (datetime.datetime.now() - start_time).total_seconds() * 1000
     preds = [np.argsort(prob)[-5:][::-1] for prob in probs]
     tps_top1 = [int(gt) == pred[0] for pred, gt in zip(preds, gt_labels)]

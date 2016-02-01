@@ -13,12 +13,10 @@ def conv(prev_top, num_layer, num_filter):
 def fc(prev_top, num_layer, num_hidden, dropout=True):
     fc = mx.symbol.FullyConnected(name='fc{:d}'.format(num_layer), data=prev_top, num_hidden=num_hidden)
     relu = mx.symbol.Activation(name='relu{:d}'.format(num_layer), data=fc, act_type='relu')
-    if dropout:
-        drop = mx.symbol.Dropout(name='drop{:d}'.format(num_layer), data=relu, p=0.5)
-        return drop
-    return relu
+    drop = mx.symbol.Dropout(name='drop{:d}'.format(num_layer), data=relu, p=0.5)
+    return drop
 
-def get_symbol(num_classes = 1000):
+def get_symbol(num_classes=21):
     layer = mx.symbol.Variable(name='data')
     layer = conv(layer, 1, 16)
     layer = conv(layer, 2, 32)
@@ -26,9 +24,11 @@ def get_symbol(num_classes = 1000):
     layer = conv(layer, 4, 128); layer4 = layer
     layer = conv(layer, 5, 256); layer5 = layer
 
-    up = mx.symbol.Deconvolution(name='upsample', data=layer5,
-                                kernel=(4, 4), stride=(2, 2), pad=(1, 1), num_filter=512,
-                                num_group=512, no_bias=True)
+    layer5_slice = mx.symbol.SliceChannel(data=layer5, num_outputs=512, name='conv5_slice')
+    deconv = [mx.symbol.Deconvolution(name='upsample_{:d}'.format(i), data=layer5_slice[i],
+                                      kernel=(4, 4), stride=(2, 2), pad=(1, 1), num_filter=1,
+                                      no_bias=True) for i in range(512)]
+    up = mx.symbol.Concat(*deconv, name='concat')
     down = mx.symbol.Pooling(name='downsample', data=layer3,
                              kernel=(3, 3), stride=(2, 2), pad=(0, 0), pool_type='max')
     layer = mx.symbol.Concat(*[down, layer4, up], name='concat')
@@ -36,18 +36,19 @@ def get_symbol(num_classes = 1000):
                                   kernel=(1, 1), stride=(1, 1), pad=(0, 0), num_filter=512)
     layer = mx.symbol.Activation(name='reluf', data=layer, act_type='relu')
     layer = mx.symbol.Pooling(name='poolf', data=layer,
-                             kernel=(2, 2), stride=(2, 2), pad=(0, 0), pool_type='max')
+                              kernel=(2, 2), stride=(2, 2), pad=(0, 0), pool_type='max')
 
     layer = mx.symbol.Flatten(data=layer)
     layer = fc(layer, 6, 4096)
     layer = fc(layer, 7, 4096)
-    layer = fc(layer, 8, num_classes, dropout=False)
-    layer = mx.symbol.SoftmaxOutput(name='prob', data=layer)
+
+    layer = mx.symbol.FullyConnected(name='cls_score', data=layer, num_hidden=num_classes)
+    layer = mx.symbol.SoftmaxOutput(name='cls_prob', data=layer)
     return layer
 
-def load_model(caffeproto, caffemodel):
+def load_model(caffeproto, caffemodel, num_classes=21):
     caffe_net = caffe.Net(caffeproto, caffemodel, caffe.TEST)
-    symbol = get_symbol()
+    symbol = get_symbol(num_classes)
     arg_shapes, out_shapes, aux_shapes = symbol.infer_shape(**{'data': (1, 3, 192, 192)})
     arg_shape_dic = { name: shape for name, shape in zip(symbol.list_arguments(), arg_shapes) }
 
@@ -64,19 +65,28 @@ def load_model(caffeproto, caffemodel):
             print 'Swapping BGR -> RGB order'
             wmat[:, [0, 2], :, :] = wmat[:, [2, 0], :, :]
             is_first_conv = False
-        #wmat = wmat.reshape((wmat.shape[0], -1))
+
+        if layer_name.startswith('upsample'):
+            for i in range(wmat.shape[0]):
+                weight_name = layer_name + '_{:d}_weight'.format(i)
+                if arg_shape_dic.has_key(weight_name):
+                    wmat_i = wmat[i].reshape((1, wmat.shape[1], wmat.shape[2], wmat.shape[3]))
+                    print 'Original {}: {}'.format(weight_name, wmat_i.shape)
+                    print 'Target {}: {}'.format(weight_name, arg_shape_dic[weight_name])
+                    arg_params[weight_name] = mx.nd.zeros(arg_shape_dic[weight_name])
+                    arg_params[weight_name][:] = wmat_i
+
         weight_name = layer_name + '_weight'
         if arg_shape_dic.has_key(weight_name):
             print 'Original {}: {}'.format(weight_name, wmat.shape)
             print 'Target {}: {}'.format(weight_name, arg_shape_dic[weight_name])
-            arg_params[weight_name] = mx.nd.zeros(wmat.shape)
+            arg_params[weight_name] = mx.nd.zeros(arg_shape_dic[weight_name])
             arg_params[weight_name][:] = wmat
 
         if len(caffe_net.params[layer_name]) == 1:
             continue
 
         bias = caffe_net.params[layer_name][1].data
-        #bias.reshape((bias.shape[0], 1))
         bias_name = layer_name + '_bias'
         if arg_shape_dic.has_key(bias_name):
             print 'Original {}: {}'.format(bias_name, bias.shape)
