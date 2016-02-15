@@ -14,7 +14,7 @@ prefix = '../data/pva/7.0.1/full/frcnn_anchor25_iter_146000.caffemodel.mx'
 num_round = 1
 model = mx.model.FeedForward.load(prefix, num_round, ctx=mx.gpu(), numpy_batch_size=1)
 
-def PreprocessImage(path, size=(192, 192)):
+def PreprocessImage(path, size=(640, 640)):
     img = io.imread(path)
 
     short_edge = min(img.shape[:2])
@@ -61,3 +61,10 @@ def Prediction(net, img_paths, gt_labels):
     tps_top1 = [int(gt) == pred[0] for pred, gt in zip(preds, gt_labels)]
     fns_top5 = [int(gt) not in pred for pred, gt in zip(preds, gt_labels)]
     return (tps_top1, fns_top5, elapsed_time)
+
+def voc(num):
+    sample = PreprocessImage('../data/voc/2007/VOC2007/JPEGImages/{:06d}.jpg'.format(num))
+    model.predict(sample)
+    return [model._pred_exec.outputs[0].asnumpy(), model._pred_exec.outputs[1].asnumpy()]
+
+voc(1)

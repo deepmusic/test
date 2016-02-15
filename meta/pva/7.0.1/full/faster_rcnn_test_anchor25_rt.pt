@@ -1,5 +1,34 @@
 #Data
-name: "ZF"
+name: "PVA-NET"
+
+scale: 600
+max_size: 1000
+multiple: 32
+mean_value: 102.9801
+mean_value: 115.9465
+mean_value: 122.7717
+nms_thresh: 0.3
+conf_thresh: 0.7
+class_name: "bicycle"
+class_name: "bird"
+class_name: "bus"
+class_name: "car"
+class_name: "cat"
+class_name: "dog"
+class_name: "horse"
+class_name: "motorbike"
+class_name: "person"
+class_name: "train"
+class_name: "aeroplane"
+class_name: "boat"
+class_name: "bottle"
+class_name: "chair"
+class_name: "cow"
+class_name: "diningtable"
+class_name: "pottedplant"
+class_name: "sheep"
+class_name: "sofa"
+class_name: "tvmonitor"
 
 input: "data"
 input_shape {
@@ -14,7 +43,7 @@ input_shape {
   dim: 1
   dim: 3
 }
-
+    
 #ConvNet
 ################################################################################
 ## Conv 1
