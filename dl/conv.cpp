@@ -21,12 +21,6 @@ typedef struct ConvOption_ {
   ushort stride_w;
 } ConvOption;
 
-// convert bottom3d (C x H x W)
-//         -> bottom5d (C x kernel_h x kernel_w x H5 x W5)
-//   bottom5d[c][kh][kw][h5][w5] = bottom3d[c][h][w]
-//     h = -pad_h + kh + stride_h * h5
-//     w = -pad_w + kw + stride_w * w5
-//     if !(0 <= h < H) or !(0 <= w < W), assign 0
 inline void convert_bottom(const real* bottom3d, real* const bottom5d,
                            const ushort C, const ushort H, const ushort W,
                            const ushort H5, const ushort W5,
@@ -78,7 +72,7 @@ inline void convert_bottom(const real* bottom3d, real* const bottom5d,
 
 void forward(const Tensor* bottom4d, Tensor* const top4d,
              const Tensor* weight4d, const Tensor* bias1d,
-             real* const temp_data,
+             real* const temp_data, const real* const_data,
              const ConvOption* options)
 {
   // bottom shape: N x C x H x W
@@ -123,7 +117,7 @@ void forward(const Tensor* bottom4d, Tensor* const top4d,
                    bottom_C, bottom_H, bottom_W, top_H, top_W,
                    kernel_h, kernel_w, pad_h, pad_w, stride_h, stride_w);
 
-   {
+   { // do matrix operations
     const uint top_HW = (uint)top_H * top_W;
     const uint weight_col = (uint)bottom_C * kernel_h * kernel_w;
 
@@ -135,15 +129,13 @@ void forward(const Tensor* bottom4d, Tensor* const top4d,
                 0, p_top_data, top_HW);
 
     // add bias
-    for (int i = 0; i < top_HW; ++i)
-      temp_data[i] = 1;
     cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
                 top_C, top_HW, 1,
                 (real)1.0, bias1d->data, 1,
-                temp_data, top_HW,
+                const_data, top_HW,
                 (real)1.0, p_top_data, top_HW);
-   }
-  }
+   } // end matrix operations
+  } // endfor batch
  } // end forward-pass
 }
 
@@ -152,7 +144,7 @@ void backward(Tensor *top_grad, Tensor *bottom_grad, Tensor *top_layer, Tensor *
   return;
 }
 
-uint flatten_size(Tensor *tensor)
+uint flatten_size(const Tensor* tensor)
 {
   uint size = 1;
   for (int d = 0; d < tensor->ndim; ++d)
@@ -163,7 +155,7 @@ uint flatten_size(Tensor *tensor)
 int main(int argc, char **argv)
 {
   Tensor X, Y, W, b;
-  real X_data[5000], Y_data[5000], W_data[500], b_data[50], temp_data[5000];
+  real X_data[5000], Y_data[5000], W_data[500], b_data[50], temp_data[5000], const_data[5000];
   X.ndim = 4; X.shape[0] = 2; X.shape[1] = 10; X.shape[2] = 5; X.shape[3] = 5;
   W.ndim = 4; W.shape[0] = 5; W.shape[1] = 10; W.shape[2] = 3; W.shape[3] = 3;
   b.ndim = 1; b.shape[0] = 5;
@@ -190,8 +182,11 @@ int main(int argc, char **argv)
   for (int i = 0; i < W_size; ++i)
     fscanf(fp, "%f", &W.data[i]);
   fclose(fp);
+  for (int i = 0; i < 5000; ++i) {
+    const_data[i] = 1;
+  }
 
-  forward(&X, &Y, &W, &b, temp_data, &option);
+  forward(&X, &Y, &W, &b, temp_data, const_data, &option);
   printf("Y (%d x %d x %d x %d)\n", Y.shape[0], Y.shape[1], Y.shape[2], Y.shape[3]);
   for (int n = 0; n < Y.shape[0]; ++n) {
     for (int c = 0; c < Y.shape[1]; ++c) {

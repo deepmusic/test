@@ -36,12 +36,12 @@ typedef struct ConvOption_ {
 } ConvOption;
 
 #ifdef PASS
-__device__ void convert_bottom_patch(const real* bottom3d_patch,
+__global__ void convert_bottom_patch(const real* bottom3d_patch,
                                      real* const bottom5d_hyperpatch,
                                      const ushort kernel_h, const ushort kernel_w,
                                      const short h_min, const short h_max,
-                                     const short w_min, const short w_max, const ushort W,
-                                     const uint stride_hyperpatch)
+                                     const short w_min, const short w_max,
+                                     const ushort W, const uint stride_hyperpatch)
 {
   real* p_bottom5d = bottom5d_hyperpatch;
   for (ushort kh = blockIdx.x * blockDim.x + threadIdx.x;
@@ -64,10 +64,11 @@ __device__ void convert_bottom_patch(const real* bottom3d_patch,
 
 // convert bottom3d (C x H x W)
 //         -> bottom5d (C x kernel_h x kernel_w x H5 x W5)
-//   bottom5d[c][kh][kw][h5][w5] = bottom3d[c][h][w]
-//     h = (-pad_h + stride_h * h5) + kh
-//     w = (-pad_w + stride_w * w5) + kw
-//     if !(0 <= h < H) or !(0 <= w < W), assign 0
+//   given (c, h5, w5), for kh: [0, ..., kernel_h) and kw: [0, ..., kernel_w),
+//     bottom5d[c][kh][kw][h5][w5] = bottom3d[c][h][w]
+//       h = (-pad_h + stride_h * h5) + kh
+//       w = (-pad_w + stride_w * w5) + kw
+//       if !(0 <= h < H) or !(0 <= w < W), assign 0
 __global__ void convert_bottom(const real* bottom3d, real* const bottom5d,
                                const ushort C, const ushort H, const ushort W,
                                const ushort H5, const ushort W5,
@@ -95,19 +96,22 @@ __global__ void convert_bottom(const real* bottom3d, real* const bottom5d,
     const real* p_bottom3d = bottom3d + (c * H + h0) * W + w0;
 
 #ifdef PASS
-    dim3 kernel_size(3, 3);
-    convert_bottom_patch<<<1, kernel_size>>>(p_bottom3d, p_bottom5d,
-                                             kernel_h, kernel_w,
-                                             -h0, H-h0, -w0, W-w0, W,
-                                             kernel_h * kernel_w);
+    dim3 num_threads(3, 3);
+    dim3 num_blocks((kernel_h + 3 - 1)/3, (kernel_w + 3 - 1)/3);
+    convert_bottom_patch<<<num_blocks, num_threads>>>(p_bottom3d, p_bottom5d,
+                                                      kernel_h, kernel_w,
+                                                      -h0, H-h0, -w0, W-w0,
+                                                      W, top_HW);
 #else
-    for (ushort kh = 0; kh < kernel_h; ++kh) {
-      for (ushort kw = 0; kw < kernel_w; ++kw) {
+    for (int kh = 0; kh < kernel_h; ++kh) {
+      for (int kw = 0; kw < kernel_w; ++kw) {
         if (h0 + kh >= 0 && h0 + kh < H && w0 + kw >= 0 && w0 + kw < W) {
-          p_bottom5d[(kh * W + kw) * kernel_h * kernel_w] = p_bottom3d[kh * W + kw];
+          // bottom5d[c][kh][kw][h5][w5] = bottom3d[c][h0 + kh][w0 + kw]
+          p_bottom5d[(kh * kernel_w + kw) * top_HW] = p_bottom3d[kh * W + kw];
         }
         else {
-          p_bottom5d[(kh * W + kw) * kernel_h * kernel_w] = 0;
+          // if [h0 + kh][w0 + kw] is in a zero-padded region, assign 0
+          p_bottom5d[(kh * kernel_w + kw) * top_HW] = 0;
         }
       }
     }
@@ -158,14 +162,15 @@ void forward(const Tensor* bottom4d, Tensor* const top4d,
     real* p_top_data = top4d->data + n * top_CHW;
 
     // convert bottom shape: C x H x W -> (C * kernel_h * kernel_w) x (H' * W')
-    const int num_threads = 1024/9;
-    const int num_blocks = bottom_C * top_H * top_W / num_threads;
+    const int num_threads = 1024;
+    const int num_blocks = (num_threads - 1 + bottom_C * top_H * top_W) / num_threads;
     convert_bottom<<<num_blocks, num_threads>>>(p_bottom_data, temp_data,
                                                 bottom_C, bottom_H, bottom_W,
                                                 top_H, top_W,
                                                 kernel_h, kernel_w,
                                                 (short)pad_h, (short)pad_w,
                                                 stride_h, stride_w);
+    
 
    {
     const uint top_HW = (uint)top_H * top_W;
@@ -225,13 +230,17 @@ int main(int argc, char **argv)
   option.stride_h = 2;
   option.stride_w = 2;
 
+  printf("set device\n");
   CUDA_CHECK(cudaSetDevice(0));
-  CUDA_CHECK(cudaGetDevice(0));
+  //printf("get device\n");
+  //CUDA_CHECK(cudaGetDevice(0));
+  printf("cublas initialization\n");
   if (cublasCreate(&cublas_handle) != CUBLAS_STATUS_SUCCESS) {
     printf("cublas creation failed\n");
   }
   option.handle = &cublas_handle;
 
+  printf("cuda malloc\n");
   CUDA_CHECK(cudaMalloc(&X.data, 5000*sizeof(real)));
   CUDA_CHECK(cudaMalloc(&Y.data, 5000*sizeof(real)));
   CUDA_CHECK(cudaMalloc(&W.data, 500*sizeof(real)));
@@ -239,6 +248,7 @@ int main(int argc, char **argv)
   CUDA_CHECK(cudaMalloc(&p_temp_data, 5000*sizeof(real)));
   CUDA_CHECK(cudaMalloc(&p_const_data, 5000*sizeof(real)));
 
+  printf("data loading\n");
   FILE* fp;
   fp = fopen("X.txt", "r");
   uint X_size = flatten_size(&X);
@@ -254,13 +264,16 @@ int main(int argc, char **argv)
     temp_data[i] = 1;
   }
 
+  printf("memcopy\n");
   CUDA_CHECK(cudaMemcpy(X.data, X_data, 5000*sizeof(real), cudaMemcpyHostToDevice));
   CUDA_CHECK(cudaMemcpy(W.data, W_data, 500*sizeof(real), cudaMemcpyHostToDevice));
   CUDA_CHECK(cudaMemcpy(b.data, b_data, 50*sizeof(real), cudaMemcpyHostToDevice));
   CUDA_CHECK(cudaMemcpy(p_const_data, temp_data, 5000*sizeof(real), cudaMemcpyHostToDevice));
 
+  printf("do forward\n");
   forward(&X, &Y, &W, &b, p_temp_data, p_const_data, &option);
 
+  printf("memcpy\n");
   CUDA_CHECK(cudaMemcpy(Y_data, Y.data, 5000*sizeof(real), cudaMemcpyDeviceToHost));
 
   printf("Y (%d x %d x %d x %d)\n", Y.shape[0], Y.shape[1], Y.shape[2], Y.shape[3]);
@@ -277,12 +290,14 @@ int main(int argc, char **argv)
     printf("\n\n===============================\n\n");
   }
 
+  printf("cuda free\n");
   CUDA_CHECK(cudaFree(X.data));
   CUDA_CHECK(cudaFree(Y.data));
   CUDA_CHECK(cudaFree(W.data));
   CUDA_CHECK(cudaFree(b.data));
   CUDA_CHECK(cudaFree(p_temp_data));
   CUDA_CHECK(cudaFree(p_const_data));
+  printf("cublas finalization\n");
   if (cublasDestroy(cublas_handle) != CUBLAS_STATUS_SUCCESS) {
     printf("cublas destruction failed\n");
   }
