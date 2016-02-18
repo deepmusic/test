@@ -162,7 +162,7 @@ void forward(const Tensor* bottom4d, Tensor* const top4d,
     real* p_top_data = top4d->data + n * top_CHW;
 
     // convert bottom shape: C x H x W -> (C * kernel_h * kernel_w) x (H' * W')
-    const int num_threads = 1024;
+    const int num_threads = 64;
     const int num_blocks = (num_threads - 1 + bottom_C * top_H * top_W) / num_threads;
     convert_bottom<<<num_blocks, num_threads>>>(p_bottom_data, temp_data,
                                                 bottom_C, bottom_H, bottom_W,
