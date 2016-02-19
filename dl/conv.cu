@@ -1,41 +1,5 @@
-#include <cblas.h>
-#include <string.h>
-#include <stdio.h>
-
-#include <cublas_v2.h>
-#include <cuda.h>
-#include <cuda_runtime.h>
-#include <curand.h>
-#include <driver_types.h>
-
-#define CUDA_CHECK(condition) \
-  /* Code block avoids redefinition of cudaError_t error */ \
-  do { \
-    cudaError_t error = condition; \
-    if (error != cudaSuccess) printf("%s\n", cudaGetErrorString(error)); \
-  } while (0)
-
-typedef float real;
-
-#define g_max_num_items 128
-#define g_max_ndim 4
-
-typedef struct Tensor_ {
-  real* data;
-  int num_items;
-  int ndim;
-  int shape[g_max_num_items][g_max_ndim];
-} Tensor;
-
-typedef struct ConvOption_ {
-  int kernel_h;
-  int kernel_w;
-  int pad_h;
-  int pad_w;
-  int stride_h;
-  int stride_w;
-  void* handle;
-} ConvOption;
+#include "layer.h"
+#include "cuda_settings.h"
 
 #ifdef PASS
 __global__ void convert_bottom_patch(const real* bottom3d_patch,
@@ -200,18 +164,6 @@ void forward(const Tensor* bottom3d, Tensor* const top3d,
 void backward(Tensor *top_grad, Tensor *bottom_grad, Tensor *top_layer, Tensor *bottom_layer, ConvOption *options)
 {
   return;
-}
-
-int flatten_size(const Tensor* tensor)
-{
-  int size = 0;
-  for (int n = 0; n < tensor->num_items; ++n) {
-    int size_n = 1;
-    for (int d = 0; d < tensor->ndim; ++d)
-      size_n *= tensor->shape[n][d];
-    size += size_n;
-  }
-  return size;
 }
 
 #define DATA_SIZE 30000

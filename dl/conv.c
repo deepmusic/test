@@ -1,35 +1,17 @@
-#include <cblas.h>
-#include <string.h>
-#include <stdio.h>
+#include "layer.h"
 
-typedef float real;
-
-#define g_max_num_items 128
-#define g_max_ndim 4
-
-typedef struct Tensor_ {
-  real* data;
-  int num_items;
-  int ndim;
-  int shape[g_max_num_items][g_max_ndim];
-} Tensor;
-
-typedef struct ConvOption_ {
-  int kernel_h;
-  int kernel_w;
-  int pad_h;
-  int pad_w;
-  int stride_h;
-  int stride_w;
-  void* handle;
-} ConvOption;
-
+// convert bottom3d (C x H x W)
+//         -> bottom5d (C x kernel_h x kernel_w x H5 x W5)
+//   bottom5d[c][kh][kw][h5][w5] = bottom3d[c][h][w]
+//     h = (-pad_h + stride_h * h5) + kh
+//     w = (-pad_w + stride_w * w5) + kw
+//     if !(0 <= h < H) or !(0 <= w < W), assign 0
 void convert_bottom(const real* bottom3d, real* const bottom5d,
-                           const int C, const int H, const int W,
-                           const int H5, const int W5,
-                           const int kernel_h, const int kernel_w,
-                           const int pad_h, const int pad_w,
-                           const int stride_h, const int stride_w)
+                    const int C, const int H, const int W,
+                    const int H5, const int W5,
+                    const int kernel_h, const int kernel_w,
+                    const int pad_h, const int pad_w,
+                    const int stride_h, const int stride_w)
 {
   for (int c = 0; c < C; ++c) {
    for (int kh = 0; kh < kernel_h; ++kh) {
@@ -141,18 +123,6 @@ void forward(const Tensor* bottom3d, Tensor* const top3d,
 void backward(Tensor *top_grad, Tensor *bottom_grad, Tensor *top_layer, Tensor *bottom_layer, ConvOption *options)
 {
   return;
-}
-
-int flatten_size(const Tensor* tensor)
-{
-  int size = 0;
-  for (int n = 0; n < tensor->num_items; ++n) {
-    int size_n = 1;
-    for (int d = 0; d < tensor->ndim; ++d)
-      size_n *= tensor->shape[n][d];
-    size += size_n;
-  }
-  return size;
 }
 
 int main(int argc, char **argv)
