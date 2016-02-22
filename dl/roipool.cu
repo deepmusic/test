@@ -12,7 +12,7 @@ typedef struct ROIPoolOption_
 //   given pixel (r, c, h, w) at top4d and RoI (x1, y1,, x2, y2),
 //     top4d[r][c][h][w] = max_{hb,wb}{ bottom3d[c][hb][wb] }
 //       hb, wb: pooling region corresponding to (h, w)
-void roi_pool(const real* bottom3d, const real* roi2d,
+__global__ void roi_pool(const real* bottom3d, const real* roi2d,
                          real* const top4d, int* const argmax4d,
                          const int R, const int C, const int H, const int W,
                          const int top_H, const int top_W,
@@ -21,10 +21,9 @@ void roi_pool(const real* bottom3d, const real* roi2d,
   const int top_RCHW = R * C * top_H * top_W;
 
   // thread index: (r, c, h, w) = r*C*H'*W' + c*H'*W' + h*W' + w
-  //for (int index = blockIdx.x * blockDim.x + threadIdx.x;
-  //   index < top_RCHW;
-  //     index += blockDim.x) {
-  for (int index = 0; index < top_RCHW; ++index) {
+  for (int index = blockIdx.x * blockDim.x + threadIdx.x;
+       index < top_RCHW;
+       index += blockDim.x) {
     // parse thread index -> (r, c, h, w)
     const int r = index / top_W / top_H / C;
     const int c = (index / top_W / top_H) % C;
@@ -42,6 +41,7 @@ void roi_pool(const real* bottom3d, const real* roi2d,
     const int hb_end = min(H, max(1, (int)ceil(y1 + (h + 1.0f) * roi_H / top_H)));
     const int wb_start = min(W - 1, max(0, (int)floor(x1 + w * roi_W / top_W)));
     const int wb_end = min(W, max(1, (int)ceil(x1 + (w + 1.0f) * roi_W / top_W)));
+    real maxval = 0;
 #else
     int roi_start_w = round(roi2d[r * 4 + 0] * spatial_scale);
     int roi_start_h = round(roi2d[r * 4 + 1] * spatial_scale);
@@ -71,9 +71,9 @@ void roi_pool(const real* bottom3d, const real* roi2d,
     int wb_start = min(max(wstart + roi_start_w, 0), W);
     int wb_end = min(max(wend + roi_start_w, 0), W);
     bool is_empty = (hb_end <= hb_start) || (wb_end <= wb_start);
+    real maxval = (is_empty) ? 0 : -100;
 #endif
     // max pooling
-    real maxval = 0;
     int maxidx = -1;
     const real* p_bottom_data = &bottom3d[c * H * W];
     for (int hb = hb_start; hb < hb_end; ++hb) {
@@ -115,11 +115,10 @@ void forward(const Tensor* bottom3d, const Tensor* roi2d,
     // bottom3d (C x H x W) -> top4d (R x C x H' x W')
     const int num_threads = 1024;
     const int num_blocks = (num_threads - 1 + top_RCHW) / num_threads;
-    //roi_pool<<<num_blocks, num_threads>>>(
-    roi_pool(
+    roi_pool<<<num_blocks, num_threads>>>(
         p_bottom_data, p_roi_data, p_top_data, p_argmax_data,
         R, C, H, W, top_H, top_W, option->spatial_scale);
-    //CUDA_CHECK(cudaPeekAtLastError());
+    CUDA_CHECK(cudaPeekAtLastError());
    } // end RoI pooling
 
     // locate next data
@@ -246,33 +245,53 @@ int main(void)
   real* convf_data = (real*)malloc(512*36*46*sizeof(real));
   real* roi_data = (real*)malloc(300*4*sizeof(real));
   real* out_data = (real*)malloc(300*512*6*6*sizeof(real));
-  int* argmax_data = (int*)malloc(300*512*6*6*sizeof(int));
-
-  convf.ndim = 3; convf.num_items = 1; convf.data = convf_data;
+  int* argmax_data;
+ {
+  convf.ndim = 3; convf.num_items = 1;
   for (int i = 0; i < convf.num_items; ++i) {
     convf.shape[i][0] = 512;
     convf.shape[i][1] = 36;
     convf.shape[i][2] = 46;
   }
-  roi.ndim = 2; roi.num_items = convf.num_items; roi.data = roi_data;
+  roi.ndim = 2; roi.num_items = convf.num_items;
   for (int i = 0; i < roi.num_items; ++i) {
     roi.shape[i][0] = 300;
     roi.shape[i][1] = 4;
   }
-  out.ndim = 4; out.num_items = convf.num_items; out.data = out_data;
-
-  FILE* fp = fopen("convf.txt", "r");
+  out.ndim = 4; out.num_items = convf.num_items;
+ }
+ {
+  FILE* fp = fopen("../data/temp/roipool_bottom0.txt", "r");
   for (int i = 0; i < flatten_size(&convf); ++i)
     fscanf(fp, "%f", &convf_data[i]);
   fclose(fp);
-  fp = fopen("roi.txt", "r");
+  fp = fopen("../data/temp/proposal_top0.txt", "r");
   for (int i = 0; i < flatten_size(&roi); ++i)
     fscanf(fp, "%f", &roi_data[i]);
   fclose(fp);
-
+ }
+ {
+  printf("set device\n");
+  CUDA_CHECK(cudaSetDevice(0));
+  printf("cuda malloc\n");
+  CUDA_CHECK(cudaMalloc(&convf.data, 512*36*46*sizeof(real)));
+  CUDA_CHECK(cudaMalloc(&roi.data, 300*4*sizeof(real)));
+  CUDA_CHECK(cudaMalloc(&out.data, 300*512*6*6*sizeof(real)));
+  CUDA_CHECK(cudaMalloc(&argmax_data, 300*512*6*6*sizeof(int)));
+  printf("memcpy\n");
+  CUDA_CHECK(cudaMemcpy(convf.data, convf_data, 512*36*46*sizeof(real), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(roi.data, roi_data, 300*4*sizeof(real), cudaMemcpyHostToDevice));
+ }
+ {
+  printf("do forward\n");
   forward(&convf, &roi, &out, &argmax_data[0], &option);
-
-  real* p_out_data = out.data;
+ }
+ {
+  printf("memcpy\n");
+  CUDA_CHECK(cudaMemcpy(out_data, out.data, 300*512*6*6*sizeof(real), cudaMemcpyDeviceToHost));
+ }
+ {
+  real* p_out_data = out_data;
   for (int n = 0; n < out.num_items; ++n) {
     printf("batch %d: %d x %d x %d x %d\n", n, out.shape[n][0], out.shape[n][1], out.shape[n][2], out.shape[n][3]);
     for (int m = 0; m < out.shape[n][0]; ++m) {
@@ -285,10 +304,15 @@ int main(void)
       }
     }
   }
-
+ }
+ {
+  CUDA_CHECK(cudaFree(convf.data));
+  CUDA_CHECK(cudaFree(roi.data));
+  CUDA_CHECK(cudaFree(out.data));
+  CUDA_CHECK(cudaFree(argmax_data));
   free(convf_data);
   free(roi_data);
   free(out_data);
-  free(argmax_data);
   return 0;
+ }
 }

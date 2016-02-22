@@ -385,15 +385,15 @@ int main(void)
   }
   roi.ndim = 2; roi.num_items = score.num_items; roi.data = &roi_data[0];
 
-  FILE* fp = fopen("bottom.txt", "r");
+  FILE* fp = fopen("../data/temp/proposal_bottom0.txt", "r");
   for (int i = 0; i < flatten_size(&score); ++i)
     fscanf(fp, "%f", &score_data[i]);
   fclose(fp);
-  fp = fopen("bbox.txt", "r");
+  fp = fopen("../data/temp/proposal_bottom1.txt", "r");
   for (int i = 0; i < flatten_size(&bbox); ++i)
     fscanf(fp, "%f", &bbox_data[i]);
   fclose(fp);
-  fp = fopen("im_info.txt", "r");
+  fp = fopen("../data/temp/proposal_bottom2.txt", "r");
   for (int i = 0; i < flatten_size(&im_info); ++i)
     fscanf(fp, "%f", &im_info_data[i]);
   fclose(fp);
