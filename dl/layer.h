@@ -20,10 +20,11 @@ typedef struct Tensor_
 
 typedef struct ConvOption_
 {
+  int num_groups;
+  int out_channels;
   int kernel_h, kernel_w;
   int pad_h, pad_w;
   int stride_h, stride_w;
-  int num_groups;
   int bias;
   void* handle;
 } ConvOption;
