@@ -1,52 +1,50 @@
 #include "layer.h"
 #include "cuda_settings.h"
 
-static int const threadsPerBlock = sizeof(unsigned long long) * 8;
+static const int num_threads = sizeof(unsigned long long) * 8;
 
-#define DIVUP(m,n) ((m) / (n) + ((m) % (n) > 0))
-
-__device__ inline float devIoU(const float* const a, const float* const b)
+__device__ inline real iou_kernel(const real* const a, const real* const b)
 {
-  const float left = max(a[0], b[0]);
-  const float right = min(a[2], b[2]);
-  const float top = max(a[1], b[1]);
-  const float bottom = min(a[3], b[3]);
-  const float width = max(right - left + 1, 0.0f);
-  const float height = max(bottom - top + 1, 0.0f);
-  const float interS = width * height;
-  const float Sa = (a[2] - a[0] + 1) * (a[3] - a[1] + 1);
-  const float Sb = (b[2] - b[0] + 1) * (b[3] - b[1] + 1);
+  const real left = max(a[0], b[0]);
+  const real right = min(a[2], b[2]);
+  const real top = max(a[1], b[1]);
+  const real bottom = min(a[3], b[3]);
+  const real width = max(right - left + 1, 0.0f);
+  const real height = max(bottom - top + 1, 0.0f);
+  const real interS = width * height;
+  const real Sa = (a[2] - a[0] + 1) * (a[3] - a[1] + 1);
+  const real Sb = (b[2] - b[0] + 1) * (b[3] - b[1] + 1);
   return interS / (Sa + Sb - interS);
 }
 
-__global__ void nms_kernel(const int n_boxes, const float nms_overlap_thresh,
+__global__ void nms_kernel(const int n_boxes, const real nms_thresh,
                            const real* dev_boxes, unsigned long long* dev_mask)
 {
   const int row_start = blockIdx.y;
   const int col_start = blockIdx.x;
 
   const int row_size =
-        min(n_boxes - row_start * threadsPerBlock, threadsPerBlock);
+        min(n_boxes - row_start * num_threads, num_threads);
   const int col_size =
-        min(n_boxes - col_start * threadsPerBlock, threadsPerBlock);
+        min(n_boxes - col_start * num_threads, num_threads);
 
-  __shared__ real block_boxes[threadsPerBlock * 5];
+  __shared__ real block_boxes[num_threads * 5];
   if (threadIdx.x < col_size) {
     block_boxes[threadIdx.x * 5 + 0] =
-        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 5 + 0];
+        dev_boxes[(num_threads * col_start + threadIdx.x) * 5 + 0];
     block_boxes[threadIdx.x * 5 + 1] =
-        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 5 + 1];
+        dev_boxes[(num_threads * col_start + threadIdx.x) * 5 + 1];
     block_boxes[threadIdx.x * 5 + 2] =
-        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 5 + 2];
+        dev_boxes[(num_threads * col_start + threadIdx.x) * 5 + 2];
     block_boxes[threadIdx.x * 5 + 3] =
-        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 5 + 3];
+        dev_boxes[(num_threads * col_start + threadIdx.x) * 5 + 3];
     block_boxes[threadIdx.x * 5 + 4] =
-        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 5 + 4];
+        dev_boxes[(num_threads * col_start + threadIdx.x) * 5 + 4];
   }
   __syncthreads();
 
   if (threadIdx.x < row_size) {
-    const int cur_box_idx = threadsPerBlock * row_start + threadIdx.x;
+    const int cur_box_idx = num_threads * row_start + threadIdx.x;
     const real* cur_box = dev_boxes + cur_box_idx * 5;
     int i = 0;
     unsigned long long t = 0;
@@ -55,21 +53,22 @@ __global__ void nms_kernel(const int n_boxes, const float nms_overlap_thresh,
       start = threadIdx.x + 1;
     }
     for (i = start; i < col_size; i++) {
-      if (devIoU(cur_box, block_boxes + i * 5) > nms_overlap_thresh) {
+      if (iou_kernel(cur_box, block_boxes + i * 5) > nms_thresh) {
         t |= 1ULL << i;
       }
     }
-    const int col_blocks = DIVUP(n_boxes, threadsPerBlock);
+    const int col_blocks = (n_boxes + num_threads - 1) / num_threads;
     dev_mask[cur_box_idx * col_blocks + col_start] = t;
   }
 }
 
 void _nms_gpu(int* keep_out, int* num_out, const real* boxes_host,
-              const int boxes_num, const int boxes_dim, const float nms_overlap_thresh) {
+              const int boxes_num, const int boxes_dim, const real nms_thresh)
+{
   real* boxes_dev = NULL;
   unsigned long long* mask_dev = NULL;
 
-  const int col_blocks = DIVUP(boxes_num, threadsPerBlock);
+  const int col_blocks = (boxes_num + num_threads - 1) / num_threads;
 
   CUDA_CHECK(cudaMalloc(&boxes_dev, boxes_num * boxes_dim * sizeof(real)));
   CUDA_CHECK(cudaMemcpy(boxes_dev,
@@ -80,8 +79,8 @@ void _nms_gpu(int* keep_out, int* num_out, const real* boxes_host,
   CUDA_CHECK(cudaMalloc(&mask_dev, boxes_num * col_blocks * sizeof(unsigned long long)));
 
   dim3 blocks(col_blocks, col_blocks);
-  dim3 threads(threadsPerBlock);
-  nms_kernel<<<blocks, threads>>>(boxes_num, nms_overlap_thresh, boxes_dev, mask_dev);
+  dim3 threads(num_threads);
+  nms_kernel<<<blocks, threads>>>(boxes_num, nms_thresh, boxes_dev, mask_dev);
 
   unsigned long long* mask_host
       = (unsigned long long*)malloc(boxes_num * col_blocks * sizeof(unsigned long long));
@@ -99,8 +98,8 @@ void _nms_gpu(int* keep_out, int* num_out, const real* boxes_host,
 
   int num_to_keep = 0;
   for (int i = 0; i < boxes_num; i++) {
-    int nblock = i / threadsPerBlock;
-    int inblock = i % threadsPerBlock;
+    int nblock = i / num_threads;
+    int inblock = i % num_threads;
 
     if (!(remv[nblock] & (1ULL << inblock))) {
       keep_out[num_to_keep++] = i;
@@ -124,7 +123,8 @@ typedef struct BoundingBox_
 
 bool transform_box(BoundingBox* box,
                    real dx, real dy, real dw, real dh,
-                   real im_w, real im_h, real min_w, real min_h) {
+                   real im_w, real im_h, real min_w, real min_h)
+{
   real w = box->x2 - box->x1 + 1.0f;
   real h = box->y2 - box->y1 + 1.0f;
   real ctr_x = box->x1 + 0.5f * w;
@@ -172,7 +172,8 @@ typedef struct ProposalOption_
 #define MAX_DATA_HEIGHT 80
 #define MAX_NUM_PROPOSAL 6000
 
-void generate_anchors(real* const anchors, const ProposalOption* option) {
+void generate_anchors(real* const anchors, const ProposalOption* option)
+{
   real base_area = option->base_size * option->base_size;
   real ctr = 0.5f * (option->base_size - 1.0f);
   real wr[MAX_NUM_RATIO_SCALE];
@@ -186,8 +187,8 @@ void generate_anchors(real* const anchors, const ProposalOption* option) {
   for (int c = 0; c < option->num_concats; ++c) {
     for (int i = 0; i < option->num_ratios; ++i) {
       for (int j = 0; j < option->num_scales; ++j) {
-        const float ws = 0.5f * (wr[i] * option->scales[j] - 1.0f);
-        const float hs = 0.5f * (hr[i] * option->scales[j] - 1.0f);
+        const real ws = 0.5f * (wr[i] * option->scales[j] - 1.0f);
+        const real hs = 0.5f * (hr[i] * option->scales[j] - 1.0f);
         p_anchors[0] = ctr - ws;
         p_anchors[1] = ctr - hs;
         p_anchors[2] = ctr + ws;
