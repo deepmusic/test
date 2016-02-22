@@ -3,6 +3,8 @@ cpu_conv:
 	gcc -std=c99 -o cpu_conv.o conv.c -lcblas
 gpu_conv:
 	nvcc -o gpu_conv.o conv.cu -lcublas -lcuda
+gpu_deconv:
+	nvcc -o gpu_deconv.o deconv.cu -lcublas -lcuda
 gpu_proposal:
 	nvcc -o gpu_proposal.o proposal.cu -lcuda
 gpu_roipool:

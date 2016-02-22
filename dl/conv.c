@@ -86,8 +86,6 @@ void forward(const Tensor* bottom3d, Tensor* const top3d,
     //   W' = 1 + (W + 2*pad_w - kernel_w) / stride_w
     const int top_H = 1 + (bottom_H + 2 * pad_h - kernel_h) / stride_h;
     const int top_W = 1 + (bottom_W + 2 * pad_w - kernel_w) / stride_w;
-    top3d->ndim = 3;
-    top3d->num_items = num_items;
     top3d->shape[n][0] = top_C;
     top3d->shape[n][1] = top_H;
     top3d->shape[n][2] = top_W;
@@ -118,6 +116,9 @@ void forward(const Tensor* bottom3d, Tensor* const top3d,
     p_bottom_data += bottom_C * bottom_H * bottom_W;
     p_top_data += top_C * top_H * top_W;
   } // endfor batch
+
+  top3d->ndim = 3;
+  top3d->num_items = num_items;
 }
 
 void backward(Tensor *top_grad, Tensor *bottom_grad, Tensor *top_layer, Tensor *bottom_layer, ConvOption *options)

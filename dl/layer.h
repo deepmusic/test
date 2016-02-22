@@ -8,7 +8,7 @@
 typedef float real;
 
 #define g_max_num_items 128
-#define g_max_ndim 4
+#define g_max_ndim 5
 
 typedef struct Tensor_
 {
@@ -23,6 +23,8 @@ typedef struct ConvOption_
   int kernel_h, kernel_w;
   int pad_h, pad_w;
   int stride_h, stride_w;
+  int num_groups;
+  int bias;
   void* handle;
 } ConvOption;
 

@@ -1,6 +1,7 @@
 #include "layer.h"
 #include "cuda_settings.h"
 
+// TODO
 #ifdef PASS
 __global__ void convert_bottom_patch(const real* bottom3d_patch,
                                      real* const bottom5d_hyperpatch,
@@ -102,6 +103,9 @@ void forward(const Tensor* bottom3d, Tensor* const top3d,
   const int stride_h = options->stride_h;
   const int stride_w = options->stride_w;
 
+  const cublasHandle_t* cublas_handle = (cublasHandle_t*)options->handle;
+  const real one = 1.0, zero = 0.0;
+
   // do forward-pass for each item in the batch
   const real* p_bottom_data = bottom3d->data;
   real* p_top_data = top3d->data;
@@ -116,8 +120,6 @@ void forward(const Tensor* bottom3d, Tensor* const top3d,
     //   W' = 1 + (W + 2*pad_w - kernel_w) / stride_w
     const int top_H = 1 + (bottom_H + 2 * pad_h - kernel_h) / stride_h;
     const int top_W = 1 + (bottom_W + 2 * pad_w - kernel_w) / stride_w;
-    top3d->ndim = 3;
-    top3d->num_items = num_items;
     top3d->shape[n][0] = top_C;
     top3d->shape[n][1] = top_H;
     top3d->shape[n][2] = top_W;
@@ -132,10 +134,6 @@ void forward(const Tensor* bottom3d, Tensor* const top3d,
                                                 pad_h, pad_w,
                                                 stride_h, stride_w);
    } // end convert bottom shape
-
-   { // do matrix computation
-    const cublasHandle_t* cublas_handle = (cublasHandle_t*)options->handle;
-    const real one = 1.0, zero = 0.0;
 
     // top = dot(weight, bottom)
     //   weight: C' x (C * kernel_h * kernel_w)
@@ -153,12 +151,14 @@ void forward(const Tensor* bottom3d, Tensor* const top3d,
                 &one, const_data, top_H * top_W,
                 bias1d->data, 1,
                 &one, p_top_data, top_H * top_W);
-   } // end matrix computation
 
     // locate next data
     p_bottom_data += bottom_C * bottom_H * bottom_W;
     p_top_data += top_C * top_H * top_W;
   } // endfor batch
+
+  top3d->ndim = 3;
+  top3d->num_items = num_items;
 }
 
 void backward(Tensor *top_grad, Tensor *bottom_grad, Tensor *top_layer, Tensor *bottom_layer, ConvOption *options)
