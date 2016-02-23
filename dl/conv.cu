@@ -98,7 +98,7 @@ __global__ void convert_bottom(const real* const bottom3d, real* const bottom5d,
 void forward(const Tensor* const bottom3d, Tensor* const top3d,
              const Tensor* const weight5d, const Tensor* const bias1d,
              real* const temp_data, const real* const const_data,
-             const ConvOption* const options)
+             const ConvOption* const option)
 {
   // weight shape: G x C' x C x kernel_h x kernel_w
   const int num_groups = weight5d->shape[0][0]; // G
@@ -108,10 +108,10 @@ void forward(const Tensor* const bottom3d, Tensor* const top3d,
   const int kernel_w = weight5d->shape[0][4];
 
   // padding size & stride size
-  const int pad_h = options->pad_h;
-  const int pad_w = options->pad_w;
-  const int stride_h = options->stride_h;
-  const int stride_w = options->stride_w;
+  const int pad_h = option->pad_h;
+  const int pad_w = option->pad_w;
+  const int stride_h = option->stride_h;
+  const int stride_w = option->stride_w;
 
   // do forward-pass for each item in the batch
   const real* p_bottom_item = bottom3d->data;
@@ -155,7 +155,7 @@ void forward(const Tensor* const bottom3d, Tensor* const top3d,
       const real* const p_weight_g = weight5d->data + g * top_C * kernel_size;
       real* const p_top_g = p_top_item + g * top_C * top_area;
 
-      const cublasHandle_t* cublas_handle = (cublasHandle_t*)options->handle;
+      const cublasHandle_t* cublas_handle = (cublasHandle_t*)option->handle;
       const real one = 1.0, zero = 0.0;
 
       // compute Z = alpha * dot(X, Y) + beta * Z
@@ -187,7 +187,7 @@ void forward(const Tensor* const bottom3d, Tensor* const top3d,
       const int top_channels = num_groups * top_C;
       const int top_area = top_H * top_W;
 
-      const cublasHandle_t* cublas_handle = (cublasHandle_t*)options->handle;
+      const cublasHandle_t* cublas_handle = (cublasHandle_t*)option->handle;
       const real one = 1.0;
 
       // the computation is equivalent to...
@@ -221,7 +221,7 @@ void forward(const Tensor* const bottom3d, Tensor* const top3d,
 }
 
 // TODO
-void backward(Tensor *top_grad, Tensor *bottom_grad, Tensor *top_layer, Tensor *bottom_layer, ConvOption *options)
+void backward(Tensor *top_grad, Tensor *bottom_grad, Tensor *top_layer, Tensor *bottom_layer, ConvOption *option)
 {
   return;
 }
@@ -315,7 +315,7 @@ int main(int argc, char **argv)
     fscanf(fp, "%f", &b_data[i]);
   fclose(fp);
   for (int i = 0; i < DATA_SIZE; ++i) {
-    temp_data[i] = 1;
+    const_data[i] = 1;
   }
  }
  {
@@ -323,7 +323,7 @@ int main(int argc, char **argv)
   CUDA_CHECK(cudaMemcpy(X.data, X_data, DATA_SIZE*sizeof(real), cudaMemcpyHostToDevice));
   CUDA_CHECK(cudaMemcpy(W.data, W_data, WEIGHT_SIZE*sizeof(real), cudaMemcpyHostToDevice));
   CUDA_CHECK(cudaMemcpy(b.data, b_data, BIAS_SIZE*sizeof(real), cudaMemcpyHostToDevice));
-  CUDA_CHECK(cudaMemcpy(p_const_data, temp_data, DATA_SIZE*sizeof(real), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(p_const_data, const_data, DATA_SIZE*sizeof(real), cudaMemcpyHostToDevice));
  }
  {
   real* p_Y_data = &Y_data[0];
