@@ -20,20 +20,9 @@ typedef struct Tensor_
   int shape[g_max_num_items][g_max_ndim];
 } Tensor;
 
-typedef struct ConvOption_
-{
-  int num_groups;
-  int out_channels;
-  int kernel_h, kernel_w;
-  int pad_h, pad_w;
-  int stride_h, stride_w;
-  int bias;
-  void* handle;
-} ConvOption;
+int flatten_size(const Tensor* const tensor);
 
-int flatten_size(const Tensor* tensor);
-
-inline int flatten_size(const Tensor* tensor)
+inline int flatten_size(const Tensor* const tensor)
 {
   int size = 0;
   for (int n = 0; n < tensor->num_items; ++n) {
@@ -44,5 +33,16 @@ inline int flatten_size(const Tensor* tensor)
   }
   return size;
 }
+
+typedef struct ConvOption_
+{
+  int num_groups;
+  int out_channels;
+  int kernel_h, kernel_w;
+  int pad_h, pad_w;
+  int stride_h, stride_w;
+  int bias;
+  void* handle;
+} ConvOption;
 
 #endif // PVA_DL_LAYERS_H
