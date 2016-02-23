@@ -7,6 +7,8 @@
 
 typedef float real;
 
+#define DIV_THEN_CEIL(x, y)  ((x) + (y) - 1) / (y)
+
 #define g_max_num_items 128
 #define g_max_ndim 5
 
