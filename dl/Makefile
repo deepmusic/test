@@ -11,3 +11,5 @@ gpu_roipool:
 	nvcc -o gpu_roipool.o roipool.cu -lcuda
 gpu_pool:
 	nvcc -o gpu_pool.o pool.cu -lcuda
+gpu_relu:
+	nvcc -o gpu_relu.o relu.cu -lcuda

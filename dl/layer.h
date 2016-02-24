@@ -52,4 +52,9 @@ typedef struct PoolOption_
   int stride_h, stride_w;
 } PoolOption;
 
+typedef struct ReluOption_
+{
+  real negative_slope;
+} ReluOption;
+
 #endif // PVA_DL_LAYERS_H
