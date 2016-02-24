@@ -235,17 +235,18 @@ void backward(Tensor<gpu, 4, real> &in_grad,
 
 int main(void)
 {
-  ROIPoolOption option;
-  option.pooled_height = 6;
-  option.pooled_width = 6;
-  option.spatial_scale = 0.0625;
-
   Tensor convf, roi, out;
 
   real* convf_data = (real*)malloc(512*36*46*sizeof(real));
   real* roi_data = (real*)malloc(300*4*sizeof(real));
   real* out_data = (real*)malloc(300*512*6*6*sizeof(real));
   int* argmax_data;
+
+  ROIPoolOption option;
+  option.pooled_height = 6;
+  option.pooled_width = 6;
+  option.spatial_scale = 0.0625;
+
  {
   convf.ndim = 3; convf.num_items = 1;
   for (int i = 0; i < convf.num_items; ++i) {

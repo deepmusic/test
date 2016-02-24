@@ -45,4 +45,11 @@ typedef struct ConvOption_
   void* handle;
 } ConvOption;
 
+typedef struct PoolOption_
+{
+  int kernel_h, kernel_w;
+  int pad_h, pad_w;
+  int stride_h, stride_w;
+} PoolOption;
+
 #endif // PVA_DL_LAYERS_H

@@ -88,8 +88,8 @@ __global__ void convert_bottom(const real* const bottom3d, real* const bottom5d,
 }
 
 // convolution: bottom -> top
-//   bottom: (G * C) * H * W
-//   top: (G * C') * H' * W'
+//   bottom: (G * C) x H x W
+//   top: (G * C') x H' x W'
 //   weight: G x C' x C x kernel_h x kernel_w
 //   bias: (G * C') x 1
 //   temp: G * C * kernel_h * kernel_w * H' * W'
@@ -226,9 +226,9 @@ void backward(Tensor *top_grad, Tensor *bottom_grad, Tensor *top_layer, Tensor *
   return;
 }
 
-#define DATA_SIZE 30000
-#define WEIGHT_SIZE 100000
-#define BIAS_SIZE 200
+#define DATA_SIZE 256*36*46
+#define WEIGHT_SIZE 384*256*3*3
+#define BIAS_SIZE 384
 
 int main(int argc, char **argv)
 {
@@ -245,23 +245,23 @@ int main(int argc, char **argv)
 
   {
     option.num_groups = 1;
-    option.out_channels = 100;
+    option.out_channels = 384;
     option.kernel_h = 3;
     option.kernel_w = 3;
     option.pad_h = 1;
     option.pad_w = 1;
-    option.stride_h = 1;
-    option.stride_w = 1;
+    option.stride_h = 2;
+    option.stride_w = 2;
     option.bias = 1;
   }
 
   {
     X.ndim = 3;
-    X.num_items = 10;
+    X.num_items = 1;
     for (int i = 0; i < X.num_items; ++i) {
-      X.shape[i][0] = 100;
-      X.shape[i][1] = 5;
-      X.shape[i][2] = 5;
+      X.shape[i][0] = 256;
+      X.shape[i][1] = 36;
+      X.shape[i][2] = 46;
     }
 
     W.ndim = 5; W.num_items = 1;
@@ -276,6 +276,35 @@ int main(int argc, char **argv)
   }
  
   {
+    FILE* fp;
+    int X_size = flatten_size(&X);
+    int W_size = flatten_size(&W);
+    int b_size = flatten_size(&b);
+
+    printf("data loading\n");
+
+    fp = fopen("../data/temp/conv_bottom0.txt", "r");
+    for (int i = 0; i < X_size; ++i)
+      fscanf(fp, "%f", &X_data[i]);
+    fclose(fp);
+
+    fp = fopen("../data/temp/conv_param0.txt", "r");
+    for (int i = 0; i < W_size; ++i)
+      fscanf(fp, "%f", &W_data[i]);
+    fclose(fp);
+
+    if (option.bias) {
+      fp = fopen("../data/temp/conv_param1.txt", "r");
+      for (int i = 0; i < b_size; ++i)
+        fscanf(fp, "%f", &b_data[i]);
+      fclose(fp);
+      for (int i = 0; i < b_size; ++i) {
+        const_data[i] = 1;
+      }
+    }
+  }
+
+  {
     printf("set device\n");
     CUDA_CHECK(cudaSetDevice(1));
     //printf("get device\n");
@@ -287,83 +316,65 @@ int main(int argc, char **argv)
     option.handle = &cublas_handle;
   }
 
- {
-  printf("cuda malloc\n");
-  CUDA_CHECK(cudaMalloc(&X.data, DATA_SIZE*sizeof(real)));
-  CUDA_CHECK(cudaMalloc(&Y.data, DATA_SIZE*sizeof(real)));
-  CUDA_CHECK(cudaMalloc(&W.data, WEIGHT_SIZE*sizeof(real)));
-  CUDA_CHECK(cudaMalloc(&b.data, BIAS_SIZE*sizeof(real)));
-  CUDA_CHECK(cudaMalloc(&p_temp_data, DATA_SIZE*sizeof(real)));
-  CUDA_CHECK(cudaMalloc(&p_const_data, DATA_SIZE*sizeof(real)));
- }
- {
-  FILE* fp;
-  int X_size = flatten_size(&X);
-  int W_size = flatten_size(&W);
-  int b_size = flatten_size(&b);
-  printf("data loading\n");
-  fp = fopen("X.txt", "r");
-  for (int i = 0; i < X_size; ++i)
-    fscanf(fp, "%f", &X_data[i]);
-  fclose(fp);
-  fp = fopen("W.txt", "r");
-  for (int i = 0; i < W_size; ++i)
-    fscanf(fp, "%f", &W_data[i]);
-  fclose(fp);
-  fp = fopen("b.txt", "r");
-  for (int i = 0; i < b_size; ++i)
-    fscanf(fp, "%f", &b_data[i]);
-  fclose(fp);
-  for (int i = 0; i < DATA_SIZE; ++i) {
-    const_data[i] = 1;
-  }
- }
- {
-  printf("memcopy\n");
-  CUDA_CHECK(cudaMemcpy(X.data, X_data, DATA_SIZE*sizeof(real), cudaMemcpyHostToDevice));
-  CUDA_CHECK(cudaMemcpy(W.data, W_data, WEIGHT_SIZE*sizeof(real), cudaMemcpyHostToDevice));
-  CUDA_CHECK(cudaMemcpy(b.data, b_data, BIAS_SIZE*sizeof(real), cudaMemcpyHostToDevice));
-  CUDA_CHECK(cudaMemcpy(p_const_data, const_data, DATA_SIZE*sizeof(real), cudaMemcpyHostToDevice));
- }
- {
-  real* p_Y_data = &Y_data[0];
+  {
+    int X_size = flatten_size(&X);
+    int W_size = flatten_size(&W);
+    int b_size = flatten_size(&b);
+    int Y_size = X.num_items * option.out_channels * X.shape[0][1] * X.shape[0][2];
+    int temp_size = option.kernel_h * option.kernel_w * X.shape[0][0] * X.shape[0][1] * X.shape[0][2];
 
-  printf("do forward\n");
-  for (int i = 0; i < 100; ++i) {
+    printf("cuda malloc\n");
+    CUDA_CHECK(cudaMalloc(&X.data, X_size*sizeof(real)));
+    CUDA_CHECK(cudaMalloc(&Y.data, Y_size*sizeof(real)));
+    CUDA_CHECK(cudaMalloc(&W.data, W_size*sizeof(real)));
+    CUDA_CHECK(cudaMalloc(&b.data, b_size*sizeof(real)));
+    CUDA_CHECK(cudaMalloc(&p_temp_data, temp_size * sizeof(real)));
+    CUDA_CHECK(cudaMalloc(&p_const_data, b_size*sizeof(real)));
+
+    printf("memcopy\n");
+    CUDA_CHECK(cudaMemcpy(X.data, X_data, X_size*sizeof(real), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(W.data, W_data, W_size*sizeof(real), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(b.data, b_data, b_size*sizeof(real), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(p_const_data, const_data, b_size*sizeof(real), cudaMemcpyHostToDevice));
+  }
+
+  {
+    printf("do forward\n");
     forward(&X, &Y, &W, &b, p_temp_data, p_const_data, &option);
-    forward(&Y, &X, &W, &b, p_temp_data, p_const_data, &option);
   }
 
-  printf("memcpy\n");
-  CUDA_CHECK(cudaMemcpy(Y_data, X.data, DATA_SIZE*sizeof(real), cudaMemcpyDeviceToHost));
+  {
+    int Y_size = flatten_size(&Y);
+    printf("memcpy\n");
+    CUDA_CHECK(cudaMemcpy(Y_data, Y.data, Y_size*sizeof(real), cudaMemcpyDeviceToHost));
 
-  for (int n = 0; n < Y.num_items; ++n) {
-    printf("Y[%d] (%d x %d x %d)\n", n, Y.shape[n][0], Y.shape[n][1], Y.shape[n][2]);
-    for (int c = 0; c < Y.shape[n][0]; ++c) {
-      for (int h = 0; h < Y.shape[n][1]; ++h) {
-        for (int w = 0; w < Y.shape[n][2]; ++w) {
-          printf("%03.5f ", p_Y_data[(c * Y.shape[n][1] + h) * Y.shape[n][2] + w]);
-        }
-        printf("\n");
-      }
-      printf("\n\n");
+    real* p_Y_data = &Y_data[0];
+    for (int i = 0; i < Y_size; ++i) {
+      printf("%.4f\n", p_Y_data[i]);
     }
-    p_Y_data += Y.shape[n][0] * Y.shape[n][1] * Y.shape[n][2];
-    printf("\n\n===============================\n\n");
   }
- }
- {
-  printf("cuda free\n");
-  CUDA_CHECK(cudaFree(X.data));
-  CUDA_CHECK(cudaFree(Y.data));
-  CUDA_CHECK(cudaFree(W.data));
-  CUDA_CHECK(cudaFree(b.data));
-  CUDA_CHECK(cudaFree(p_temp_data));
-  CUDA_CHECK(cudaFree(p_const_data));
-  printf("cublas finalization\n");
-  if (cublasDestroy(cublas_handle) != CUBLAS_STATUS_SUCCESS) {
-    printf("cublas destruction failed\n");
+
+  {
+    printf("cuda free\n");
+    CUDA_CHECK(cudaFree(X.data));
+    CUDA_CHECK(cudaFree(Y.data));
+    CUDA_CHECK(cudaFree(W.data));
+    CUDA_CHECK(cudaFree(b.data));
+    CUDA_CHECK(cudaFree(p_temp_data));
+    CUDA_CHECK(cudaFree(p_const_data));
+
+    printf("cublas finalization\n");
+    if (cublasDestroy(cublas_handle) != CUBLAS_STATUS_SUCCESS) {
+      printf("cublas destruction failed\n");
+    }
+
+    printf("free\n");
+    free(X_data);
+    free(Y_data);
+    free(W_data);
+    free(b_data);
+    free(const_data);
   }
- }
+
   return 0;
 }
