@@ -54,7 +54,7 @@ void roi_pool_gpu(const real* const bottom3d,
     }
     // otherwise, top[r][c][h][w] = "max in the bottom region"
     else {
-      const real* p_bottom3d = &bottom3d[c * H * W];
+      const real* p_bottom3d = bottom3d + c * H * W;
       int maxidx = hb_start * W + wb_start;
       real maxval = p_bottom3d[maxidx];
       for (int hb = hb_start; hb < hb_end; ++hb) {
@@ -114,7 +114,7 @@ void roi_pool_cpu(const real* const bottom3d,
     }
     // otherwise, top[r][c][h][w] = "max in the bottom region"
     else {
-      const real* p_bottom3d = &bottom3d[c * H * W];
+      const real* p_bottom3d = bottom3d + c * H * W;
       int maxidx = hb_start * W + wb_start;
       real maxval = p_bottom3d[maxidx];
       for (int hb = hb_start; hb < hb_end; ++hb) {
@@ -386,24 +386,24 @@ int main(void)
     int Y_size = flatten_size(&Y);
     int roi_size = flatten_size(&roi);
 
-    printf("cuda malloc");
-    CUDA_CHECK(cudaMalloc(&X.data, X_size*sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&roi.data, roi_size*sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&Y.data, Y_size*sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&p_argmax_data, Y_size*sizeof(int)));
+    printf("cuda malloc\n");
+    CUDA_CHECK(cudaMalloc(&X.data, X_size * sizeof(real)));
+    CUDA_CHECK(cudaMalloc(&roi.data, roi_size * sizeof(real)));
+    CUDA_CHECK(cudaMalloc(&Y.data, Y_size * sizeof(real)));
+    CUDA_CHECK(cudaMalloc(&p_argmax_data, Y_size * sizeof(int)));
 
     printf("memcopy\n");
-    CUDA_CHECK(cudaMemcpy(X.data, X_data, X_size*sizeof(real), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(roi.data, roi_data, roi_size*sizeof(real), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(X.data, X_data, X_size * sizeof(real), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(roi.data, roi_data, roi_size * sizeof(real), cudaMemcpyHostToDevice));
   }
 #else
   {
-    int argmax_size = flatten_size(&Y);
+    int Y_size = flatten_size(&Y);
 
-    X.data = &X_data[0];
-    Y.data = &Y_data[0];
-    roi.data = &roi_data[0];
-    p_argmax_data = (int*)malloc(argmax_size * sizeof(int));
+    X.data = X_data;
+    Y.data = Y_data;
+    roi.data = roi_data;
+    p_argmax_data = (int*)malloc(Y_size * sizeof(int));
   }
 #endif
 
@@ -415,8 +415,8 @@ int main(void)
 #ifdef GPU
   {
     int Y_size = flatten_size(&Y);
-    printf("memcpy");
-    CUDA_CHECK(cudaMemcpy(Y_data, Y.data, Y_size*sizeof(real), cudaMemcpyDeviceToHost));
+    printf("memcpy\n");
+    CUDA_CHECK(cudaMemcpy(Y_data, Y.data, Y_size * sizeof(real), cudaMemcpyDeviceToHost));
   }
 #endif
 

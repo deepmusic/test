@@ -371,20 +371,20 @@ int main(int argc, char **argv)
     printf("data loading\n");
 
     fp = fopen("../data/temp/conv_bottom0.bin", "rb");
-    if ((int)fread(&X_data[0], sizeof(real), X_size, fp) != X_size) {
+    if ((int)fread(X_data, sizeof(real), X_size, fp) != X_size) {
       printf("Error while reading conv_bottom0\n");
     }
     fclose(fp);
 
     fp = fopen("../data/temp/conv_param0.bin", "rb");
-    if ((int)fread(&W_data[0], sizeof(real), W_size, fp) != W_size) {
+    if ((int)fread(W_data, sizeof(real), W_size, fp) != W_size) {
       printf("Error while reading conv_param0\n");
     }
     fclose(fp);
 
     if (option.bias) {
       fp = fopen("../data/temp/conv_param1.bin", "rb");
-      if ((int)fread(&b_data[0], sizeof(real), b_size, fp) != b_size) {
+      if ((int)fread(b_data, sizeof(real), b_size, fp) != b_size) {
         printf("Error while reading conv_param1\n");
       }
       fclose(fp);
@@ -394,7 +394,7 @@ int main(int argc, char **argv)
     }
 
     fp = fopen("../data/temp/conv_top0.bin", "rb");
-    if ((int)fread(&Y_true_data[0], sizeof(real), Y_size, fp) != Y_size) {
+    if ((int)fread(Y_true_data, sizeof(real), Y_size, fp) != Y_size) {
       printf("Error while reading conv_top0\n");
     }
     fclose(fp);
@@ -423,29 +423,29 @@ int main(int argc, char **argv)
     int temp_size = option.kernel_h * option.kernel_w * X.shape[0][0] * Y.shape[0][1] * Y.shape[0][2];
 
     printf("cuda malloc\n");
-    CUDA_CHECK(cudaMalloc(&X.data, X_size*sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&Y.data, Y_size*sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&W.data, W_size*sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&b.data, b_size*sizeof(real)));
+    CUDA_CHECK(cudaMalloc(&X.data, X_size * sizeof(real)));
+    CUDA_CHECK(cudaMalloc(&Y.data, Y_size * sizeof(real)));
+    CUDA_CHECK(cudaMalloc(&W.data, W_size * sizeof(real)));
+    CUDA_CHECK(cudaMalloc(&b.data, b_size * sizeof(real)));
     CUDA_CHECK(cudaMalloc(&p_temp_data, temp_size * sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&p_const_data, CONST_SIZE*sizeof(real)));
+    CUDA_CHECK(cudaMalloc(&p_const_data, CONST_SIZE * sizeof(real)));
 
     printf("memcopy\n");
-    CUDA_CHECK(cudaMemcpy(X.data, X_data, X_size*sizeof(real), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(W.data, W_data, W_size*sizeof(real), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(b.data, b_data, b_size*sizeof(real), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(p_const_data, const_data, CONST_SIZE*sizeof(real), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(X.data, X_data, X_size * sizeof(real), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(W.data, W_data, W_size * sizeof(real), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(b.data, b_data, b_size * sizeof(real), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(p_const_data, const_data, CONST_SIZE * sizeof(real), cudaMemcpyHostToDevice));
   }
 #else
   {
     int temp_size = option.kernel_h * option.kernel_w * X.shape[0][0] * Y.shape[0][1] * Y.shape[0][2];
 
-    X.data = &X_data[0];
-    Y.data = &Y_data[0];
-    W.data = &W_data[0];
-    b.data = &b_data[0];
+    X.data = X_data;
+    Y.data = Y_data;
+    W.data = W_data;
+    b.data = b_data;
     p_temp_data = (real*)malloc(temp_size * sizeof(real));
-    p_const_data = &const_data[0];
+    p_const_data = const_data;
   }
 #endif
 
@@ -458,7 +458,7 @@ int main(int argc, char **argv)
   {
     int Y_size = flatten_size(&Y);
     printf("memcpy\n");
-    CUDA_CHECK(cudaMemcpy(Y_data, Y.data, Y_size*sizeof(real), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(Y_data, Y.data, Y_size * sizeof(real), cudaMemcpyDeviceToHost));
   }
 #endif
 
