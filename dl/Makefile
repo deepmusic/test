@@ -1,15 +1,25 @@
-all: cpu_conv gpu_conv gpu_deconv gpu_proposal gpu_roipool gpu_pool
+all: cpu_conv gpu_conv cpu_deconv gpu_deconv cpu_roipool gpu_roipool gpu_proposal gpu_pool gpu_relu
 cpu_conv:
-	gcc -std=c99 -o cpu_conv.o conv.c -lcblas
+	cp conv.cu conv.c
+	gcc -O3 -Wall -std=c99 -o cpu_conv.o conv.c -lcblas
+	rm conv.c
+cpu_deconv:
+	cp deconv.cu deconv.c
+	gcc -O3 -Wall -std=c99 -o cpu_deconv.o deconv.c -lcblas
+	rm deconv.c
+cpu_roipool:
+	cp roipool.cu roipool.c
+	gcc -O3 -Wall -std=c99 -o cpu_roipool.o roipool.c
+	rm roipool.c
 gpu_conv:
-	nvcc -o gpu_conv.o conv.cu -lcublas -lcuda
+	nvcc -O3 -use_fast_math -Xcompiler -Wall -DGPU -o gpu_conv.o conv.cu -lcublas -lcuda
 gpu_deconv:
-	nvcc -o gpu_deconv.o deconv.cu -lcublas -lcuda
-gpu_proposal:
-	nvcc -o gpu_proposal.o proposal.cu -lcuda
+	nvcc -O3 -use_fast_math -Xcompiler -Wall -DGPU -o gpu_deconv.o deconv.cu -lcublas -lcuda
 gpu_roipool:
-	nvcc -o gpu_roipool.o roipool.cu -lcuda
+	nvcc -O3 -use_fast_math -Xcompiler -Wall -DGPU -o gpu_roipool.o roipool.cu -lcuda
+gpu_proposal:
+	nvcc -O3 -Xcompiler -Wall -o gpu_proposal.o proposal.cu -lcuda
 gpu_pool:
-	nvcc -o gpu_pool.o pool.cu -lcuda
+	nvcc -O3 -Xcompiler -Wall -o gpu_pool.o pool.cu -lcuda
 gpu_relu:
-	nvcc -o gpu_relu.o relu.cu -lcuda
+	nvcc -O3 -Xcompiler -Wall -o gpu_relu.o relu.cu -lcuda

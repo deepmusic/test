@@ -96,6 +96,8 @@ void forward(const Tensor* const bottom3d,
     top3d->shape[n][1] = top_H;
     top3d->shape[n][2] = top_W;
 
+    // max-pooling
+    //   bottom3d (C x H x W) -> top3d (C x H' x W')
     {
       const int num_threads = C * top_H * top_W;
       const int threads_per_block = 512;
@@ -119,6 +121,8 @@ void forward(const Tensor* const bottom3d,
   top3d->ndim = 3;
   top3d->num_items = bottom3d->num_items;
 }
+
+#include <stdio.h>
 
 #define DATA_SIZE 128*72*92
 
@@ -191,7 +195,7 @@ int main(int argc, char **argv)
 
     real* p_Y_data = &Y_data[0];
     for (int i = 0; i < Y_size; ++i) {
-      printf("%.4f\n", p_Y_data[i]);
+      printf("%.6f\n", p_Y_data[i]);
     }
   }
 

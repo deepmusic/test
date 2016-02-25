@@ -1,13 +1,13 @@
 #ifndef PVA_DL_LAYERS_H
 #define PVA_DL_LAYERS_H
 
-#include <cblas.h>
-#include <string.h>
-#include <stdio.h>
-
 typedef float real;
 
-#define DIV_THEN_CEIL(x, y)  ((x) + (y) - 1) / (y)
+#define ABS(x)  ((x) > 0 ? (x) : (-(x)))
+#define MIN(x, y)  ((x) < (y) ? (x) : (y))
+#define MAX(x, y)  ((x) > (y) ? (x) : (y))
+#define DIV_THEN_CEIL(x, y)  (((x) + (y) - 1) / (y))
+#define ROUND(x)  ((int)((x) + 0.5f))
 
 #define g_max_num_items 128
 #define g_max_ndim 5
@@ -51,6 +51,13 @@ typedef struct PoolOption_
   int pad_h, pad_w;
   int stride_h, stride_w;
 } PoolOption;
+
+typedef struct ROIPoolOption_
+{
+  int pooled_height;
+  int pooled_width;
+  real spatial_scale;
+} ROIPoolOption;
 
 typedef struct ReluOption_
 {
