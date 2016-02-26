@@ -37,7 +37,8 @@ void convert_top_gpu(const real* const top5d,
     const int h5_end = min(h / stride_h + 1, H5);
     const int w5_start = (w < kernel_w) ? 0 : (w - kernel_w) / stride_w + 1;
     const int w5_end = min(w / stride_w + 1, W5);
-    const real* p_top5d = top5d + (c * kernel_h * kernel_w + h * kernel_w + w) * H5 * W5;
+    const real* p_top5d = top5d +
+                  (c * kernel_h * kernel_w + h * kernel_w + w) * H5 * W5;
     const int h5_coef = (1 - stride_h * kernel_w * H5) * W5;
     const int w5_coef = 1 - stride_w * H5 * W5;
 
@@ -76,7 +77,8 @@ void convert_top_cpu(const real* const top5d,
     const int h5_end = MIN(h / stride_h + 1, H5);
     const int w5_start = (w < kernel_w) ? 0 : (w - kernel_w) / stride_w + 1;
     const int w5_end = MIN(w / stride_w + 1, W5);
-    const real* p_top5d = top5d + (c * kernel_h * kernel_w + h * kernel_w + w) * H5 * W5;
+    const real* p_top5d = top5d +
+                  (c * kernel_h * kernel_w + h * kernel_w + w) * H5 * W5;
     const int h5_coef = (1 - stride_h * kernel_w * H5) * W5;
     const int w5_coef = 1 - stride_w * H5 * W5;
 
@@ -145,14 +147,16 @@ void deconv_forward(const Tensor* const bottom3d,
     for (int g = 0; g < num_groups; ++g) {
       const int kernel_size = top_C * kernel_h * kernel_w;
       const int bottom_area = bottom_H * bottom_W;
-      const real* const p_bottom_g = p_bottom_item + g * bottom_C * bottom_area;
-      const real* const p_weight_g = weight5d->data + g * bottom_C * kernel_size;
+      const real* const p_bottom_g = p_bottom_item +
+                                     g * bottom_C * bottom_area;
+      const real* const p_weight_g = weight5d->data +
+                                     g * bottom_C * kernel_size;
       real* const p_temp_g = temp_data + g * kernel_size * bottom_area;
 
       // compute Z = alpha * dot(X.transpose(), Y) + beta * Z
       //   X (= weight): p x m,  Y (= bottom): p x n,  Z (= top): m x n
       //   X, Y, Z: row-major order (e.g., Z[i][j] = Z[i * n + j])
-#ifdef GPU
+    #ifdef GPU
       // input arguments:
       //   cublas handle,
       //   do_transpose_Y (= false),  do_transpose_X (= true),
@@ -171,7 +175,7 @@ void deconv_forward(const Tensor* const bottom3d,
                   p_weight_g,  kernel_size,
                   &zero,
                   p_temp_g,  bottom_area);
-#else
+    #else
       // input arguments:
       //   is_row_major_order (= true),
       //   do_transpose_X (= true),  do_transpose_Y (= false),
@@ -189,13 +193,13 @@ void deconv_forward(const Tensor* const bottom3d,
                   p_bottom_g,  bottom_area,
                   0.0f,
                   p_temp_g,  bottom_area);
-#endif
+    #endif
     }
 
     // convert top shape
     //   (G * C * kernel_h * kernel_w) x (H' * W') -> (G * C) x (H * W)
     {
-#ifdef GPU
+    #ifdef GPU
       // one thread computes one entry in top
       const int num_threads = num_groups * top_C * top_H * top_W;
       const int threads_per_block = 512;
@@ -205,13 +209,13 @@ void deconv_forward(const Tensor* const bottom3d,
           num_groups * top_C,  top_H,  top_W,
           bottom_H,  bottom_W,
           kernel_h,  kernel_w,  pad_h,  pad_w,  stride_h,  stride_w);
-#else
+    #else
       convert_top_cpu(
           temp_data,  p_top_item,
           num_groups * top_C,  top_H,  top_W,
           bottom_H,  bottom_W,
           kernel_h,  kernel_w,  pad_h,  pad_w,  stride_h,  stride_w);
-#endif
+    #endif
     }
 
     // compute top[i][j] = top[i][j] + bias[i]
@@ -224,7 +228,7 @@ void deconv_forward(const Tensor* const bottom3d,
       // the computation is equivalent to...
       //   top = top + dot(bias, constant)
       //   constant: 1 x (H * W), constant[i] = 1 for all i
-#ifdef GPU
+    #ifdef GPU
       // thus, input arguments:
       //   do_transpose_Y (= false),  do_transpose_X (= false),
       //   n = H * W,  m = G * C,  p = 1
@@ -238,7 +242,7 @@ void deconv_forward(const Tensor* const bottom3d,
                   bias1d->data,  1,
                   &one,
                   p_top_item,  top_area);
-#else
+    #else
       // input arguments:
       //   do_transpose_X (= false),  do_transpose_Y (= false),
       //   m = G * C,  n = H * W,  p = 1
@@ -251,7 +255,7 @@ void deconv_forward(const Tensor* const bottom3d,
                   const_data,  top_area,
                   1.0f,
                   p_top_item,  top_area);
-#endif
+    #endif
     }
 
     // locate next item
@@ -267,12 +271,8 @@ void deconv_forward(const Tensor* const bottom3d,
   top3d->num_items = bottom3d->num_items;
 }
 
-// TODO
-void deconv_backward(Tensor *top_grad, Tensor *bottom_grad, Tensor *top_layer, Tensor *bottom_layer, ConvOption *option)
-{
-  return;
-}
-
+// test code
+#ifdef TEST
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -283,6 +283,7 @@ void deconv_backward(Tensor *top_grad, Tensor *bottom_grad, Tensor *top_layer, T
 
 int main(int argc, char **argv)
 {
+  // variable declaration & memory allocation
   Tensor X, Y, W, b;
   real* X_data = (real*)malloc(DATA_SIZE * sizeof(real));
   real* Y_data = (real*)malloc(DATA_SIZE * sizeof(real));
@@ -294,6 +295,7 @@ int main(int argc, char **argv)
   real* p_const_data;
   ConvOption option;
 
+  // set option
   {
     option.num_groups = 512;
     option.out_channels = 512;
@@ -306,6 +308,7 @@ int main(int argc, char **argv)
     option.bias = 0;
   }
 
+  // set data shapes
   {
     X.ndim = 3;
     X.num_items = 1;
@@ -319,8 +322,10 @@ int main(int argc, char **argv)
     Y.num_items = X.num_items;
     for (int i = 0; i < Y.num_items; ++i) {
       Y.shape[i][0] = option.out_channels;
-      Y.shape[i][1] = option.stride_h * (X.shape[i][1] - 1) - 2 * option.pad_h + option.kernel_h;
-      Y.shape[i][2] = option.stride_w * (X.shape[i][2] - 1) - 2 * option.pad_w + option.kernel_w;
+      Y.shape[i][1] = option.stride_h * (X.shape[i][1] - 1)
+                      - 2 * option.pad_h + option.kernel_h;
+      Y.shape[i][2] = option.stride_w * (X.shape[i][2] - 1)
+                      - 2 * option.pad_w + option.kernel_w;
     }
 
     W.ndim = 5; W.num_items = 1;
@@ -334,6 +339,7 @@ int main(int argc, char **argv)
     b.shape[0][0] = option.out_channels;
   }
 
+  // load data
   {
     FILE* fp;
     int X_size = flatten_size(&X);
@@ -373,29 +379,31 @@ int main(int argc, char **argv)
     fclose(fp);
   }
 
-#ifdef GPU
+  // CUDA initialization
+  #ifdef GPU
   {
     printf("set device\n");
     CUDA_CHECK(cudaSetDevice(0));
-    //printf("get device\n");
-    //CUDA_CHECK(cudaGetDevice(0));
     printf("cublas initialization\n");
     option.handle = (cublasHandle_t*)malloc(sizeof(cublasHandle_t));
-    if (cublasCreate((cublasHandle_t*)option.handle) != CUBLAS_STATUS_SUCCESS) {
+    if (cublasCreate((cublasHandle_t*)option.handle)
+          != CUBLAS_STATUS_SUCCESS) {
       printf("cublas creation failed\n");
     }
   }
-#endif
+  #endif
 
-#ifdef GPU
+  // bind loaded data to corresponding tensors
+  #ifdef GPU
   {
     int X_size = flatten_size(&X);
     int Y_size = flatten_size(&Y);
     int W_size = flatten_size(&W);
     int b_size = flatten_size(&b);
-    int temp_size = option.kernel_h * option.kernel_w * Y.shape[0][0] * X.shape[0][1] * X.shape[0][2];
+    int temp_size = option.kernel_h * option.kernel_w *
+                    Y.shape[0][0] * X.shape[0][1] * X.shape[0][2];
 
-    printf("cuda malloc\n");
+    printf("gpu malloc\n");
     CUDA_CHECK(cudaMalloc(&X.data, X_size * sizeof(real)));
     CUDA_CHECK(cudaMalloc(&Y.data, Y_size * sizeof(real)));
     CUDA_CHECK(cudaMalloc(&W.data, W_size * sizeof(real)));
@@ -403,15 +411,21 @@ int main(int argc, char **argv)
     CUDA_CHECK(cudaMalloc(&p_temp_data, temp_size * sizeof(real)));
     CUDA_CHECK(cudaMalloc(&p_const_data, CONST_SIZE * sizeof(real)));
 
-    printf("memcopy\n");
-    CUDA_CHECK(cudaMemcpy(X.data, X_data, X_size * sizeof(real), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(W.data, W_data, W_size * sizeof(real), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(b.data, b_data, b_size * sizeof(real), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(p_const_data, const_data, CONST_SIZE * sizeof(real), cudaMemcpyHostToDevice));
+    printf("memcpy: cpu -> gpu\n");
+    CUDA_CHECK(cudaMemcpy(X.data, X_data, X_size * sizeof(real),
+                          cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(W.data, W_data, W_size * sizeof(real),
+                          cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(b.data, b_data, b_size * sizeof(real),
+                          cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(p_const_data, const_data,
+                          CONST_SIZE * sizeof(real),
+                          cudaMemcpyHostToDevice));
   }
-#else
+  #else
   {
-    int temp_size = option.kernel_h * option.kernel_w * Y.shape[0][0] * X.shape[0][1] * X.shape[0][2];
+    int temp_size = option.kernel_h * option.kernel_w *
+                    Y.shape[0][0] * X.shape[0][1] * X.shape[0][2];
 
     X.data = X_data;
     Y.data = Y_data;
@@ -420,21 +434,25 @@ int main(int argc, char **argv)
     p_temp_data = (real*)malloc(temp_size * sizeof(real));
     p_const_data = const_data;
   }
-#endif
+  #endif
 
+  // do forward operation
   {
     printf("do forward\n");
     deconv_forward(&X, &Y, &W, &b, p_temp_data, p_const_data, &option);
   }
 
-#ifdef GPU
+  // copy GPU data to main memory
+  #ifdef GPU
   {
     int Y_size = flatten_size(&Y);
-    printf("memcpy\n");
-    CUDA_CHECK(cudaMemcpy(Y_data, Y.data, Y_size * sizeof(real), cudaMemcpyDeviceToHost));
+    printf("memcpy: cpu <- gpu\n");
+    CUDA_CHECK(cudaMemcpy(Y_data, Y.data, Y_size * sizeof(real),
+                          cudaMemcpyDeviceToHost));
   }
-#endif
+  #endif
 
+  // verify results
   {
     int i = 0;
     for (int n = 0; n < Y.num_items; ++n) {
@@ -443,24 +461,25 @@ int main(int argc, char **argv)
           for (int w = 0; w < Y.shape[n][2]; ++w) {
             real diff = ABS(Y_data[i] - Y_true_data[i]);
             diff /= 1e-10f + MIN(ABS(Y_data[i]), ABS(Y_true_data[i]));
-#ifdef GPU
+          #ifdef GPU
             if (diff > 0) {
               printf("Y[%d,%d,%d,%d] = %.6f  Y_true[%d,%d,%d,%d] = %.6f\n",
                      n, c, h, w, Y_data[i], n, c, h, w, Y_true_data[i]);
             }
-#else
+          #else
             if (diff > 1e-3f) {
               printf("Y[%d,%d,%d,%d] = %.6f  Y_true[%d,%d,%d,%d] = %.6f\n",
                      n, c, h, w, Y_data[i], n, c, h, w, Y_true_data[i]);
             }
-#endif
+          #endif
             ++i;
-          }
-        }
-      }
-    }
+          } // endfor w
+        } // endfor h
+      } // endfor c
+    } // endfor n
   }
 
+  // memory deallocation
   {
     printf("free\n");
     free(X_data);
@@ -470,9 +489,9 @@ int main(int argc, char **argv)
     free(b_data);
     free(const_data);
   }
-#ifdef GPU
+  #ifdef GPU
   {
-    printf("cuda free\n");
+    printf("gpu free\n");
     CUDA_CHECK(cudaFree(X.data));
     CUDA_CHECK(cudaFree(Y.data));
     CUDA_CHECK(cudaFree(W.data));
@@ -481,16 +500,18 @@ int main(int argc, char **argv)
     CUDA_CHECK(cudaFree(p_const_data));
 
     printf("cublas finalization\n");
-    if (cublasDestroy(*((cublasHandle_t*)option.handle)) != CUBLAS_STATUS_SUCCESS) {
+    if (cublasDestroy(*((cublasHandle_t*)option.handle))
+          != CUBLAS_STATUS_SUCCESS) {
       printf("cublas destruction failed\n");
     }
     free(option.handle);
   }
-#else
+  #else
   {
     free(p_temp_data);
   }
-#endif
+  #endif
 
   return 0;
 }
+#endif // endifdef TEST

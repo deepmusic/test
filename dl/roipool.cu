@@ -37,13 +37,13 @@ void roi_pool_gpu(const real* const bottom3d,
     const int roi_H = y2 - y1 + 1;
 
     // pooling region for pixel top[r][c][h][w]
-    const int hb_start = min(H, max(0,
+    const int hb_start = MIN(H, MAX(0,
                            y1 + (h * roi_H) / top_H));
-    const int hb_end = min(H, max(0,
+    const int hb_end = MIN(H, MAX(0,
                            y1 + DIV_THEN_CEIL((h + 1) * roi_H, top_H)));
-    const int wb_start = min(W, max(0,
+    const int wb_start = MIN(W, MAX(0,
                            x1 + (w * roi_W) / top_W));
-    const int wb_end = min(W, max(0,
+    const int wb_end = MIN(W, MAX(0,
                            x1 + DIV_THEN_CEIL((w + 1) * roi_W, top_W)));
 
     // if the bottom region is invalid, top[r][c][h][w] = 0
@@ -144,37 +144,43 @@ void roipool_forward(const Tensor* const bottom3d,
                      int* const argmax_data,
                      const ROIPoolOption* option)
 {
+  // top height & width
+  const int top_H = option->pooled_height; // H'
+  const int top_W = option->pooled_width; // W'
+
+  // do forward-pass for each item in the batch
   const real* p_bottom_item = bottom3d->data;
   const real* p_roi_item = roi2d->data;
   real* p_top_item = top4d->data;
   int* p_argmax_item = argmax_data;
   for (int n = 0; n < bottom3d->num_items; ++n) {
+    // bottom shape: R x C x H X W
     const int R = roi2d->shape[n][0];
     const int C = bottom3d->shape[n][0];
     const int H = bottom3d->shape[n][1];
     const int W = bottom3d->shape[n][2];
-    const int top_H = option->pooled_height;
-    const int top_W = option->pooled_width;
+
+    // set top shape: R x C x H' x W'
     top4d->shape[n][0] = R;
     top4d->shape[n][1] = C;
     top4d->shape[n][2] = top_H;
     top4d->shape[n][3] = top_W;
 
     // RoI pooling
-    // bottom3d (C x H x W) -> top4d (R x C x H' x W')
+    //   bottom3d (C x H x W) -> top4d (R x C x H' x W')
     {
-#ifdef GPU
+    #ifdef GPU
       const int num_threads = R * C * top_H * top_W;
       const int threads_per_block = 512;
       const int num_blocks = DIV_THEN_CEIL(num_threads, threads_per_block);
       roi_pool_gpu<<<num_blocks, threads_per_block>>>(
           p_bottom_item,  p_roi_item,  p_top_item,  p_argmax_item,
           R,  C,  H,  W,  top_H,  top_W,  option->spatial_scale);
-#else
+    #else
       roi_pool_cpu(
           p_bottom_item,  p_roi_item,  p_top_item,  p_argmax_item,
           R,  C,  H,  W,  top_H,  top_W,  option->spatial_scale);
-#endif
+    #endif
     }
 
     // locate next item
@@ -193,106 +199,8 @@ void roipool_forward(const Tensor* const bottom3d,
   top4d->num_items = bottom3d->num_items;
 }
 
-#ifdef PASS
-__global__ void backward_kernel(const int bottom_RCHW, const real* top_diff,
-                                      const real* argmax_data, const int num_rois, const float spatial_scale,
-                                      const int C, const int H, const int W,
-                                      const int top_H, const int top_W, real* bottom_diff,
-                                      const real* bottom_rois) {
-  for (int index = blockIdx.x * blockDim.x + threadIdx.x;
-       index < bottom_RCHW;
-       index += blockDim.x * gridDim.x) {
-    // (n, c, h, w) coords in bottom data
-    int w = index % W;
-    int h = (index / W) % H;
-    int c = (index / W / H) % C;
-    int n = index / W / H / C;
-
-    real gradient = 0;
-    // Accumulate gradient over all ROIs that pooled this element
-    for (int roi_n = 0; roi_n < num_rois; ++roi_n) {
-      const real* offset_bottom_rois = bottom_rois + roi_n * 5;
-      int roi_batch_ind = offset_bottom_rois[0];
-      // Skip if ROI's batch index doesn't match n
-      if (n != roi_batch_ind) {
-        continue;
-      }
-
-      int roi_start_w = round(offset_bottom_rois[1] * spatial_scale);
-      int roi_start_h = round(offset_bottom_rois[2] * spatial_scale);
-      int roi_end_w = round(offset_bottom_rois[3] * spatial_scale);
-      int roi_end_h = round(offset_bottom_rois[4] * spatial_scale);
-
-      // Skip if ROI doesn't include (h, w)
-      const bool in_roi = (w >= roi_start_w && w <= roi_end_w &&
-                           h >= roi_start_h && h <= roi_end_h);
-      if (!in_roi) {
-        continue;
-      }
-
-      int offset = (roi_n * C + c) * top_H * top_W;
-      const real* offset_top_diff = top_diff + offset;
-      const real* offset_argmax_data = argmax_data + offset;
-
-      // Compute feasible set of pooled units that could have pooled
-      // this bottom unit
-
-      // Force malformed ROIs to be 1x1
-      int roi_width = max(roi_end_w - roi_start_w + 1, 1);
-      int roi_height = max(roi_end_h - roi_start_h + 1, 1);
-
-      real bin_size_h = static_cast<real>(roi_height)
-                         / static_cast<real>(top_H);
-      real bin_size_w = static_cast<real>(roi_width)
-                         / static_cast<real>(top_W);
-
-      int phstart = floor(static_cast<real>(h - roi_start_h) / bin_size_h);
-      int phend = ceil(static_cast<real>(h - roi_start_h + 1) / bin_size_h);
-      int pwstart = floor(static_cast<real>(w - roi_start_w) / bin_size_w);
-      int pwend = ceil(static_cast<real>(w - roi_start_w + 1) / bin_size_w);
-
-      phstart = min(max(phstart, 0), top_H);
-      phend = min(max(phend, 0), top_H);
-      pwstart = min(max(pwstart, 0), top_W);
-      pwend = min(max(pwend, 0), top_W);
-
-      for (int ph = phstart; ph < phend; ++ph) {
-        for (int pw = pwstart; pw < pwend; ++pw) {
-          if (round(offset_argmax_data[ph * pooled_width + pw]) == (h * width + w)) {
-            gradient += offset_top_diff[ph * pooled_width + pw];
-          }
-        }
-      }
-    }
-    bottom_diff[index] = gradient;
-  }
-}
-
-void backward(Tensor<gpu, 4, real> &in_grad,
-                            const Tensor<gpu, 4, real> &out_grad,
-                            const Tensor<gpu, 2, real> &bbox,
-                            const Tensor<gpu, 4, real> &max_idx,
-                            const float spatial_scale) {
-  const real *top_diff = out_grad.dptr_;
-  const real *bottom_rois = bbox.dptr_;
-  real *bottom_diff = in_grad.dptr_;
-  real *argmax_data = max_idx.dptr_;
-  const int count = in_grad.shape_.Size();
-  const int num_rois = bbox.size(0);
-  const int C = in_grad.size(1);
-  const int H = in_grad.size(2);
-  const int W = in_grad.size(3);
-  const int top_H = out_grad.size(2);
-  const int top_W = out_grad.size(3);
-  int dimGrid = (count + FRCNN_NUM_THREADS - 1) / FRCNN_NUM_THREADS;
-  int dimBlock = FRCNN_NUM_THREADS;
-  backward_kernel<<<dimGrid, dimBlock>>>(
-      count, top_diff, argmax_data, num_rois, spatial_scale, C, H, W,
-      top_H, top_W, bottom_diff, bottom_rois);
-  FRCNN_CUDA_CHECK(cudaPeekAtLastError());
-}
-#endif
-
+// test code
+#ifdef TEST
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -300,10 +208,10 @@ void backward(Tensor<gpu, 4, real> &in_grad,
 #define OUT_DATA_SIZE 300*512*6*6
 #define ROI_SIZE 300*4
 
-int main(void)
+int main(int argc, char *argv[])
 {
+  // variable declaration & memory allocation
   Tensor X, Y, roi;
-
   real* X_data = (real*)malloc(IN_DATA_SIZE * sizeof(real));
   real* roi_data = (real*)malloc(ROI_SIZE*sizeof(real));
   real* Y_data = (real*)malloc(OUT_DATA_SIZE * sizeof(real));
@@ -311,12 +219,14 @@ int main(void)
   int* p_argmax_data;
   ROIPoolOption option;
 
+  // set option
   {
     option.pooled_height = 6;
     option.pooled_width = 6;
     option.spatial_scale = 0.0625;
   }
 
+  // set data shapes
   {
     X.ndim = 3;
     X.num_items = 1;
@@ -343,12 +253,16 @@ int main(void)
     }
   }
 
+  // load data
   {
+    FILE* fp;
     int X_size = flatten_size(&X);
     int Y_size = flatten_size(&Y);
     int roi_size = flatten_size(&roi);
 
-    FILE* fp = fopen("../data/temp/roipool_bottom0.txt", "r");
+    printf("data loading\n");
+
+    fp = fopen("../data/temp/roipool_bottom0.txt", "r");
     for (int i = 0; i < X_size; ++i) {
       if (fscanf(fp, "%f", &X_data[i]) <= 0) {
         printf("Error occurred while reading roipool_bottom0[%d]\n", i);
@@ -373,30 +287,34 @@ int main(void)
     fclose(fp);
  }
 
-#ifdef GPU
+  // CUDA initialization
+  #ifdef GPU
   {
     printf("set device\n");
     CUDA_CHECK(cudaSetDevice(0));
   }
-#endif
+  #endif
 
-#ifdef GPU
+  // bind loaded data to corresponding tensors
+  #ifdef GPU
   {
     int X_size = flatten_size(&X);
     int Y_size = flatten_size(&Y);
     int roi_size = flatten_size(&roi);
 
-    printf("cuda malloc\n");
+    printf("gpu malloc\n");
     CUDA_CHECK(cudaMalloc(&X.data, X_size * sizeof(real)));
     CUDA_CHECK(cudaMalloc(&roi.data, roi_size * sizeof(real)));
     CUDA_CHECK(cudaMalloc(&Y.data, Y_size * sizeof(real)));
     CUDA_CHECK(cudaMalloc(&p_argmax_data, Y_size * sizeof(int)));
 
-    printf("memcopy\n");
-    CUDA_CHECK(cudaMemcpy(X.data, X_data, X_size * sizeof(real), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(roi.data, roi_data, roi_size * sizeof(real), cudaMemcpyHostToDevice));
+    printf("memcpy: cpu -> gpu\n");
+    CUDA_CHECK(cudaMemcpy(X.data, X_data, X_size * sizeof(real),
+                          cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(roi.data, roi_data, roi_size * sizeof(real),
+                          cudaMemcpyHostToDevice));
   }
-#else
+  #else
   {
     int Y_size = flatten_size(&Y);
 
@@ -405,31 +323,37 @@ int main(void)
     roi.data = roi_data;
     p_argmax_data = (int*)malloc(Y_size * sizeof(int));
   }
-#endif
+  #endif
 
+  // do forward operation
   {
     printf("do forward\n");
     roipool_forward(&X, &roi, &Y, p_argmax_data, &option);
   }
 
-#ifdef GPU
+  // copy GPU data to main memory
+  #ifdef GPU
   {
     int Y_size = flatten_size(&Y);
-    printf("memcpy\n");
-    CUDA_CHECK(cudaMemcpy(Y_data, Y.data, Y_size * sizeof(real), cudaMemcpyDeviceToHost));
+    printf("memcpy: cpu <- gpu\n");
+    CUDA_CHECK(cudaMemcpy(Y_data, Y.data, Y_size * sizeof(real),
+                          cudaMemcpyDeviceToHost));
   }
-#endif
+  #endif
 
+  // verify results
   {
     int Y_size = flatten_size(&Y);
 
     for (int i = 0; i < Y_size; ++i) {
       if (Y_data[i] != Y_true_data[i]) {
-        printf("Y[%d] = %.6f  Y_true[%d] = %.6f\n", i, Y_data[i], i, Y_true_data[i]);
+        printf("Y[%d] = %.6f  Y_true[%d] = %.6f\n",
+               i, Y_data[i], i, Y_true_data[i]);
       }
     }
   }
 
+  // memory deallocation
   {
     printf("free\n");
     free(X_data);
@@ -437,19 +361,19 @@ int main(void)
     free(Y_data);
     free(Y_true_data);
   }
-#ifdef GPU
+  #ifdef GPU
   {
-    printf("cuda free\n");
+    printf("gpu free\n");
     CUDA_CHECK(cudaFree(X.data));
     CUDA_CHECK(cudaFree(roi.data));
     CUDA_CHECK(cudaFree(Y.data));
     CUDA_CHECK(cudaFree(p_argmax_data));
   }
-#else
+  #else
   {
     free(p_argmax_data);
   }
-#endif
+  #endif
 
   return 0;
 }

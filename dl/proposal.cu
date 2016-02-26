@@ -1,115 +1,244 @@
 #include "layer.h"
+#include <stdlib.h>
+#include <math.h>
+
+#ifdef GPU
 #include "cuda_settings.h"
+#endif
 
-#define NMS_BLOCK_SIZE (sizeof(unsigned long long) * 8)
-
+// "IoU = intersection area / union area" of two boxes A, B
+//   A, B: 4-dim array (x1, y1, x2, y2)
+#ifdef GPU
 __device__
-inline real iou_kernel(const real* const a, const real* const b)
+#endif
+inline real iou(const real* const A, const real* const B)
 {
-  const real left = max(a[0], b[0]);
-  const real right = min(a[2], b[2]);
-  const real top = max(a[1], b[1]);
-  const real bottom = min(a[3], b[3]);
-  const real width = max(right - left + 1, 0.0f);
-  const real height = max(bottom - top + 1, 0.0f);
-  const real interS = width * height;
-  const real Sa = (a[2] - a[0] + 1) * (a[3] - a[1] + 1);
-  const real Sb = (b[2] - b[0] + 1) * (b[3] - b[1] + 1);
-  return interS / (Sa + Sb - interS);
+  // overlapped region (= box)
+  const real x1 = MAX(A[0], B[0]);
+  const real y1 = MAX(A[1], A[1]);
+  const real x2 = MIN(A[2], B[2]);
+  const real y2 = MIN(A[3], B[3]);
+
+  // intersection area
+  const real width = MAX(0.0f,  x2 - x1 + 1.0f);
+  const real height = MAX(0.0f,  y2 - y1 + 1.0f);
+  const real area = width * height;
+
+  // area of A, B
+  const real A_area = (A[2] - A[0] + 1.0f) * (A[3] - A[1] + 1.0f);
+  const real B_area = (B[2] - B[0] + 1.0f) * (B[3] - B[1] + 1.0f);
+
+  // IoU
+  return area / (A_area + B_area - area);
 }
 
-__global__
-void nms_kernel(const int n_boxes, const real nms_thresh,
-                const real* const dev_boxes,
-                unsigned long long* const dev_mask)
-{
-  const int row_size =
-        min(n_boxes - blockIdx.y * blockDim.x, blockDim.x);
-  const int col_size =
-        min(n_boxes - blockIdx.x * blockDim.x, blockDim.x);
+// the whole 2-dim computations "num_boxes x num_boxes" is done by
+// divide-and-conquer computations:
+//   each GPU block performs "64 x 64" computations,
+//   and each "1 x 64" result is saved into a 64-bit mask
+typedef unsigned long long uint64;
+#define NMS_BLOCK_SIZE 64
 
-  __shared__ real block_boxes[NMS_BLOCK_SIZE * 5];
-  if (threadIdx.x < col_size) {
-    const int index = blockIdx.x * blockDim.x + threadIdx.x;
-    block_boxes[threadIdx.x * 5 + 0] = dev_boxes[index * 5 + 0];
-    block_boxes[threadIdx.x * 5 + 1] = dev_boxes[index * 5 + 1];
-    block_boxes[threadIdx.x * 5 + 2] = dev_boxes[index * 5 + 2];
-    block_boxes[threadIdx.x * 5 + 3] = dev_boxes[index * 5 + 3];
-    block_boxes[threadIdx.x * 5 + 4] = dev_boxes[index * 5 + 4];
+#ifdef GPU
+__global__
+void nms_mask_gpu(const real* const boxes,
+                  uint64* const mask,
+                  const int num_boxes, const real nms_thresh)
+{
+
+  // block region
+  //   j = j_start + { 0, ..., dj_end - 1 }
+  //   i = i_start + { 0, ..., di_end - 1 }
+  const int i_start = blockIdx.x * NMS_BLOCK_SIZE;
+  const int di_end = MIN(num_boxes - i_start,  NMS_BLOCK_SIZE);
+  const int j_start = blockIdx.y * NMS_BLOCK_SIZE;
+  const int dj_end = MIN(num_boxes - j_start,  NMS_BLOCK_SIZE);
+
+  // copy all i-th boxes to GPU cache
+  //   i = i_start + { 0, ..., di_end - 1 }
+  __shared__ real boxes_i[NMS_BLOCK_SIZE * 5];
+  {
+    const int di = threadIdx.x;
+    if (di < di_end) {
+      boxes_i[di * 5 + 0] = boxes[(i_start + di) * 5 + 0];
+      boxes_i[di * 5 + 1] = boxes[(i_start + di) * 5 + 1];
+      boxes_i[di * 5 + 2] = boxes[(i_start + di) * 5 + 2];
+      boxes_i[di * 5 + 3] = boxes[(i_start + di) * 5 + 3];
+      boxes_i[di * 5 + 4] = boxes[(i_start + di) * 5 + 4];
+    }
   }
   __syncthreads();
 
-  if (threadIdx.x < row_size) {
-    const int cur_box_idx = blockIdx.y * blockDim.x + threadIdx.x;
-    const real* const cur_box = dev_boxes + cur_box_idx * 5;
-    unsigned long long t = 0;
-    const int start = (blockIdx.x == blockIdx.y) ? threadIdx.x + 1 : 0;
-    for (int i = start; i < col_size; ++i) {
-      if (iou_kernel(cur_box, block_boxes + i * 5) > nms_thresh) {
-        t |= 1ULL << i;
+  // given j = j_start + dj,
+  //   check whether box i is significantly overlapped with box j
+  //   (i.e., IoU(box j, box i) > threshold)
+  //   for all i = i_start + { 0, ..., di_end - 1 } except for i == j
+  {
+    const int dj = threadIdx.x;
+    if (dj < dj_end) {
+      // box j
+      const real* const box_j = boxes + (j_start + dj) * 5;
+
+      // mask for significant overlap
+      //   if IoU(box j, box i) > threshold,  di-th bit = 1
+      uint64 mask_j = 0;
+
+      // check for all i = i_start + { 0, ..., di_end - 1 }
+      // except for i == j
+      const int di_start = (i_start == j_start) ? (dj + 1) : 0;
+      for (int di = di_start; di < di_end; ++di) {
+        // box i
+        const real* const box_i = boxes_i + di * 5;
+
+        // if IoU(box j, box i) > threshold,  di-th bit = 1
+        if (iou(box_j, box_i) > nms_thresh) {
+          mask_j |= 1ULL << di;
+        }
       }
-    }
-    const int col_blocks = DIV_THEN_CEIL(n_boxes, blockDim.x);
-    dev_mask[cur_box_idx * col_blocks + blockIdx.x] = t;
+
+      // mask: "num_boxes x num_blocks" array
+      //   for mask[j][bi], "di-th bit = 1" means:
+      //     box j is significantly overlapped with box i = i_start + di,
+      //     where i_start = bi * block_size
+      {
+        const int num_blocks = DIV_THEN_CEIL(num_boxes, NMS_BLOCK_SIZE);
+        const int bi = blockIdx.x;
+        mask[(j_start + dj) * num_blocks + bi] = mask_j;
+      }
+    } // endif dj < dj_end
   }
 }
-
-#include <stdio.h>
-
-void _nms_gpu(int* const keep_out, int* const num_out,
-              const real* const boxes_host,
-              const int boxes_num, const int boxes_dim,
-              const real nms_thresh)
+#else
+void nms_mask_cpu(const real* const boxes,
+                  uint64* const mask,
+                  const int num_boxes, const real nms_thresh)
 {
-  real* boxes_dev = NULL;
-  unsigned long long* mask_dev = NULL;
+  // number of blocks along each dimension
+  const int num_blocks = DIV_THEN_CEIL(num_boxes, NMS_BLOCK_SIZE);
 
-  const int threads_per_block = NMS_BLOCK_SIZE;
-  const int col_blocks = DIV_THEN_CEIL(boxes_num, threads_per_block);
+  // the whole 2-dim computations "num_boxes x num_boxes" is done by
+  // sweeping all "64 x 64"-sized blocks
+  for (int j_start = 0; j_start < num_boxes; j_start += NMS_BLOCK_SIZE) {
+    for (int i_start = 0; i_start < num_boxes; i_start += NMS_BLOCK_SIZE) {
+      // block region
+      //   j = j_start + { 0, ..., dj_end - 1 }
+      //   i = i_start + { 0, ..., di_end - 1 }
+      const int di_end = MIN(num_boxes - i_start,  NMS_BLOCK_SIZE);
+      const int dj_end = MIN(num_boxes - j_start,  NMS_BLOCK_SIZE);
 
-  CUDA_CHECK(cudaMalloc(&boxes_dev, boxes_num * boxes_dim * sizeof(real)));
-  CUDA_CHECK(cudaMemcpy(boxes_dev,
-                        boxes_host,
-                        boxes_num * boxes_dim * sizeof(real),
-                        cudaMemcpyHostToDevice));
+      // check whether box i is significantly overlapped with box j
+      // for all j = j_start + { 0, ..., dj_end - 1 },
+      //         i = i_start + { 0, ..., di_end - 1 },
+      // except for i == j
+      for (int dj = 0; dj < dj_end; ++dj) {
+        // box j & overlap mask
+        const real* const box_j = boxes + (j_start + dj) * 5;
+        uint64 mask_j = 0;
 
-  CUDA_CHECK(cudaMalloc(&mask_dev, boxes_num * col_blocks * sizeof(unsigned long long)));
+        // check for all i = i_start + { 0, ..., di_end - 1 }
+        // except for i == j
+        const int di_start = (i_start == j_start) ? (dj + 1) : 0;
+        for (int di = di_start; di < di_end; ++di) {
+          // box i
+          const real* const box_i = boxes + (i_start + di) * 5;
 
-  const dim3 blocks(col_blocks, col_blocks);
-  const dim3 threads(threads_per_block);
-  nms_kernel<<<blocks, threads>>>(boxes_num, nms_thresh, boxes_dev, mask_dev);
+          // if IoU(box j, box i) > threshold,  di-th bit = 1
+          if (iou(box_j, box_i) > nms_thresh) {
+            mask_j |= 1ULL << di;
+          }
+        }
 
-  unsigned long long* const mask_host
-      = (unsigned long long*)malloc(boxes_num * col_blocks * sizeof(unsigned long long));
-  CUDA_CHECK(cudaMemcpy(mask_host,
-                        mask_dev,
-                        sizeof(unsigned long long) * boxes_num * col_blocks,
-                        cudaMemcpyDeviceToHost));
+        // mask: "num_boxes x num_blocks" array
+        //   for mask[j][bi], "di-th bit = 1" means:
+        //     box j is significantly overlapped with box i = i_start + di,
+        //     where i_start = bi * block_size
+        {
+          const int bi = i_start / NMS_BLOCK_SIZE;
+          mask[(j_start + dj) * num_blocks + bi] = mask_j;
+        }
+      } // endfor dj
+    } // endfor j_start
+  } // endfor i_start
+}
+#endif
 
-  CUDA_CHECK(cudaFree(boxes_dev));
-  CUDA_CHECK(cudaFree(mask_dev));
+// given box proposals (sorted in descending order of their scores),
+// discard a box if it is significantly overlapped with
+// one or more previous (= scored higher) boxes
+//   num_boxes: number of box proposals given
+//   boxes: "num_boxes x 5" array (x1, y1, x2, y2, score)
+//          sorted in descending order of scores
+//   num_out: number of remaining boxes
+//   keep_out: "num_out x 1" array
+//             indices of remaining boxes
+//   nms_thresh: threshold for determining "significant overlap"
+//               if "intersection area / union area > nms_thresh",
+//               two boxes are thought of as significantly overlapped
+void nms(const int num_boxes, const real* const boxes,
+         int* const num_out, int* const keep_out,
+         const real nms_thresh)
+{
+  const int num_blocks = DIV_THEN_CEIL(num_boxes, NMS_BLOCK_SIZE);
+  uint64* const mask
+      = (uint64*)malloc(num_boxes * num_blocks * sizeof(uint64));
 
-  unsigned long long* const remv
-      = (unsigned long long*)malloc(col_blocks * sizeof(unsigned long long));
-  memset(remv, 0, sizeof(unsigned long long) * col_blocks);
+  #ifdef GPU
+  {
+    uint64* mask_dev;
+    real* boxes_dev;
+    const dim3 blocks(num_blocks, num_blocks);
 
-  int num_to_keep = 0;
-  for (int i = 0; i < boxes_num; ++i) {
-    const int nblock = i / threads_per_block;
-    const int inblock = i % threads_per_block;
+    // GPU memory allocation & copy box data
+    CUDA_CHECK(cudaMalloc(&boxes_dev, num_boxes * 5 * sizeof(real)));
+    CUDA_CHECK(cudaMemcpy(boxes_dev, boxes, num_boxes * 5 * sizeof(real),
+                          cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMalloc(&mask_dev,
+                          num_boxes * num_blocks * sizeof(uint64)));
 
-    if (!(remv[nblock] & (1ULL << inblock))) {
-      keep_out[num_to_keep++] = i;
-      unsigned long long* p = mask_host + i * col_blocks;
-      for (int j = nblock; j < col_blocks; ++j) {
-        remv[j] |= p[j];
+    // find all significantly-overlapped pairs of boxes
+    nms_mask_gpu<<<blocks, NMS_BLOCK_SIZE>>>(
+        boxes_dev, mask_dev, num_boxes, nms_thresh);
+
+    // copy mask data to main memory
+    CUDA_CHECK(cudaMemcpy(mask, mask_dev,
+                          sizeof(uint64) * num_boxes * num_blocks,
+                          cudaMemcpyDeviceToHost));
+
+    // GPU memory deallocation
+    CUDA_CHECK(cudaFree(boxes_dev));
+    CUDA_CHECK(cudaFree(mask_dev));
+  }
+  #else
+  {
+    // find all significantly-overlapped pairs of boxes
+    nms_mask_cpu(boxes, mask, num_boxes, nms_thresh);
+  }
+  #endif
+
+  // discard i-th box if it is significantly overlapped with
+  // one or more previous (= scored higher) boxes
+  {
+    int num_to_keep = 0;
+    uint64* const remv = (uint64*)calloc(num_blocks, sizeof(uint64));
+
+    for (int i = 0; i < num_boxes; ++i) {
+      const int nblock = i / NMS_BLOCK_SIZE;
+      const int inblock = i % NMS_BLOCK_SIZE;
+
+      if (!(remv[nblock] & (1ULL << inblock))) {
+        keep_out[num_to_keep++] = i;
+        uint64* p = mask + i * num_blocks;
+        for (int j = nblock; j < num_blocks; ++j) {
+          remv[j] |= p[j];
+        }
       }
     }
-  }
-  *num_out = num_to_keep;
+    *num_out = num_to_keep;
 
-  free(mask_host);
-  free(remv);
+    free(remv);
+  }
+
+  free(mask);
 }
 
 typedef struct BoundingBox_
@@ -139,10 +268,10 @@ int transform_box(BoundingBox* const box,
   box->x2 = pred_ctr_x + 0.5f * pred_w;
   box->y2 = pred_ctr_y + 0.5f * pred_h;
 
-  box->x1 = max(min(box->x1, im_w - 1.0f), 0.0f);
-  box->y1 = max(min(box->y1, im_h - 1.0f), 0.0f);
-  box->x2 = max(min(box->x2, im_w - 1.0f), 0.0f);
-  box->y2 = max(min(box->y2, im_h - 1.0f), 0.0f);
+  box->x1 = MAX(0.0f,  MIN(box->x1,  im_w - 1.0f));
+  box->y1 = MAX(0.0f,  MIN(box->y1,  im_h - 1.0f));
+  box->x2 = MAX(0.0f,  MIN(box->x2,  im_w - 1.0f));
+  box->y2 = MAX(0.0f,  MIN(box->y2,  im_h - 1.0f));
 
   const real box_w = box->x2 - box->x1 + 1.0f;
   const real box_h = box->y2 - box->y1 + 1.0f;
@@ -150,21 +279,6 @@ int transform_box(BoundingBox* const box,
   if (box_w >= min_w && box_h >= min_h) return 1;
   return 0;
 }
-
-typedef struct ProposalOption_
-{
-  int num_concats;
-  real* ratios;
-  int num_ratios;
-  real* scales;
-  int num_scales;
-  int base_size;
-  int feat_stride;
-  int min_size;
-  int pre_nms_topn;
-  int post_nms_topn;
-  real nms_thresh;
-} ProposalOption;
 
 #define MAX_NUM_RATIO_SCALE 10
 #define MAX_DATA_WIDTH 80
@@ -179,8 +293,8 @@ void generate_anchors(real* const anchors,
   real wr[MAX_NUM_RATIO_SCALE];
   real hr[MAX_NUM_RATIO_SCALE];
   for (int i = 0; i < option->num_ratios; ++i) {
-    wr[i] = round(sqrt(base_area / option->ratios[i]));
-    hr[i] = round(wr[i] * option->ratios[i]);
+    wr[i] = ROUND(sqrt(base_area / option->ratios[i]));
+    hr[i] = ROUND(wr[i] * option->ratios[i]);
   }
 
   // anchor generation
@@ -202,11 +316,14 @@ void generate_anchors(real* const anchors,
   }
 }
 
+// quick-sort a list of boxes in descending order of their scores
+//   if num_top <= end,  only top-k results are guaranteed to be sorted
+//   (for efficient computation)
 void sort_box(BoundingBox* const list, const int start, const int end,
               const int num_top)
 {
+  const real pivot_score = list[start].score;
   int left = start + 1, right = end;
-  real pivot_score = list[start].score;
   BoundingBox temp;
   while (left <= right) {
     while (left <= end && list[left].score >= pivot_score) ++left;
@@ -232,17 +349,19 @@ void sort_box(BoundingBox* const list, const int start, const int end,
   }
 }
 
-void forward(const Tensor* const bottom4d,
-             const Tensor* const pred_box4d,
-             const Tensor* const img_info1d,
-             Tensor* const top2d,
-             const real* const anchors,
-             const ProposalOption* const option)
+void proposal_forward(const Tensor* const bottom4d,
+                      const Tensor* const pred_box4d,
+                      const Tensor* const img_info1d,
+                      Tensor* const top2d,
+                      const real* const anchors,
+                      const ProposalOption* const option)
 {
   BoundingBox* const proposals
       = (BoundingBox*)malloc(MAX_NUM_RATIO_SCALE * MAX_NUM_RATIO_SCALE *
-                             MAX_DATA_WIDTH * MAX_DATA_HEIGHT * sizeof(BoundingBox));
-  real* const sorted_dets = (real*)malloc(MAX_NUM_PROPOSAL * 5 * sizeof(real));
+                             MAX_DATA_WIDTH * MAX_DATA_HEIGHT *
+                             sizeof(BoundingBox));
+  real* const sorted_dets
+      = (real*)malloc(MAX_NUM_PROPOSAL * 5 * sizeof(real));
   int* const keep = (int*)malloc(MAX_NUM_PROPOSAL * sizeof(int));
 
   // bottom4d: N x 2 x num_anchors x H x W
@@ -253,7 +372,8 @@ void forward(const Tensor* const bottom4d,
   const real* p_pred_box_data = pred_box4d->data;
   const real* p_img_info = img_info1d->data;
   real* p_top_data = top2d->data;
-  const int num_anchors = option->num_concats * option->num_ratios * option->num_scales;
+  const int num_anchors
+      = option->num_concats * option->num_ratios * option->num_scales;
   for (int n = 0; n < bottom4d->num_items; ++n) {
     const int H = bottom4d->shape[n][2];
     const int W = bottom4d->shape[n][3];
@@ -304,10 +424,10 @@ void forward(const Tensor* const bottom4d,
       sorted_dets[i * 5 + 4] = proposals[i].score;
     }
 
-    // roi retrieval
+    // NMS & RoI retrieval
     {
       int num_rois = 0;
-      _nms_gpu(keep, &num_rois, sorted_dets, num_proposals, 5, option->nms_thresh);
+      nms(num_proposals, sorted_dets, &num_rois, keep, option->nms_thresh);
 
       if (num_rois > option->post_nms_topn) {
         num_rois = option->post_nms_topn;
@@ -337,75 +457,124 @@ void forward(const Tensor* const bottom4d,
   free(keep);
 }
 
+// test code
+#ifdef TEST
+#include <stdio.h>
 #include <stdlib.h>
 
-int main(void)
+int main(int argc, char *argv[])
 {
+  // variable declaration & memory allocation
+  Tensor score, bbox, im_info, roi;
+  real score_data[150*36*46], bbox_data[300*36*46], im_info_data[4], roi_data[300*4];
   real anchors[100];
   real scales[5] = {3, 6, 9, 16, 32};
   real ratios[5] = {0.5, 0.666, 1.0, 1.5, 2.0};
+  int num_anchors;
   ProposalOption option;
-  option.num_concats = 3;
-  option.base_size = 16;
-  option.feat_stride = 16;
-  option.pre_nms_topn = 6000;
-  option.post_nms_topn = 300;
-  option.nms_thresh = 0.7;
-  option.min_size = 16;
-  option.scales = &scales[0];
-  option.ratios = &ratios[0];
-  option.num_scales = 5;
-  option.num_ratios = 5;
-  generate_anchors(anchors, &option);
-  int num_anchors = option.num_concats * option.num_scales * option.num_ratios;
 
-  Tensor score, bbox, im_info, roi;
-  real score_data[150*36*46], bbox_data[300*36*46], im_info_data[4], roi_data[300*4];
-  score.ndim = 4; score.num_items = 1; score.data = &score_data[0];
-  for (int i = 0; i < score.num_items; ++i) {
-    score.shape[i][0] = 2;
-    score.shape[i][1] = num_anchors;
-    score.shape[i][2] = 36;
-    score.shape[i][3] = 46;
+  // set option
+  {
+    option.num_concats = 3;
+    option.base_size = 16;
+    option.feat_stride = 16;
+    option.pre_nms_topn = 6000;
+    option.post_nms_topn = 300;
+    option.nms_thresh = 0.7;
+    option.min_size = 16;
+    option.scales = &scales[0];
+    option.ratios = &ratios[0];
+    option.num_scales = 5;
+    option.num_ratios = 5;
   }
-  bbox.ndim = 4; bbox.num_items = score.num_items; bbox.data = &bbox_data[0];
-  for (int i = 0; i < bbox.num_items; ++i) {
-    bbox.shape[i][0] = num_anchors;
-    bbox.shape[i][1] = 4;
-    bbox.shape[i][2] = 36;
-    bbox.shape[i][3] = 46;
+
+  // generate anchors
+  {
+    generate_anchors(anchors, &option);
+    num_anchors = option.num_concats * option.num_scales * option.num_ratios;
   }
-  im_info.ndim = 1; im_info.num_items = score.num_items; im_info.data = &im_info_data[0];
-  for (int i = 0; i < im_info.num_items; ++i) {
-    im_info.shape[i][0] = 4;
+
+  // set data shapes
+  {
+    score.ndim = 4; score.num_items = 1; score.data = &score_data[0];
+    for (int i = 0; i < score.num_items; ++i) {
+      score.shape[i][0] = 2;
+      score.shape[i][1] = num_anchors;
+      score.shape[i][2] = 36;
+      score.shape[i][3] = 46;
+    }
+
+    bbox.ndim = 4; bbox.num_items = score.num_items; bbox.data = &bbox_data[0];
+    for (int i = 0; i < bbox.num_items; ++i) {
+      bbox.shape[i][0] = num_anchors;
+      bbox.shape[i][1] = 4;
+      bbox.shape[i][2] = 36;
+      bbox.shape[i][3] = 46;
+    }
+
+    im_info.ndim = 1; im_info.num_items = score.num_items; im_info.data = &im_info_data[0];
+    for (int i = 0; i < im_info.num_items; ++i) {
+      im_info.shape[i][0] = 4;
+    }
+
+    roi.ndim = 2; roi.num_items = score.num_items; roi.data = &roi_data[0];
   }
-  roi.ndim = 2; roi.num_items = score.num_items; roi.data = &roi_data[0];
 
-  FILE* fp = fopen("../data/temp/proposal_bottom0.txt", "r");
-  for (int i = 0; i < flatten_size(&score); ++i)
-    fscanf(fp, "%f", &score_data[i]);
-  fclose(fp);
-  fp = fopen("../data/temp/proposal_bottom1.txt", "r");
-  for (int i = 0; i < flatten_size(&bbox); ++i)
-    fscanf(fp, "%f", &bbox_data[i]);
-  fclose(fp);
-  fp = fopen("../data/temp/proposal_bottom2.txt", "r");
-  for (int i = 0; i < flatten_size(&im_info); ++i)
-    fscanf(fp, "%f", &im_info_data[i]);
-  fclose(fp);
+  // load data
+  {
+    FILE* fp;
 
-  forward(&score, &bbox, &im_info, &roi, anchors, &option);
-
-  real* p_roi_data = roi.data;
-  for (int n = 0; n < roi.num_items; ++n) {
-    printf("batch %d: %d x %d\n", n, roi.shape[n][0], roi.shape[n][1]);
-    for (int i = 0; i < roi.shape[n][0]; ++i) {
-      for (int j = 0; j < roi.shape[n][1]; ++j) {
-        printf("%.6f ", *(p_roi_data++));
+    fp = fopen("../data/temp/proposal_bottom0.txt", "r");
+    for (int i = 0; i < flatten_size(&score); ++i) {
+      if (fscanf(fp, "%f", &score_data[i]) <= 0) {
+        printf("Error occurred while reading proposal_bottom0[%d]\n", i);
       }
-      printf("\n");
+    }
+    fclose(fp);
+
+    fp = fopen("../data/temp/proposal_bottom1.txt", "r");
+    for (int i = 0; i < flatten_size(&bbox); ++i)
+      if (fscanf(fp, "%f", &bbox_data[i]) <= 0) {
+        printf("Error occurred while reading proposal_bottom1[%d]\n", i);
+      }
+    fclose(fp);
+
+    fp = fopen("../data/temp/proposal_bottom2.txt", "r");
+    for (int i = 0; i < flatten_size(&im_info); ++i)
+      if (fscanf(fp, "%f", &im_info_data[i]) <= 0) {
+        printf("Error occurred while reading proposal_bottom2[%d]\n", i);
+      }
+    fclose(fp);
+  }
+
+  // CUDA initialization
+  #ifdef GPU
+  {
+    printf("set device\n");
+    CUDA_CHECK(cudaSetDevice(0));
+  }
+  #endif
+
+  // do forward operation
+  {
+    printf("do forward\n");
+    proposal_forward(&score, &bbox, &im_info, &roi, anchors, &option);
+  }
+
+  // verify results
+  {
+    real* p_roi_data = roi.data;
+    for (int n = 0; n < roi.num_items; ++n) {
+      printf("batch %d: %d x %d\n", n, roi.shape[n][0], roi.shape[n][1]);
+      for (int i = 0; i < roi.shape[n][0]; ++i) {
+        for (int j = 0; j < roi.shape[n][1]; ++j) {
+          printf("%.6f ", *(p_roi_data++));
+        }
+        printf("\n");
+      }
     }
   }
 
   return 0;
 }
+#endif // endifdef TEST

@@ -1,14 +1,22 @@
-#ifndef PVA_DL_LAYERS_H
-#define PVA_DL_LAYERS_H
+#ifndef PVA_DL_LAYER_H
+#define PVA_DL_LAYER_H
 
-typedef float real;
-
+// simple math operations
 #define ABS(x)  ((x) > 0 ? (x) : (-(x)))
-#define MIN(x, y)  ((x) < (y) ? (x) : (y))
-#define MAX(x, y)  ((x) > (y) ? (x) : (y))
 #define DIV_THEN_CEIL(x, y)  (((x) + (y) - 1) / (y))
 #define ROUND(x)  ((int)((x) + 0.5f))
 
+#ifdef GPU
+  #define MIN(x, y)  min(x, y)
+  #define MAX(x, y)  max(x, y)
+#else
+  #define MIN(x, y)  ((x) < (y) ? (x) : (y))
+  #define MAX(x, y)  ((x) > (y) ? (x) : (y))
+#endif
+
+
+// tensor data structure & some functions
+typedef float real;
 #define g_max_num_items 128
 #define g_max_ndim 5
 
@@ -24,16 +32,19 @@ int flatten_size(const Tensor* const tensor);
 
 inline int flatten_size(const Tensor* const tensor)
 {
-  int size = 0;
+  int total_size = 0;
   for (int n = 0; n < tensor->num_items; ++n) {
-    int size_n = 1;
-    for (int d = 0; d < tensor->ndim; ++d)
-      size_n *= tensor->shape[n][d];
-    size += size_n;
+    int size = 1;
+    for (int d = 0; d < tensor->ndim; ++d) {
+      size *= tensor->shape[n][d];
+    }
+    total_size += size;
   }
-  return size;
+  return total_size;
 }
 
+
+// convolution & deconvolution
 typedef struct ConvOption_
 {
   int num_groups;
@@ -45,6 +56,40 @@ typedef struct ConvOption_
   void* handle;
 } ConvOption;
 
+// convolution: bottom -> top
+//   G: number of groups
+//   bottom: (G * C) x H x W
+//   top: (G * C') x H' x W'
+//   weight: G x C' x C x kernel_h x kernel_w
+//   bias: (G * C') x 1
+//   temp: G * C * kernel_h * kernel_w * H' * W'
+//   const: H' * W',  const[i] = 1 for all i
+void conv_forward(const Tensor* const bottom3d,
+                  Tensor* const top3d,
+                  const Tensor* const weight5d,
+                  const Tensor* const bias1d,
+                  real* const temp_data,
+                  const real* const const_data,
+                  const ConvOption* const option);
+
+// deconvolution: bottom -> top
+//   G: number of groups
+//   bottom: (G * C') x H' x W'
+//   top: (G * C) x H x W
+//   weight: G x C' x C x kernel_h x kernel_w
+//   bias: (G * C) x 1
+//   temp: G * C * kernel_h * kernel_w * H' * W'
+//   const: H * W,  const[i] = 1 for all i
+void deconv_forward(const Tensor* const bottom3d,
+                    Tensor* const top3d,
+                    const Tensor* const weight5d,
+                    const Tensor* const bias1d,
+                    real* const temp_data,
+                    const real* const const_data,
+                    const ConvOption* const option);
+
+
+// pooling
 typedef struct PoolOption_
 {
   int kernel_h, kernel_w;
@@ -52,6 +97,8 @@ typedef struct PoolOption_
   int stride_h, stride_w;
 } PoolOption;
 
+
+// RoI pooling
 typedef struct ROIPoolOption_
 {
   int pooled_height;
@@ -59,9 +106,28 @@ typedef struct ROIPoolOption_
   real spatial_scale;
 } ROIPoolOption;
 
+
+// ReLU transform
 typedef struct ReluOption_
 {
   real negative_slope;
 } ReluOption;
 
-#endif // PVA_DL_LAYERS_H
+
+// top-n proposal generation
+typedef struct ProposalOption_
+{
+  int num_concats;
+  real* ratios;
+  int num_ratios;
+  real* scales;
+  int num_scales;
+  int base_size;
+  int feat_stride;
+  int min_size;
+  int pre_nms_topn;
+  int post_nms_topn;
+  real nms_thresh;
+} ProposalOption;
+
+#endif // endifndef PVA_DL_LAYER_H
