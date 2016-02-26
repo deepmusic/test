@@ -401,7 +401,7 @@ int main(void)
     printf("batch %d: %d x %d\n", n, roi.shape[n][0], roi.shape[n][1]);
     for (int i = 0; i < roi.shape[n][0]; ++i) {
       for (int j = 0; j < roi.shape[n][1]; ++j) {
-        printf("%.2f ", *(p_roi_data++));
+        printf("%.6f ", *(p_roi_data++));
       }
       printf("\n");
     }
