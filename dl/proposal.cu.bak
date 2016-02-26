@@ -4,8 +4,9 @@
 #define NMS_BLOCK_SIZE (sizeof(unsigned long long) * 8)
 
 __device__
-inline real iou_kernel(const real* const a, const real* const b)
+inline real iou_kernel(const real* const A, const real* const B)
 {
+#ifdef PASS
   const real left = max(a[0], b[0]);
   const real right = min(a[2], b[2]);
   const real top = max(a[1], b[1]);
@@ -16,6 +17,25 @@ inline real iou_kernel(const real* const a, const real* const b)
   const real Sa = (a[2] - a[0] + 1) * (a[3] - a[1] + 1);
   const real Sb = (b[2] - b[0] + 1) * (b[3] - b[1] + 1);
   return interS / (Sa + Sb - interS);
+#else
+  // overlapped region (= box)
+  const real x1 = max(A[0], B[0]);
+  const real x2 = min(A[2], B[2]);
+  const real y1 = max(A[1], B[1]);
+  const real y2 = min(A[3], B[3]);
+
+  // intersection area
+  const real width = max(0.0f,  x2 - x1 + 1);
+  const real height = max(0.0f,  y2 - y1 + 1);
+  const real area = width * height;
+
+  // area of A, B
+  const real A_area = (A[2] - A[0] + 1) * (A[3] - A[1] + 1);
+  const real B_area = (B[2] - B[0] + 1) * (B[3] - B[1] + 1);
+
+  // IoU
+  return area / (A_area + B_area - area);
+#endif
 }
 
 __global__
@@ -23,6 +43,7 @@ void nms_kernel(const int n_boxes, const real nms_thresh,
                 const real* const dev_boxes,
                 unsigned long long* const dev_mask)
 {
+#ifdef PASS
   const int row_size =
         min(n_boxes - blockIdx.y * blockDim.x, blockDim.x);
   const int col_size =
@@ -52,6 +73,69 @@ void nms_kernel(const int n_boxes, const real nms_thresh,
     const int col_blocks = DIV_THEN_CEIL(n_boxes, blockDim.x);
     dev_mask[cur_box_idx * col_blocks + blockIdx.x] = t;
   }
+#else
+  // block region
+  //   j = j_start + { 0, ..., dj_end - 1 }
+  //   i = i_start + { 0, ..., di_end - 1 }
+  const int i_start = blockIdx.x * NMS_BLOCK_SIZE;
+  const int di_end = MIN(n_boxes - i_start,  (int)(NMS_BLOCK_SIZE));
+  const int j_start = blockIdx.y * NMS_BLOCK_SIZE;
+  const int dj_end = MIN(n_boxes - j_start,  (int)(NMS_BLOCK_SIZE));
+
+  // copy all i-th boxes to GPU cache
+  //   i = i_start + { 0, ..., di_end - 1 }
+  __shared__ real boxes_i[NMS_BLOCK_SIZE * 5];
+  {
+    const int di = threadIdx.x;
+    if (di < di_end) {
+      boxes_i[di * 5 + 0] = dev_boxes[(i_start + di) * 5 + 0];
+      boxes_i[di * 5 + 1] = dev_boxes[(i_start + di) * 5 + 1];
+      boxes_i[di * 5 + 2] = dev_boxes[(i_start + di) * 5 + 2];
+      boxes_i[di * 5 + 3] = dev_boxes[(i_start + di) * 5 + 3];
+      boxes_i[di * 5 + 4] = dev_boxes[(i_start + di) * 5 + 4];
+    }
+  }
+  __syncthreads();
+
+  // given j = j_start + dj,
+  //   check whether box i is significantly overlapped with box j
+  //   (i.e., IoU(box j, box i) > threshold)
+  //   for all i = i_start + { 0, ..., di_end - 1 } except for i == j
+  {
+    const int dj = threadIdx.x;
+    if (dj < dj_end) {
+      // box j
+      const real* const box_j = dev_boxes + (j_start + dj) * 5;
+
+      // mask for significant overlap
+      //   if IoU(box j, box i) > threshold,  di-th bit = 1
+      unsigned long long mask_j = 0;
+
+      // check for all i = i_start + { 0, ..., di_end - 1 }
+      // except for i == j
+      const int di_start = (i_start == j_start) ? (dj + 1) : 0;
+      for (int di = di_start; di < di_end; ++di) {
+        // box i
+        const real* const box_i = boxes_i + di * 5;
+
+        // if IoU(box j, box i) > threshold,  di-th bit = 1
+        if (iou_kernel(box_j, box_i) > nms_thresh) {
+          mask_j |= 1ULL << di;
+        }
+      }
+
+      // mask: "num_boxes x num_blocks" array
+      //   for mask[j][bi], "di-th bit = 1" means:
+      //     box j is significantly overlapped with box i = i_start + di,
+      //     where i_start = bi * block_size
+      {
+        const int num_blocks = DIV_THEN_CEIL(n_boxes, NMS_BLOCK_SIZE);
+        const int bi = blockIdx.x;
+        dev_mask[(j_start + dj) * num_blocks + bi] = mask_j;
+      }
+    } // endif dj < dj_end
+  }
+#endif
 }
 
 #include <stdio.h>
@@ -88,6 +172,12 @@ void _nms_gpu(int* const keep_out, int* const num_out,
 
   CUDA_CHECK(cudaFree(boxes_dev));
   CUDA_CHECK(cudaFree(mask_dev));
+
+  for (int i = 0; i < 20; ++i) {
+    for (int j = 0; j < col_blocks; ++j)
+      printf("%lld ", mask_host[i * col_blocks + j]);
+    printf("\n");
+  }
 
   unsigned long long* const remv
       = (unsigned long long*)malloc(col_blocks * sizeof(unsigned long long));
@@ -151,6 +241,7 @@ int transform_box(BoundingBox* const box,
   return 0;
 }
 
+#ifdef PASS
 typedef struct ProposalOption_
 {
   int num_concats;
@@ -165,6 +256,7 @@ typedef struct ProposalOption_
   int post_nms_topn;
   real nms_thresh;
 } ProposalOption;
+#endif
 
 #define MAX_NUM_RATIO_SCALE 10
 #define MAX_DATA_WIDTH 80

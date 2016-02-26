@@ -15,7 +15,7 @@ inline real iou(const real* const A, const real* const B)
 {
   // overlapped region (= box)
   const real x1 = MAX(A[0], B[0]);
-  const real y1 = MAX(A[1], A[1]);
+  const real y1 = MAX(A[1], B[1]);
   const real x2 = MIN(A[2], B[2]);
   const real y2 = MIN(A[3], B[3]);
 
@@ -45,7 +45,6 @@ void nms_mask_gpu(const real* const boxes,
                   uint64* const mask,
                   const int num_boxes, const real nms_thresh)
 {
-
   // block region
   //   j = j_start + { 0, ..., dj_end - 1 }
   //   i = i_start + { 0, ..., di_end - 1 }
@@ -466,7 +465,8 @@ int main(int argc, char *argv[])
 {
   // variable declaration & memory allocation
   Tensor score, bbox, im_info, roi;
-  real score_data[150*36*46], bbox_data[300*36*46], im_info_data[4], roi_data[300*4];
+  real score_data[150*36*46], bbox_data[300*36*46], im_info_data[4];
+  real roi_data[300*4], roi_true_data[300*4];
   real anchors[100];
   real scales[5] = {3, 6, 9, 16, 32};
   real ratios[5] = {0.5, 0.666, 1.0, 1.5, 2.0};
@@ -508,8 +508,8 @@ int main(int argc, char *argv[])
     for (int i = 0; i < bbox.num_items; ++i) {
       bbox.shape[i][0] = num_anchors;
       bbox.shape[i][1] = 4;
-      bbox.shape[i][2] = 36;
-      bbox.shape[i][3] = 46;
+      bbox.shape[i][2] = score.shape[i][2];
+      bbox.shape[i][3] = score.shape[i][3];
     }
 
     im_info.ndim = 1; im_info.num_items = score.num_items; im_info.data = &im_info_data[0];
@@ -518,6 +518,10 @@ int main(int argc, char *argv[])
     }
 
     roi.ndim = 2; roi.num_items = score.num_items; roi.data = &roi_data[0];
+    for (int i = 0; i < roi.num_items; ++i) {
+      roi.shape[i][0] = option.post_nms_topn;
+      roi.shape[i][1] = 4;
+    }
   }
 
   // load data
@@ -545,6 +549,13 @@ int main(int argc, char *argv[])
         printf("Error occurred while reading proposal_bottom2[%d]\n", i);
       }
     fclose(fp);
+
+    fp = fopen("../data/temp/proposal_top0.txt", "r");
+    for (int i = 0; i < flatten_size(&roi); ++i)
+      if (fscanf(fp, "%f", &roi_true_data[i]) <= 0) {
+        printf("Error occurred while reading proposal_top0[%d]\n", i);
+      }
+    fclose(fp);
   }
 
   // CUDA initialization
@@ -563,15 +574,57 @@ int main(int argc, char *argv[])
 
   // verify results
   {
-    real* p_roi_data = roi.data;
-    for (int n = 0; n < roi.num_items; ++n) {
-      printf("batch %d: %d x %d\n", n, roi.shape[n][0], roi.shape[n][1]);
-      for (int i = 0; i < roi.shape[n][0]; ++i) {
-        for (int j = 0; j < roi.shape[n][1]; ++j) {
-          printf("%.6f ", *(p_roi_data++));
-        }
-        printf("\n");
+    const int roi_size = flatten_size(&roi);
+    int i = 0;
+    int i_true = 0;
+    for (; i < roi_size && i_true < roi_size; i += 4, i_true += 4) {
+      real diff = 0.0f;
+      for (int di = 0; di < 4; ++di) {
+        diff += ABS(roi_data[i + di] - roi_true_data[i_true + di]) /
+                (1e-10f + MIN(roi_data[i + di], roi_true_data[i_true + di]));
       }
+      if (diff > 1e-3f) {
+        real diff1 = 0.0f;
+        for (int di = 0; di < 4; ++di) {
+          diff1 += ABS(roi_data[i + di] - roi_true_data[i_true + 4 + di]) /
+            (1e-10f + MIN(roi_data[i + di], roi_true_data[i_true + 4 + di]));
+        }
+        if (diff1 < 1e-3f) {
+          printf("[Missed] RoI_true[%d] = %.2f %.2f %.2f %.2f\n", i_true / 4,
+                 roi_true_data[i_true + 0], roi_true_data[i_true + 1],
+                 roi_true_data[i_true + 2], roi_true_data[i_true + 3]);
+          i_true += 4;
+          continue;
+        }
+        real diff2 = 0.0f;
+        for (int di = 0; di < 4; ++di) {
+          diff1 += ABS(roi_data[i + 4 + di] - roi_true_data[i_true + di]) /
+            (1e-10f + MIN(roi_data[i + 4 + di], roi_true_data[i_true + di]));
+        }
+        if (diff2 < 1e-3f) {
+          printf("[False box] RoI[%d] = %.2f %.2f %.2f %.2f\n",
+                 i / 4, roi_data[i + 0], roi_data[i + 1],
+                 roi_data[i + 2], roi_data[i + 3]);
+          i += 4;
+          continue;
+        }
+        printf("RoI[%d] = %.2f %.2f %.2f %.2f  ",
+               i / 4, roi_data[i + 0], roi_data[i + 1],
+               roi_data[i + 2], roi_data[i + 3]);
+        printf("RoI_true[%d] = %.2f %.2f %.2f %.2f\n",
+               i / 4, roi_true_data[i + 0], roi_true_data[i + 1],
+               roi_true_data[i + 2], roi_true_data[i + 3]);
+      }
+    }
+    for (; i < roi_size; i += 4) {
+      printf("[False box] RoI[%d] = %.2f %.2f %.2f %.2f\n",
+             i / 4, roi_data[i + 0], roi_data[i + 1],
+             roi_data[i + 2], roi_data[i + 3]);
+    }
+    for (; i_true < roi_size; i_true += 4) {
+      printf("[Missed] RoI_true[%d] = %.2f %.2f %.2f %.2f\n", i_true / 4,
+             roi_true_data[i_true + 0], roi_true_data[i_true + 1],
+             roi_true_data[i_true + 2], roi_true_data[i_true + 3]);
     }
   }
 
