@@ -130,4 +130,23 @@ typedef struct ProposalOption_
   real nms_thresh;
 } ProposalOption;
 
+// proposal: bottom -> top
+//   bottom: 2 x num_anchors x H x W tensor
+//     bottom[0, n, h, w] = foreground score of anchor n at node (h, w)
+//     bottom[1, n, h, w] = background score of anchor n at node (h, w)
+//   pred_box: num_anchors x 4 x H x W tensor
+//     pred_box[n, :, h, w] = predicted box (d x1, d y1, d log w, d log h)
+//                            of anchor n at pixel (h, w)
+//   img_info: 4 x 1 tensor,  (w, h, min_w, min_h) of raw image
+//     min_w: minimum box width in raw image
+//     min_h: minimum box height in raw image
+//   top: num_RoIs x 4 tensor,  (x1, y1, x2, y2) of each RoI
+//   anchors: num_anchors * 4 array,  (x1, y1, x2, y2) of each anchor
+void proposal_forward(const Tensor* const bottom4d,
+                      const Tensor* const pred_box4d,
+                      const Tensor* const img_info1d,
+                      Tensor* const top2d,
+                      const real* const anchors,
+                      const ProposalOption* const option);
+
 #endif // endifndef PVA_DL_LAYER_H
