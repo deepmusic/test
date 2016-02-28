@@ -212,10 +212,10 @@ int main(int argc, char *argv[])
 {
   // variable declaration & memory allocation
   Tensor X, Y, roi;
-  real* X_data = (real*)malloc(IN_DATA_SIZE * sizeof(real));
-  real* roi_data = (real*)malloc(ROI_SIZE*sizeof(real));
-  real* Y_data = (real*)malloc(OUT_DATA_SIZE * sizeof(real));
-  real* Y_true_data = (real*)malloc(OUT_DATA_SIZE * sizeof(real));
+  real* const X_data = (real*)malloc(IN_DATA_SIZE * sizeof(real));
+  real* const roi_data = (real*)malloc(ROI_SIZE*sizeof(real));
+  real* const Y_data = (real*)malloc(OUT_DATA_SIZE * sizeof(real));
+  real* const Y_true_data = (real*)malloc(OUT_DATA_SIZE * sizeof(real));
   int* p_argmax_data;
   ROIPoolOption option;
 
@@ -256,9 +256,9 @@ int main(int argc, char *argv[])
   // load data
   {
     FILE* fp;
-    int X_size = flatten_size(&X);
-    int Y_size = flatten_size(&Y);
-    int roi_size = flatten_size(&roi);
+    const int X_size = flatten_size(&X);
+    const int Y_size = flatten_size(&Y);
+    const int roi_size = flatten_size(&roi);
 
     printf("data loading\n");
 
@@ -298,9 +298,9 @@ int main(int argc, char *argv[])
   // bind loaded data to corresponding tensors
   #ifdef GPU
   {
-    int X_size = flatten_size(&X);
-    int Y_size = flatten_size(&Y);
-    int roi_size = flatten_size(&roi);
+    const int X_size = flatten_size(&X);
+    const int Y_size = flatten_size(&Y);
+    const int roi_size = flatten_size(&roi);
 
     printf("gpu malloc\n");
     CUDA_CHECK(cudaMalloc(&X.data, X_size * sizeof(real)));
@@ -316,7 +316,7 @@ int main(int argc, char *argv[])
   }
   #else
   {
-    int Y_size = flatten_size(&Y);
+    const int Y_size = flatten_size(&Y);
 
     X.data = X_data;
     Y.data = Y_data;
@@ -334,7 +334,7 @@ int main(int argc, char *argv[])
   // copy GPU data to main memory
   #ifdef GPU
   {
-    int Y_size = flatten_size(&Y);
+    const int Y_size = flatten_size(&Y);
     printf("memcpy: cpu <- gpu\n");
     CUDA_CHECK(cudaMemcpy(Y_data, Y.data, Y_size * sizeof(real),
                           cudaMemcpyDeviceToHost));
@@ -343,8 +343,8 @@ int main(int argc, char *argv[])
 
   // verify results
   {
-    int Y_size = flatten_size(&Y);
-
+    const int Y_size = flatten_size(&Y);
+    printf("verification\n");
     for (int i = 0; i < Y_size; ++i) {
       if (Y_data[i] != Y_true_data[i]) {
         printf("Y[%d] = %.6f  Y_true[%d] = %.6f\n",
@@ -377,3 +377,4 @@ int main(int argc, char *argv[])
 
   return 0;
 }
+#endif // endifdef TEST

@@ -480,6 +480,7 @@ int main(int argc, char *argv[])
   // verify results
   {
     int i = 0;
+    printf("verification\n");
     for (int n = 0; n < Y.num_items; ++n) {
       for (int c = 0; c < Y.shape[n][0]; ++c) {
         for (int h = 0; h < Y.shape[n][1]; ++h) {

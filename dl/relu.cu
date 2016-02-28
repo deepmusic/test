@@ -4,7 +4,7 @@
 #include "cuda_settings.h"
 #endif
 
-// relu transform bottom -> top
+// ReLU transform bottom -> top
 //   top[i] = 0 if bottom[i] <= 0
 #ifdef GPU
 __global__
@@ -37,7 +37,7 @@ void relu_cpu(const real* const bottom, real* const top,
 }
 #endif
 
-// soft relu transform bottom -> top
+// soft ReLU transform bottom -> top
 //   top[i] = slope * bottom[i] if bottom[i] <= 0
 #ifdef GPU
 __global__
@@ -70,7 +70,7 @@ void prelu_cpu(const real* const bottom, real* const top,
 }
 #endif
 
-// in-place relu transform
+// in-place ReLU transform
 #ifdef GPU
 __global__
 void relu_inplace_gpu(real* const bottom, const int data_size)
@@ -94,7 +94,7 @@ void relu_inplace_cpu(real* const bottom, const int data_size)
 }
 #endif
 
-// in-place soft relu transform
+// in-place soft ReLU transform
 #ifdef GPU
 __global__
 void prelu_inplace_gpu(real* const bottom, const int data_size,
@@ -120,90 +120,117 @@ void prelu_inplace_cpu(real* const bottom, const int data_size,
 }
 #endif
 
-// relu transform: bottom -> top
-//   data size: whole size (N * C * H * W or something)
+// (soft-)ReLU transform: bottom -> top
+//   data size: total number of nodes (N * C * H * W or something)
+//   if option->negative_slope = 0, perform ReLU
+//                             > 0, perform soft ReLU
 void relu_forward(const Tensor* const bottom, Tensor* const top,
                   const ReluOption* const option)
 {
   const int data_size = flatten_size(bottom);
 
-#ifdef GPU
-  const int threads_per_block = 512;
-  const int num_blocks = DIV_THEN_CEIL(data_size, threads_per_block);
-  if (option->negative_slope == 0) {
-    relu_gpu<<<num_blocks, threads_per_block>>>(
-        bottom->data, top->data, data_size);
+  // perform (soft-)ReLU transform
+  //   if option->negative_slope = 0, perform ReLU
+  //                             > 0, perform soft ReLU
+  #ifdef GPU
+  {
+    const int threads_per_block = 512;
+    const int num_blocks = DIV_THEN_CEIL(data_size, threads_per_block);
+    if (option->negative_slope == 0) {
+      relu_gpu<<<num_blocks, threads_per_block>>>(
+          bottom->data, top->data, data_size);
+    }
+    else {
+      prelu_gpu<<<num_blocks, threads_per_block>>>(
+          bottom->data, top->data, data_size, option->negative_slope);
+    }
   }
-  else {
-    prelu_gpu<<<num_blocks, threads_per_block>>>(
-        bottom->data, top->data, data_size, option->negative_slope);
+  #else
+  {
+    if (option->negative_slope == 0) {
+      relu_cpu(
+          bottom->data, top->data, data_size);
+    }
+    else {
+      prelu_cpu(
+          bottom->data, top->data, data_size, option->negative_slope);
+    }
   }
-#else
-  if (option->negative_slope == 0) {
-    relu_cpu(
-        bottom->data, top->data, data_size);
-  }
-  else {
-    prelu_cpu(
-        bottom->data, top->data, data_size, option->negative_slope);
-  }
-#endif
+  #endif
 
-  top->ndim = bottom->ndim;
-  top->num_items = bottom->num_items;
-  for (int n = 0; n < bottom->num_items; ++n) {
-    for (int i = 0; i < bottom->ndim; ++i) {
-      top->shape[n][i] = bottom->shape[n][i];
+  // set top shape (= bottom shape)
+  {
+    top->ndim = bottom->ndim;
+    top->num_items = bottom->num_items;
+    for (int n = 0; n < bottom->num_items; ++n) {
+      for (int i = 0; i < bottom->ndim; ++i) {
+        top->shape[n][i] = bottom->shape[n][i];
+      }
     }
   }
 }
 
-// in-place relu transform: bottom -> bottom
-//   data size: whole size (N * C * H * W or something)
+// in-place (soft-)ReLU transform: bottom -> bottom
+//   data size: total number of nodes (N * C * H * W or something)
+//   if option->negative_slope = 0, perform ReLU
+//                             > 0, perform soft ReLU
 void relu_forward_inplace(Tensor* const bottom,
                           const ReluOption* const option)
 {
   const int data_size = flatten_size(bottom);
 
-#ifdef GPU
-  const int threads_per_block = 512;
-  const int num_blocks = DIV_THEN_CEIL(data_size, threads_per_block);
-  if (option->negative_slope == 0) {
-    relu_inplace_gpu<<<num_blocks, threads_per_block>>>(
-        bottom->data, data_size);
+  // perform (soft-)ReLU transform
+  //   if option->negative_slope = 0, perform ReLU
+  //                             > 0, perform soft ReLU
+  #ifdef GPU
+  {
+    const int threads_per_block = 512;
+    const int num_blocks = DIV_THEN_CEIL(data_size, threads_per_block);
+    if (option->negative_slope == 0) {
+      relu_inplace_gpu<<<num_blocks, threads_per_block>>>(
+          bottom->data, data_size);
+    }
+    else {
+      prelu_inplace_gpu<<<num_blocks, threads_per_block>>>(
+          bottom->data, data_size, option->negative_slope);
+    }
   }
-  else {
-    prelu_inplace_gpu<<<num_blocks, threads_per_block>>>(
-        bottom->data, data_size, option->negative_slope);
+  #else
+  {
+    if (option->negative_slope == 0) {
+      relu_inplace_cpu(
+          bottom->data, data_size);
+    }
+    else {
+      prelu_inplace_cpu(
+          bottom->data, data_size, option->negative_slope);
+    }
   }
-#else
-  if (option->negative_slope == 0) {
-    relu_inplace_cpu(
-        bottom->data, data_size);
-  }
-  else {
-    prelu_inplace_cpu(
-        bottom->data, data_size, option->negative_slope);
-  }
-#endif
+  #endif
 }
 
+// test code
+#ifdef TEST
 #include <stdio.h>
 #include <stdlib.h>
 
 #define DATA_SIZE 384*18*23
 
-int main(int argc, char **argv)
+int main(int argc, char *argv[])
 {
-  Tensor X, Y;
-  real* X_data = (real*)malloc(DATA_SIZE * sizeof(real));
-  real* Y_data = (real*)malloc(DATA_SIZE * sizeof(real));
+  // variable declaration & memory allocation
+  Tensor X, Y_relu, Y_prelu;
+  real* const X_data = (real*)malloc(DATA_SIZE * sizeof(real));
+  real* const relu_data = (real*)malloc(DATA_SIZE * sizeof(real));
+  real* const prelu_data = (real*)malloc(DATA_SIZE * sizeof(real));
   ReluOption option;
 
+  // set option
   {
     option.negative_slope = 0;
   }
 
+  // set data shapes
   {
     X.ndim = 3;
     X.num_items = 1;
@@ -214,9 +241,10 @@ int main(int argc, char **argv)
     }
   }
  
+  // load data
   {
     FILE* fp;
-    int X_size = flatten_size(&X);
+    const int X_size = flatten_size(&X);
 
     printf("data loading\n");
 
@@ -227,65 +255,96 @@ int main(int argc, char **argv)
     fclose(fp);
   }
 
-#ifdef GPU
+  // CUDA initialization
+  #ifdef GPU
   {
     printf("set device\n");
     CUDA_CHECK(cudaSetDevice(0));
   }
-#endif
+  #endif
 
-#ifdef GPU
+  // bind loaded data to corresponding tensors
+  #ifdef GPU
   {
-    int X_size = flatten_size(&X);
+    const int X_size = flatten_size(&X);
 
-    printf("cuda malloc\n");
+    printf("gpu malloc\n");
     CUDA_CHECK(cudaMalloc(&X.data, X_size*sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&Y.data, X_size*sizeof(real)));
+    CUDA_CHECK(cudaMalloc(&Y_relu.data, X_size*sizeof(real)));
+    CUDA_CHECK(cudaMalloc(&Y_prelu.data, X_size*sizeof(real)));
 
-    printf("memcopy\n");
-    CUDA_CHECK(cudaMemcpy(X.data, X_data, X_size*sizeof(real), cudaMemcpyHostToDevice));
+    printf("memcpy: cpu -> gpu\n");
+    CUDA_CHECK(cudaMemcpy(X.data, X_data, X_size*sizeof(real),
+                          cudaMemcpyHostToDevice));
   }
-#else
+  #else
   {
     X.data = X_data;
-    Y.data = Y_data;
+    Y_relu.data = relu_data;
+    Y_prelu.data = prelu_data;
   }
-#endif
+  #endif
 
+  // do forward operation
   {
-    printf("do forward\n");
-    relu_forward(&X, &Y, &option);
+    printf("do forward (relu)\n");
+    relu_forward(&X, &Y_relu, &option);
+    printf("do forward (prelu)\n");
+    option.negative_slope = 0.1f;
+    relu_forward(&X, &Y_prelu, &option);
   }
 
-#ifdef GPU
+  // copy GPU data to main memory
+  #ifdef GPU
   {
-    int Y_size = flatten_size(&Y);
-    printf("memcpy\n");
-    CUDA_CHECK(cudaMemcpy(Y_data, Y.data, Y_size*sizeof(real), cudaMemcpyDeviceToHost));
+    const int Y_size = flatten_size(&X);
+    printf("memcpy: cpu <- gpu (relu)\n");
+    CUDA_CHECK(cudaMemcpy(relu_data, Y_relu.data, Y_size*sizeof(real),
+                          cudaMemcpyDeviceToHost));
+    printf("memcpy: cpu <- gpu (prelu)\n");
+    CUDA_CHECK(cudaMemcpy(prelu_data, Y_prelu.data, Y_size*sizeof(real),
+                          cudaMemcpyDeviceToHost));
   }
-#endif
+  #endif
 
+  // verify results
   {
-    int Y_size = flatten_size(&Y);
+    const int Y_size = flatten_size(&X);
+    printf("verification (relu)\n");
     for (int i = 0; i < Y_size; ++i) {
-      if (Y_data[i] != X_data[i] && (Y_data[i] != 0 || X_data[i] > 0)) {
-        printf("top[%d] = %.6f, bottom[%d] = %.6f\n", i, Y_data[i], i, X_data[i]);
+      if (relu_data[i] != X_data[i]
+          && (relu_data[i] != 0 || X_data[i] > 0)) {
+        printf("top[%d] = %.6f, bottom[%d] = %.6f\n",
+               i, relu_data[i], i, X_data[i]);
+      }
+    }
+    printf("verification (prelu)\n");
+    for (int i = 0; i < Y_size; ++i) {
+      if (prelu_data[i] != X_data[i]
+          && (prelu_data[i] != option.negative_slope * X_data[i]
+              || X_data[i] > 0)) {
+        printf("top[%d] = %.6f, bottom[%d] = %.6f\n",
+               i, prelu_data[i], i, X_data[i]);
       }
     }
   }
 
+  // memory deallocation
   {
     printf("free\n");
     free(X_data);
-    free(Y_data);
+    free(relu_data);
+    free(prelu_data);
   }
-#ifdef GPU
+  #ifdef GPU
   {
-    printf("cuda free\n");
+    printf("gpu free\n");
     CUDA_CHECK(cudaFree(X.data));
-    CUDA_CHECK(cudaFree(Y.data));
+    CUDA_CHECK(cudaFree(Y_relu.data));
+    CUDA_CHECK(cudaFree(Y_prelu.data));
   }
-#endif
+  #endif
 
   return 0;
 }
+#endif // endifdef TEST

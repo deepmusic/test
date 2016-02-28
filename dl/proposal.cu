@@ -285,8 +285,8 @@ void nms(const int num_boxes, const real* const boxes,
 int transform_box(BoundingBox* const box,
                   const real dx, const real dy,
                   const real d_log_w, const real d_log_h,
-                  const real im_w, const real im_h,
-                  const real min_w, const real min_h)
+                  const real img_W, const real img_H,
+                  const real min_box_W, const real min_box_H)
 {
   // width & height of box
   const real w = box->x2 - box->x1 + 1.0f;
@@ -310,17 +310,17 @@ int transform_box(BoundingBox* const box,
   box->y2 = pred_ctr_y + 0.5f * pred_h;
 
   // adjust new corner locations to be within the image region,
-  box->x1 = MAX(0.0f,  MIN(box->x1,  im_w - 1.0f));
-  box->y1 = MAX(0.0f,  MIN(box->y1,  im_h - 1.0f));
-  box->x2 = MAX(0.0f,  MIN(box->x2,  im_w - 1.0f));
-  box->y2 = MAX(0.0f,  MIN(box->y2,  im_h - 1.0f));
+  box->x1 = MAX(0.0f,  MIN(box->x1,  img_W - 1.0f));
+  box->y1 = MAX(0.0f,  MIN(box->y1,  img_H - 1.0f));
+  box->x2 = MAX(0.0f,  MIN(box->x2,  img_W - 1.0f));
+  box->y2 = MAX(0.0f,  MIN(box->y2,  img_H - 1.0f));
 
   // recompute new width & height
   const real box_w = box->x2 - box->x1 + 1.0f;
   const real box_h = box->y2 - box->y1 + 1.0f;
 
   // check if new box's size >= threshold
-  if (box_w >= min_w && box_h >= min_h) return 1;
+  if (box_w >= min_box_W && box_h >= min_box_H) return 1;
   return 0;
 }
 
@@ -414,19 +414,20 @@ void sort_box(BoundingBox* const list, const int start, const int end,
 //   bottom: 2 x num_anchors x H x W tensor
 //     bottom[0, n, h, w] = foreground score of anchor n at node (h, w)
 //     bottom[1, n, h, w] = background score of anchor n at node (h, w)
-//   pred_box: num_anchors x 4 x H x W tensor
-//     pred_box[n, :, h, w] = predicted box (d x1, d y1, d log w, d log h)
-//                            of anchor n at pixel (h, w)
-//   img_info: 4 x 1 tensor,  (w, h, min_w, min_h) of raw image
-//     min_w: minimum box width in raw image
-//     min_h: minimum box height in raw image
+//   d_anchor: num_anchors x 4 x H x W tensor
+//     d_anchor[n, :, h, w] = gradient (dx, dy, d(log w), d(log h))
+//                            of anchor n at center location (h, w)
+//   img_info: 4 x 1 tensor,  (img_H, img_W, min_box_W, min_box_H)
+//     img_H, img_W: raw image height & width
+//     min_box_W: minimum box width in raw image
+//     min_box_H: minimum box height in raw image
 //   top: num_RoIs x 4 tensor,  (x1, y1, x2, y2) of each RoI
 //   anchors: num_anchors * 4 array,  (x1, y1, x2, y2) of each anchor
 #define MAX_DATA_WIDTH 80
 #define MAX_DATA_HEIGHT 80
 #define MAX_NUM_PROPOSAL 6000
 void proposal_forward(const Tensor* const bottom4d,
-                      const Tensor* const pred_box4d,
+                      const Tensor* const d_anchor4d,
                       const Tensor* const img_info1d,
                       Tensor* const top2d,
                       const real* const anchors,
@@ -440,24 +441,27 @@ void proposal_forward(const Tensor* const bottom4d,
       = (real*)malloc(MAX_NUM_PROPOSAL * 5 * sizeof(real));
   int* const keep = (int*)malloc(MAX_NUM_PROPOSAL * sizeof(int));
 
-  // bottom4d: N x 2 x num_anchors x H x W
-  // pred_box4d: N x num_anchors x 4 x H x W
-  // img_info1d: N x 4
+  // do forward-pass for each item in the batch
+  // d_anchor4d: num_anchors x 4 x H x W
+  // img_info1d: 1 x 4
   // top2d: N x num_rois x 4
   const real* p_bottom_item = bottom4d->data;
-  const real* p_pred_box_item = pred_box4d->data;
+  const real* p_d_anchor_item = d_anchor4d->data;
   const real* p_img_info = img_info1d->data;
   real* p_top_item = top2d->data;
   const int num_anchors
       = option->num_concats * option->num_ratios * option->num_scales;
   for (int n = 0; n < bottom4d->num_items; ++n) {
+    // bottom shape: 2 x num_anchors x H x W
     const int bottom_H = bottom4d->shape[n][2];
     const int bottom_W = bottom4d->shape[n][3];
     const int bottom_area = bottom_H * bottom_W;
-    const real im_w = p_img_info[1];
-    const real im_h = p_img_info[0];
-    const real min_w = option->min_size * p_img_info[2];
-    const real min_h = option->min_size * p_img_info[3];
+    // raw image height & width
+    const real img_H = p_img_info[0];
+    const real img_W = p_img_info[1];
+    // minimum box width & height in raw image
+    const real min_box_W = option->min_size * p_img_info[2];
+    const real min_box_H = option->min_size * p_img_info[3];
 
     // enumerate all proposals
     // TODO: GPU code
@@ -466,23 +470,24 @@ void proposal_forward(const Tensor* const bottom4d,
       for (int w = 0; w < bottom_W; ++w) {
         const real x = w * option->feat_stride;
         const real y = h * option->feat_stride;
-        const real* p_box = p_pred_box_item + h * bottom_W + w;
+        const real* p_box = p_d_anchor_item + h * bottom_W + w;
         const real* p_score
             = p_bottom_item + num_anchors * bottom_area + h * bottom_W + w;
         for (int k = 0; k < num_anchors; ++k) {
           const real dx = p_box[(k * 4 + 0) * bottom_area];
           const real dy = p_box[(k * 4 + 1) * bottom_area];
-          const real dw = p_box[(k * 4 + 2) * bottom_area];
-          const real dh = p_box[(k * 4 + 3) * bottom_area];
+          const real d_log_w = p_box[(k * 4 + 2) * bottom_area];
+          const real d_log_h = p_box[(k * 4 + 3) * bottom_area];
           proposals[num_proposals].x1 = x + anchors[k * 4 + 0];
           proposals[num_proposals].y1 = y + anchors[k * 4 + 1];
           proposals[num_proposals].x2 = x + anchors[k * 4 + 2];
           proposals[num_proposals].y2 = y + anchors[k * 4 + 3];
           proposals[num_proposals].score = p_score[k * bottom_area];
           {
-            const int box_created = transform_box(&proposals[num_proposals],
-                                                  dx, dy, dw, dh,
-                                                  im_w, im_h, min_w, min_h);
+            const int box_created
+                = transform_box(&proposals[num_proposals],
+                                dx, dy, d_log_w, d_log_h,
+                                img_W, img_H, min_box_W, min_box_H);
             if (box_created) ++num_proposals;
           }
         } // endfor k
@@ -522,11 +527,17 @@ void proposal_forward(const Tensor* const bottom4d,
     }
 
     // locate next item
-    p_top_item += 4 * top2d->shape[n][0];
-    p_bottom_item += 2 * num_anchors * bottom_area;
-    p_pred_box_item += 4 * num_anchors * bottom_area;
-    p_img_info += 4;
-  } // endfor num_items
+    {
+      const int bottom_size = 2 * num_anchors * bottom_area;
+      const int d_anchor_size = 4 * num_anchors * bottom_area;
+      const int img_info_size = 4;
+      const int top_size = 4 * top2d->shape[n][0];
+      p_bottom_item += bottom_size;
+      p_d_anchor_item += d_anchor_size;
+      p_img_info += img_info_size;
+      p_top_item += top_size;
+    }
+  } // endfor batch
 
   top2d->ndim = 2;
   top2d->num_items = bottom4d->num_items;
@@ -544,8 +555,8 @@ void proposal_forward(const Tensor* const bottom4d,
 int main(int argc, char *argv[])
 {
   // variable declaration & memory allocation
-  Tensor score, bbox, im_info, roi;
-  real score_data[150*36*46], bbox_data[300*36*46], im_info_data[4];
+  Tensor score, dbox, im_info, roi;
+  real score_data[150*36*46], dbox_data[300*36*46], im_info_data[4];
   real roi_data[300*4], roi_true_data[300*5];
   int num_rois_true;
   real anchors[3*5*5*4];
@@ -577,7 +588,8 @@ int main(int argc, char *argv[])
 
   // set data shapes
   {
-    score.ndim = 4; score.num_items = 1; score.data = &score_data[0];
+    score.ndim = 4;
+    score.num_items = 1;
     for (int i = 0; i < score.num_items; ++i) {
       score.shape[i][0] = 2;
       score.shape[i][1] = num_anchors;
@@ -585,20 +597,23 @@ int main(int argc, char *argv[])
       score.shape[i][3] = 46;
     }
 
-    bbox.ndim = 4; bbox.num_items = score.num_items; bbox.data = &bbox_data[0];
-    for (int i = 0; i < bbox.num_items; ++i) {
-      bbox.shape[i][0] = num_anchors;
-      bbox.shape[i][1] = 4;
-      bbox.shape[i][2] = score.shape[i][2];
-      bbox.shape[i][3] = score.shape[i][3];
+    dbox.ndim = 4;
+    dbox.num_items = score.num_items;
+    for (int i = 0; i < dbox.num_items; ++i) {
+      dbox.shape[i][0] = num_anchors;
+      dbox.shape[i][1] = 4;
+      dbox.shape[i][2] = score.shape[i][2];
+      dbox.shape[i][3] = score.shape[i][3];
     }
 
-    im_info.ndim = 1; im_info.num_items = score.num_items; im_info.data = &im_info_data[0];
+    im_info.ndim = 1;
+    im_info.num_items = score.num_items;
     for (int i = 0; i < im_info.num_items; ++i) {
       im_info.shape[i][0] = 4;
     }
 
-    roi.ndim = 2; roi.num_items = score.num_items; roi.data = &roi_data[0];
+    roi.ndim = 2;
+    roi.num_items = score.num_items;
     for (int i = 0; i < roi.num_items; ++i) {
       roi.shape[i][0] = option.post_nms_topn;
       roi.shape[i][1] = 4;
@@ -609,7 +624,7 @@ int main(int argc, char *argv[])
   {
     FILE* fp;
     const int score_size = flatten_size(&score);
-    const int bbox_size = flatten_size(&bbox);
+    const int dbox_size = flatten_size(&dbox);
     const int im_info_size = flatten_size(&im_info);
 
     printf("data loading\n");
@@ -621,7 +636,7 @@ int main(int argc, char *argv[])
     fclose(fp);
 
     fp = fopen("../data/temp/proposal_bottom1.bin", "rb");
-    if ((int)fread(bbox_data, sizeof(real), bbox_size, fp) != bbox_size) {
+    if ((int)fread(dbox_data, sizeof(real), dbox_size, fp) != dbox_size) {
       printf("Error occurred while reading proposal_bottom1\n");
     }
     fclose(fp);
@@ -652,10 +667,18 @@ int main(int argc, char *argv[])
   }
   #endif
 
+  // bind loaded data to corresponding tensors
+  {
+    score.data = &score_data[0];
+    dbox.data = &dbox_data[0];
+    im_info.data = &im_info_data[0];
+    roi.data = &roi_data[0];
+  }
+
   // do forward operation
   {
     printf("do forward\n");
-    proposal_forward(&score, &bbox, &im_info, &roi, anchors, &option);
+    proposal_forward(&score, &dbox, &im_info, &roi, anchors, &option);
   }
 
   // verify results
@@ -663,6 +686,7 @@ int main(int argc, char *argv[])
     const int roi_size = flatten_size(&roi);
     const int roi_true_size = num_rois_true * 5;
     int i = 0, i_true = 1; // for true data, 0-th element = batch index
+    printf("verification\n");
     for (; i < roi_size && i_true < roi_true_size; i += 4, i_true += 5) {
       real diff = 0.0f;
       for (int di = 0; di < 4; ++di) {
