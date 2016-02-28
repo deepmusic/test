@@ -1,4 +1,4 @@
-all: cpu_conv gpu_conv cpu_deconv gpu_deconv cpu_roipool gpu_roipool cpu_relu gpu_relu cpu_proposal gpu_proposal gpu_pool
+all: cpu_conv gpu_conv cpu_deconv gpu_deconv cpu_roipool gpu_roipool cpu_relu gpu_relu cpu_proposal gpu_proposal cpu_pool gpu_pool
 cpu_conv:
 	cp conv.cu conv.c
 	gcc -O3 -Wall -std=c99 -DTEST -o cpu_conv.o conv.c -lcblas
@@ -19,6 +19,10 @@ cpu_proposal:
 	cp proposal.cu proposal.c
 	gcc -O3 -Wall -std=c99 -DTEST -o cpu_proposal.o proposal.c -lm
 	rm proposal.c
+cpu_pool:
+	cp pool.cu pool.c
+	gcc -O3 -Wall -std=c99 -DTEST -o cpu_pool.o pool.c
+	rm pool.c
 gpu_conv:
 	nvcc -O3 -use_fast_math -Xcompiler -Wall -DGPU -DTEST -o gpu_conv.o conv.cu -lcublas -lcuda
 gpu_deconv:
@@ -30,4 +34,4 @@ gpu_relu:
 gpu_proposal:
 	nvcc -O3 -use_fast_math -Xcompiler -Wall -DGPU -DTEST -o gpu_proposal.o proposal.cu -lcuda
 gpu_pool:
-	nvcc -O3 -Xcompiler -Wall -o gpu_pool.o pool.cu -lcuda
+	nvcc -O3 -use_fast_math -Xcompiler -Wall -DGPU -DTEST -o gpu_pool.o pool.cu -lcuda

@@ -392,6 +392,7 @@ int main(int argc, char *argv[])
         printf("Error while reading conv_param1\n");
       }
       fclose(fp);
+
       for (int i = 0; i < CONST_SIZE; ++i) {
         const_data[i] = 1;
       }
@@ -409,7 +410,6 @@ int main(int argc, char *argv[])
   {
     printf("set device\n");
     CUDA_CHECK(cudaSetDevice(0));
-    printf("cublas initialization\n");
     option.handle = (cublasHandle_t*)malloc(sizeof(cublasHandle_t));
     if (cublasCreate((cublasHandle_t*)option.handle)
           != CUBLAS_STATUS_SUCCESS) {
@@ -471,6 +471,7 @@ int main(int argc, char *argv[])
   #ifdef GPU
   {
     const int Y_size = flatten_size(&Y);
+
     printf("memcpy: cpu <- gpu\n");
     CUDA_CHECK(cudaMemcpy(Y_data, Y.data, Y_size * sizeof(real),
                           cudaMemcpyDeviceToHost));
@@ -480,7 +481,9 @@ int main(int argc, char *argv[])
   // verify results
   {
     int i = 0;
+
     printf("verification\n");
+
     for (int n = 0; n < Y.num_items; ++n) {
       for (int c = 0; c < Y.shape[n][0]; ++c) {
         for (int h = 0; h < Y.shape[n][1]; ++h) {
@@ -525,7 +528,6 @@ int main(int argc, char *argv[])
     CUDA_CHECK(cudaFree(p_temp_data));
     CUDA_CHECK(cudaFree(p_const_data));
 
-    printf("cublas finalization\n");
     if (cublasDestroy(*((cublasHandle_t*)option.handle)) != CUBLAS_STATUS_SUCCESS) {
       printf("cublas destruction failed\n");
     }

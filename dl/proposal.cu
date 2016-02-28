@@ -550,7 +550,6 @@ void proposal_forward(const Tensor* const bottom4d,
 // test code
 #ifdef TEST
 #include <stdio.h>
-#include <stdlib.h>
 
 int main(int argc, char *argv[])
 {
@@ -686,7 +685,9 @@ int main(int argc, char *argv[])
     const int roi_size = flatten_size(&roi);
     const int roi_true_size = num_rois_true * 5;
     int i = 0, i_true = 1; // for true data, 0-th element = batch index
+
     printf("verification\n");
+
     for (; i < roi_size && i_true < roi_true_size; i += 4, i_true += 5) {
       real diff = 0.0f;
       for (int di = 0; di < 4; ++di) {

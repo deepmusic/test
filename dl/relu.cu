@@ -289,6 +289,7 @@ int main(int argc, char *argv[])
   {
     printf("do forward (relu)\n");
     relu_forward(&X, &Y_relu, &option);
+
     printf("do forward (prelu)\n");
     option.negative_slope = 0.1f;
     relu_forward(&X, &Y_prelu, &option);
@@ -298,9 +299,11 @@ int main(int argc, char *argv[])
   #ifdef GPU
   {
     const int Y_size = flatten_size(&X);
+
     printf("memcpy: cpu <- gpu (relu)\n");
     CUDA_CHECK(cudaMemcpy(relu_data, Y_relu.data, Y_size*sizeof(real),
                           cudaMemcpyDeviceToHost));
+
     printf("memcpy: cpu <- gpu (prelu)\n");
     CUDA_CHECK(cudaMemcpy(prelu_data, Y_prelu.data, Y_size*sizeof(real),
                           cudaMemcpyDeviceToHost));
@@ -310,7 +313,9 @@ int main(int argc, char *argv[])
   // verify results
   {
     const int Y_size = flatten_size(&X);
+
     printf("verification (relu)\n");
+
     for (int i = 0; i < Y_size; ++i) {
       if (relu_data[i] != X_data[i]
           && (relu_data[i] != 0 || X_data[i] > 0)) {
@@ -318,7 +323,9 @@ int main(int argc, char *argv[])
                i, relu_data[i], i, X_data[i]);
       }
     }
+
     printf("verification (prelu)\n");
+
     for (int i = 0; i < Y_size; ++i) {
       if (prelu_data[i] != X_data[i]
           && (prelu_data[i] != option.negative_slope * X_data[i]

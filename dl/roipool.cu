@@ -213,7 +213,7 @@ int main(int argc, char *argv[])
   // variable declaration & memory allocation
   Tensor X, Y, roi;
   real* const X_data = (real*)malloc(IN_DATA_SIZE * sizeof(real));
-  real* const roi_data = (real*)malloc(ROI_SIZE*sizeof(real));
+  real* const roi_data = (real*)malloc(ROI_SIZE * sizeof(real));
   real* const Y_data = (real*)malloc(OUT_DATA_SIZE * sizeof(real));
   real* const Y_true_data = (real*)malloc(OUT_DATA_SIZE * sizeof(real));
   int* p_argmax_data;
@@ -335,6 +335,7 @@ int main(int argc, char *argv[])
   #ifdef GPU
   {
     const int Y_size = flatten_size(&Y);
+
     printf("memcpy: cpu <- gpu\n");
     CUDA_CHECK(cudaMemcpy(Y_data, Y.data, Y_size * sizeof(real),
                           cudaMemcpyDeviceToHost));
@@ -344,7 +345,9 @@ int main(int argc, char *argv[])
   // verify results
   {
     const int Y_size = flatten_size(&Y);
+
     printf("verification\n");
+
     for (int i = 0; i < Y_size; ++i) {
       if (Y_data[i] != Y_true_data[i]) {
         printf("Y[%d] = %.6f  Y_true[%d] = %.6f\n",
