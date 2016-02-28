@@ -310,12 +310,12 @@ int main(int argc, char *argv[])
 {
   // variable declaration & memory allocation
   Tensor X, Y, W, b;
-  real* X_data = (real*)malloc(DATA_SIZE * sizeof(real));
-  real* Y_data = (real*)malloc(DATA_SIZE * sizeof(real));
-  real* Y_true_data = (real*)malloc(DATA_SIZE * sizeof(real));
-  real* W_data = (real*)malloc(WEIGHT_SIZE * sizeof(real));
-  real* b_data = (real*)malloc(BIAS_SIZE * sizeof(real));
-  real* const_data = (real*)malloc(CONST_SIZE * sizeof(real));
+  real* const X_data = (real*)malloc(DATA_SIZE * sizeof(real));
+  real* const Y_data = (real*)malloc(DATA_SIZE * sizeof(real));
+  real* const Y_true_data = (real*)malloc(DATA_SIZE * sizeof(real));
+  real* const W_data = (real*)malloc(WEIGHT_SIZE * sizeof(real));
+  real* const b_data = (real*)malloc(BIAS_SIZE * sizeof(real));
+  real* const const_data = (real*)malloc(CONST_SIZE * sizeof(real));
   real* p_temp_data;
   real* p_const_data;
   ConvOption option;
@@ -367,10 +367,10 @@ int main(int argc, char *argv[])
   // load data
   {
     FILE* fp;
-    int X_size = flatten_size(&X);
-    int Y_size = flatten_size(&Y);
-    int W_size = flatten_size(&W);
-    int b_size = flatten_size(&b);
+    const int X_size = flatten_size(&X);
+    const int Y_size = flatten_size(&Y);
+    const int W_size = flatten_size(&W);
+    const int b_size = flatten_size(&b);
 
     printf("data loading\n");
 
@@ -421,12 +421,12 @@ int main(int argc, char *argv[])
   // bind loaded data to corresponding tensors
   #ifdef GPU
   {
-    int X_size = flatten_size(&X);
-    int Y_size = flatten_size(&Y);
-    int W_size = flatten_size(&W);
-    int b_size = flatten_size(&b);
-    int temp_size = option.kernel_h * option.kernel_w *
-                    X.shape[0][0] * Y.shape[0][1] * Y.shape[0][2];
+    const int X_size = flatten_size(&X);
+    const int Y_size = flatten_size(&Y);
+    const int W_size = flatten_size(&W);
+    const int b_size = flatten_size(&b);
+    const int temp_size = option.kernel_h * option.kernel_w *
+                          X.shape[0][0] * Y.shape[0][1] * Y.shape[0][2];
 
     printf("gpu malloc\n");
     CUDA_CHECK(cudaMalloc(&X.data, X_size * sizeof(real)));
@@ -449,8 +449,8 @@ int main(int argc, char *argv[])
   }
   #else
   {
-    int temp_size = option.kernel_h * option.kernel_w *
-                    X.shape[0][0] * Y.shape[0][1] * Y.shape[0][2];
+    const int temp_size = option.kernel_h * option.kernel_w *
+                          X.shape[0][0] * Y.shape[0][1] * Y.shape[0][2];
 
     X.data = X_data;
     Y.data = Y_data;
@@ -470,7 +470,7 @@ int main(int argc, char *argv[])
   // copy GPU data to main memory
   #ifdef GPU
   {
-    int Y_size = flatten_size(&Y);
+    const int Y_size = flatten_size(&Y);
     printf("memcpy: cpu <- gpu\n");
     CUDA_CHECK(cudaMemcpy(Y_data, Y.data, Y_size * sizeof(real),
                           cudaMemcpyDeviceToHost));
