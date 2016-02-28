@@ -1,8 +1,9 @@
 #include "layer.h"
 
-#ifdef GPU
-#include "cuda_settings.h"
-#endif
+// --------------------------------------------------------------------------
+// kernel code
+//   max_pool_{gpu, cpu}
+// --------------------------------------------------------------------------
 
 // max-pooling bottom3d (C x H x W) -> top3d (C x H' x W')
 //   given (c, h', w'),
@@ -120,10 +121,17 @@ void max_pool_cpu(const real* const bottom3d,
 }
 #endif
 
+
+
+// --------------------------------------------------------------------------
+// layer operator code
+//   pool_forward
+// --------------------------------------------------------------------------
+
 // max-pooling: bottom -> top
 //   bottom: C x H x W
 //   top: C x H' x W'
-//   argmax: C x H' x W'
+//   argmax: C x H' x W' array
 void pool_forward(const Tensor* const bottom3d,
                   Tensor* const top3d,
                   int* const argmax_data,
@@ -193,7 +201,12 @@ void pool_forward(const Tensor* const bottom3d,
   top3d->num_items = bottom3d->num_items;
 }
 
+
+
+// --------------------------------------------------------------------------
 // test code
+// --------------------------------------------------------------------------
+
 #ifdef TEST
 #include <stdio.h>
 #include <stdlib.h>

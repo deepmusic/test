@@ -2,11 +2,12 @@
 #include <stdlib.h>
 #include <math.h>
 
-#ifdef GPU
-#include "cuda_settings.h"
-#endif
+// --------------------------------------------------------------------------
+// data structure
+//   struct BoundingBox
+// --------------------------------------------------------------------------
 
-// data structure for a bounding-box in a given image
+// bounding-box in a given image
 //   (x1, y1): upper-left corner location of the box in the image
 //   (x2, y2): lower-right corner location of the box in the image
 //   score: objectness score of the region bounded by the box
@@ -17,12 +18,13 @@ typedef struct BoundingBox_
 } BoundingBox;
 
 
-/*
- * functions for NMS operation:
- *   iou: compute overlap between two boxes
- *   nms_mask: given a set of boxes, compute overlap between all box pairs
- *   nms: given a set of boxes, discard significantly-overlapped boxes
- */
+
+// --------------------------------------------------------------------------
+// kernel code for NMS operation
+//   iou: compute overlap between two boxes
+//   nms_mask: given a set of boxes, compute overlap between all box pairs
+//   nms: given a set of boxes, discard significantly-overlapped boxes
+// --------------------------------------------------------------------------
 
 // "IoU = intersection area / union area" of two boxes A, B
 //   A, B: 4-dim array (x1, y1, x2, y2)
@@ -272,12 +274,13 @@ void nms(const int num_boxes, const real* const boxes,
 }
 
 
-/*
- * functions for box data structure
- *   transform_box: transform a box according to a given gradient
- *   generate_anchors: generate anchor boxes of varying sizes and ratios
- *   sort_box: sort a list of boxes in descending order of their scores
- */
+
+// --------------------------------------------------------------------------
+// kernel code for for box data structure
+//   transform_box: transform a box according to a given gradient
+//   generate_anchors: generate anchor boxes of varying sizes and ratios
+//   sort_box: sort a list of boxes in descending order of their scores
+// --------------------------------------------------------------------------
 
 // transform a box according to a given gradient
 //   box: (x1, y1, x2, y2)
@@ -406,9 +409,11 @@ void sort_box(BoundingBox* const list, const int start, const int end,
 }
 
 
-/*
- * finally, proposal operator
- */
+
+// --------------------------------------------------------------------------
+// layer operator code
+//   proposal_forward
+// --------------------------------------------------------------------------
 
 // proposal: bottom -> top
 //   bottom: 2 x num_anchors x H x W tensor
@@ -547,7 +552,12 @@ void proposal_forward(const Tensor* const bottom4d,
   free(keep);
 }
 
+
+
+// --------------------------------------------------------------------------
 // test code
+// --------------------------------------------------------------------------
+
 #ifdef TEST
 #include <stdio.h>
 

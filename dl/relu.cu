@@ -1,8 +1,12 @@
 #include "layer.h"
 
-#ifdef GPU
-#include "cuda_settings.h"
-#endif
+// --------------------------------------------------------------------------
+// kernel code
+//   relu_{gpu, cpu}
+//   prelu_{gpu, cpu}
+//   relu_inplace_{gpu, cpu}
+//   prelu_inplace_{gpu, cpu}
+// --------------------------------------------------------------------------
 
 // ReLU transform bottom -> top
 //   top[i] = 0 if bottom[i] <= 0
@@ -14,12 +18,7 @@ void relu_gpu(const real* const bottom, real* const top,
   for (int index = blockIdx.x * blockDim.x + threadIdx.x;
        index < data_size;
        index += blockDim.x) {
-    if (bottom[index] > 0) {
-      top[index] = bottom[index];
-    }
-    else {
-      top[index] = 0;
-    }
+    top[index] = (bottom[index] > 0) * bottom[index];
   }
 }
 #else
@@ -27,12 +26,7 @@ void relu_cpu(const real* const bottom, real* const top,
               const int data_size)
 {
   for (int index = 0; index < data_size; ++index) {
-    if (bottom[index] > 0) {
-      top[index] = bottom[index];
-    }
-    else {
-      top[index] = 0;
-    }
+    top[index] = (bottom[index] > 0) * bottom[index];
   }
 }
 #endif
@@ -47,12 +41,8 @@ void prelu_gpu(const real* const bottom, real* const top,
   for (int index = blockIdx.x * blockDim.x + threadIdx.x;
        index < data_size;
        index += blockDim.x) {
-    if (bottom[index] > 0) {
-      top[index] = bottom[index];
-    }
-    else {
-      top[index] = negative_slope * bottom[index];
-    }
+    top[index] = bottom[index] * ((bottom[index] > 0)
+                                  + (bottom[index] <= 0) * negative_slope);
   }
 }
 #else
@@ -60,12 +50,8 @@ void prelu_cpu(const real* const bottom, real* const top,
                const int data_size, const real negative_slope)
 {
   for (int index = 0; index < data_size; ++index) {
-    if (bottom[index] > 0) {
-      top[index] = bottom[index];
-    }
-    else {
-      top[index] = negative_slope * bottom[index];
-    }
+    top[index] = bottom[index] * ((bottom[index] > 0)
+                                  + (bottom[index] <= 0) * negative_slope);
   }
 }
 #endif
@@ -120,11 +106,20 @@ void prelu_inplace_cpu(real* const bottom, const int data_size,
 }
 #endif
 
+
+
+// --------------------------------------------------------------------------
+// layer operator code
+//   relu_forward
+//   relu_forward_inplace
+// --------------------------------------------------------------------------
+
 // (soft-)ReLU transform: bottom -> top
 //   data size: total number of nodes (N * C * H * W or something)
 //   if option->negative_slope = 0, perform ReLU
 //                             > 0, perform soft ReLU
-void relu_forward(const Tensor* const bottom, Tensor* const top,
+void relu_forward(const Tensor* const bottom,
+                  Tensor* const top,
                   const ReluOption* const option)
 {
   const int data_size = flatten_size(bottom);
@@ -209,7 +204,12 @@ void relu_forward_inplace(Tensor* const bottom,
   #endif
 }
 
+
+
+// --------------------------------------------------------------------------
 // test code
+// --------------------------------------------------------------------------
+
 #ifdef TEST
 #include <stdio.h>
 #include <stdlib.h>

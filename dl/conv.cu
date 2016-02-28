@@ -1,10 +1,9 @@
 #include "layer.h"
 
-#ifdef GPU
-#include "cuda_settings.h"
-#else
-#include <cblas.h>
-#endif
+// --------------------------------------------------------------------------
+// kernel code
+//   convert_bottom_{gpu, cpu}
+// --------------------------------------------------------------------------
 
 // convert bottom3d (C x H x W)
 //         -> bottom5d (C x kernel_h x kernel_w x H5 x W5)
@@ -119,14 +118,21 @@ void convert_bottom_cpu(const real* const bottom3d,
 }
 #endif
 
+
+
+// --------------------------------------------------------------------------
+// layer operator code
+//   conv_forward
+// --------------------------------------------------------------------------
+
 // convolution: bottom -> top
+//   G: number of groups
 //   bottom: (G * C) x H x W
 //   top: (G * C') x H' x W'
 //   weight: G x C' x C x kernel_h x kernel_w
 //   bias: (G * C') x 1
-//   temp: G * C * kernel_h * kernel_w * H' * W'
-//   const: H' * W',  const[i] = 1 for all i
-//   G: number of groups
+//   temp: (G * C * kernel_h * kernel_w) x (H' * W') array
+//   const: 1 x (H' * W') array,  const[i] = 1 for all i
 void conv_forward(const Tensor* const bottom3d,
                   Tensor* const top3d,
                   const Tensor* const weight5d,
@@ -252,7 +258,7 @@ void conv_forward(const Tensor* const bottom3d,
 
       // the computation is equivalent to...
       //   top = top + dot(bias, constant)
-      //   constant: 1 x (H' * W'), constant[i] = 1 for all i
+      //   constant: 1 x (H' * W'),  constant[i] = 1 for all i
     #ifdef GPU
       // thus, input arguments:
       //   do_transpose_Y (= false),  do_transpose_X (= false),
@@ -296,7 +302,12 @@ void conv_forward(const Tensor* const bottom3d,
   top3d->num_items = bottom3d->num_items;
 }
 
+
+
+// --------------------------------------------------------------------------
 // test code
+// --------------------------------------------------------------------------
+
 #ifdef TEST
 #include <stdio.h>
 #include <stdlib.h>

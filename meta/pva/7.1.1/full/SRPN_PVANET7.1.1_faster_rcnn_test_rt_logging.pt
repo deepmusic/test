@@ -839,6 +839,7 @@ layer {
   top: "bbox_pred"
   inner_product_param {
     num_output: 84
+    logging: true
   }
 }
 layer {

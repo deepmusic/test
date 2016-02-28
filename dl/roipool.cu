@@ -1,8 +1,9 @@
 #include "layer.h"
 
-#ifdef GPU
-#include "cuda_settings.h"
-#endif
+// --------------------------------------------------------------------------
+// kernel code
+//   roi_pool_{gpu, cpu}
+// --------------------------------------------------------------------------
 
 // RoI pooling bottom3d (C x H x W) -> top4d (R x C x H' x W')
 //   given pixel (r, c, h, w) at top4d and RoI (x1, y1,, x2, y2),
@@ -133,11 +134,18 @@ void roi_pool_cpu(const real* const bottom3d,
 }
 #endif
 
+
+
+// --------------------------------------------------------------------------
+// layer operator code
+//   roipool_forward
+// --------------------------------------------------------------------------
+
 // RoI pooling: bottom -> top
 //   bottom: C x H x W
 //   roi: R x 4
 //   top: R x C x H' x W'
-//   argmax: R * C * H' * W'
+//   argmax: R * C * H' * W' array
 void roipool_forward(const Tensor* const bottom3d,
                      const Tensor* const roi2d,
                      Tensor* const top4d,
@@ -199,7 +207,12 @@ void roipool_forward(const Tensor* const bottom3d,
   top4d->num_items = bottom3d->num_items;
 }
 
+
+
+// --------------------------------------------------------------------------
 // test code
+// --------------------------------------------------------------------------
+
 #ifdef TEST
 #include <stdio.h>
 #include <stdlib.h>
