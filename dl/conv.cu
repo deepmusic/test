@@ -321,12 +321,20 @@ int main(int argc, char *argv[])
 {
   // variable declaration & memory allocation
   Tensor X, Y, W, b;
+  real* X_data;
+  real* Y_data;
+  real* Y_true_data;
+  real* W_data;
+  real* b_data;
+  real* const_data;
+/*
   real* const X_data = (real*)malloc(DATA_SIZE * sizeof(real));
   real* const Y_data = (real*)malloc(DATA_SIZE * sizeof(real));
   real* const Y_true_data = (real*)malloc(DATA_SIZE * sizeof(real));
   real* const W_data = (real*)malloc(WEIGHT_SIZE * sizeof(real));
   real* const b_data = (real*)malloc(BIAS_SIZE * sizeof(real));
   real* const const_data = (real*)malloc(CONST_SIZE * sizeof(real));
+*/
   real* p_temp_data;
   real* p_const_data;
   ConvOption option;
@@ -377,6 +385,57 @@ int main(int argc, char *argv[])
  
   // load data
   {
+    int ndim;
+    int shape[10];
+
+    X_data = load_data("../data/temp/conv_bottom0.bin", &ndim, shape);
+    X.ndim = ndim - 1;
+    X.num_items = shape[0];
+    for (int i = 0; i < X.num_items; ++i) {
+      for (int j = 0; j < X.ndim; ++j) {
+        X.shape[i][j] = shape[j + 1];
+      }
+    }
+
+    Y_true_data = load_data("../data/temp/conv_top0.bin", &ndim, shape);
+    Y.ndim = ndim - 1;
+    Y.num_items = shape[0];
+    for (int i = 0; i < Y.num_items; ++i) {
+      for (int j = 0; j < Y.ndim; ++j) {
+        Y.shape[i][j] = shape[j + 1];
+      }
+    }
+    Y_data = (real*)malloc(flatten_size(&Y) * sizeof(real));
+    const_data = (real*)malloc(Y.shape[0][1] * Y.shape[0][2] * sizeof(real));
+    for (int i = 0; i < Y.shape[0][1] * Y.shape[0][2]; ++i) {
+      const_data[i] = 1;
+    }
+
+    W_data = load_data("../data/temp/conv_param0.bin", &ndim, shape);
+    W.ndim = ndim + 1;
+    W.shape[0][0] = option.num_groups;
+    for (int j = 0; j < ndim; ++j) {
+      W.shape[0][j + 1] = shape[j];
+    }
+    W.shape[0][1] /= option.num_groups;
+
+    if (option.bias) {
+      b_data = load_data("../data/temp/conv_param1.bin", &ndim, shape);
+      b.ndim = ndim;
+      b.num_items = 1;
+      for (int j = 0; j < b.ndim; ++j) {
+        b.shape[0][j] = shape[j];
+      }
+    }
+    else {
+      b_data = (real*)malloc(1 * sizeof(real));
+      b.ndim = 1;
+      b.num_items = 1;
+      b.shape[0][0] = 1;
+    }
+  }
+  /*
+  {
     FILE* fp;
     const int X_size = flatten_size(&X);
     const int Y_size = flatten_size(&Y);
@@ -415,6 +474,7 @@ int main(int argc, char *argv[])
     }
     fclose(fp);
   }
+*/
 
   // CUDA initialization
   #ifdef GPU
