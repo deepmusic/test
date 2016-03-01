@@ -20,9 +20,8 @@ void roi_pool_gpu(const real* const bottom3d,
                   const real spatial_scale)
 {
   // thread index: (r, c, h, w) = r*C*H'*W' + c*H'*W' + h*W' + w
-  for (int index = blockIdx.x * blockDim.x + threadIdx.x;
-       index < R * C * top_H * top_W;
-       index += blockDim.x) {
+  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  {
     // parse thread index -> (r, c, h, w)
     const int r = index / top_W / top_H / C;
     const int c = (index / top_W / top_H) % C;

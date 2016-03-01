@@ -22,12 +22,10 @@ void convert_bottom_gpu(const real* const bottom3d,
                         const int pad_h, const int pad_w,
                         const int stride_h, const int stride_w)
 {
-  const int H5W5 = H5 * W5;
-
   // thread index: (c, h5, w5) = c*H5*W5 + h5*W5 + w5
-  for (int index = blockIdx.x * blockDim.x + threadIdx.x;
-       index < C * H5W5;
-       index += blockDim.x) {
+  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const int H5W5 = H5 * W5;
+  {
     // parse thread index -> (c, h5, w5)
     const int c = index / H5W5;
     const int h5 = (index / W5) % H5;
@@ -46,8 +44,9 @@ void convert_bottom_gpu(const real* const bottom3d,
     //   w = w_start + kw,  kw = {0, 1, ..., kernel_w - 1}
     for (int kh = 0; kh < kernel_h; ++kh) {
       for (int kw = 0; kw < kernel_w; ++kw) {
-        if (h_start + kh >= 0 && h_start + kh < H &&
-            w_start + kw >= 0 && w_start + kw < W) {
+        const int h = h_start + kh;
+        const int w = w_start + kw;
+        if (h >= 0 && h < H && w >= 0 && w < W) {
           p_bottom5d[(kh * kernel_w + kw) * H5W5] = p_bottom3d[kh * W + kw];
         }
         else {

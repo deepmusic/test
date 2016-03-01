@@ -19,9 +19,8 @@ void convert_top_gpu(const real* const top5d,
                      const int stride_h, const int stride_w)
 {
   // thread index: (c, h, w) = c*H*W + h*W + w
-  for (int index = blockIdx.x * blockDim.x + threadIdx.x;
-       index < C * H * W;
-       index += blockDim.x) {
+  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  {
     // parse thread index -> (c, h, w)
     const int c = index / (H * W);
     const int h = (index / W) % H + pad_h;
@@ -423,13 +422,13 @@ int main(int argc, char *argv[])
     CUDA_CHECK(cudaMalloc(&p_const_data, CONST_SIZE * sizeof(real)));
 
     printf("memcpy: cpu -> gpu\n");
-    CUDA_CHECK(cudaMemcpy(X.data, X_data, X_size * sizeof(real),
+    CUDA_CHECK(cudaMemcpyAsync(X.data, X_data, X_size * sizeof(real),
                           cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(W.data, W_data, W_size * sizeof(real),
+    CUDA_CHECK(cudaMemcpyAsync(W.data, W_data, W_size * sizeof(real),
                           cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(b.data, b_data, b_size * sizeof(real),
+    CUDA_CHECK(cudaMemcpyAsync(b.data, b_data, b_size * sizeof(real),
                           cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(p_const_data, const_data,
+    CUDA_CHECK(cudaMemcpyAsync(p_const_data, const_data,
                           CONST_SIZE * sizeof(real),
                           cudaMemcpyHostToDevice));
   }
@@ -459,7 +458,7 @@ int main(int argc, char *argv[])
     const int Y_size = flatten_size(&Y);
 
     printf("memcpy: cpu <- gpu\n");
-    CUDA_CHECK(cudaMemcpy(Y_data, Y.data, Y_size * sizeof(real),
+    CUDA_CHECK(cudaMemcpyAsync(Y_data, Y.data, Y_size * sizeof(real),
                           cudaMemcpyDeviceToHost));
   }
   #endif

@@ -24,9 +24,8 @@ void max_pool_gpu(const real* const bottom3d,
                   const int stride_h, const int stride_w)
 {
   // thread index: (c, h', w') = c*H'*W' + h'*W' + w'
-  for (int index = blockIdx.x * blockDim.x + threadIdx.x;
-       index < C * top_H * top_W;
-       index += blockDim.x) {
+  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  {
     // parse thread index -> (c, h', w')
     const int c = index / top_H / top_W;
     const int ht = (index / top_W) % top_H;
@@ -44,13 +43,12 @@ void max_pool_gpu(const real* const bottom3d,
     if (h_start >= h_end || w_start >= w_end) {
       top3d[index] = 0;
       argmax3d[index] = -1;
-      continue;
     }
 
     // otherwise,
     //   top3d[c][h'][w'] = max_{h,w} bottom3d[c][h][w]
     //   argmax3d[c][h'][w'] = argmax_{h,w} bottom3d[c][h][w]
-    {
+    else {
       const real* const p_bottom3d = bottom3d + c * bottom_H * bottom_W;
       int maxidx = h_start * bottom_W + w_start;
       real maxval = p_bottom3d[maxidx];
@@ -96,13 +94,12 @@ void max_pool_cpu(const real* const bottom3d,
     if (h_start >= h_end || w_start >= w_end) {
       top3d[index] = 0;
       argmax3d[index] = -1;
-      continue;
     }
 
     // otherwise,
     //   top3d[c][h'][w'] = max_{h,w} bottom3d[c][h][w]
     //   argmax3d[c][h'][w'] = argmax_{h,w} bottom3d[c][h][w]
-    {
+    else {
       const real* const p_bottom3d = bottom3d + c * bottom_H * bottom_W;
       int maxidx = h_start * bottom_W + w_start;
       real maxval = p_bottom3d[maxidx];

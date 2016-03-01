@@ -15,11 +15,8 @@ __global__
 void relu_gpu(const real* const bottom, real* const top,
               const int data_size)
 {
-  for (int index = blockIdx.x * blockDim.x + threadIdx.x;
-       index < data_size;
-       index += blockDim.x) {
-    top[index] = (bottom[index] > 0) * bottom[index];
-  }
+  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  top[index] = (bottom[index] > 0) * bottom[index];
 }
 #else
 void relu_cpu(const real* const bottom, real* const top,
@@ -38,20 +35,17 @@ __global__
 void prelu_gpu(const real* const bottom, real* const top,
                const int data_size, const real negative_slope)
 {
-  for (int index = blockIdx.x * blockDim.x + threadIdx.x;
-       index < data_size;
-       index += blockDim.x) {
-    top[index] = bottom[index] * ((bottom[index] > 0)
-                                  + (bottom[index] <= 0) * negative_slope);
-  }
+  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  top[index] = bottom[index] * ((bottom[index] > 0) * 1 +
+                                (bottom[index] < 0) * negative_slope);
 }
 #else
 void prelu_cpu(const real* const bottom, real* const top,
                const int data_size, const real negative_slope)
 {
   for (int index = 0; index < data_size; ++index) {
-    top[index] = bottom[index] * ((bottom[index] > 0)
-                                  + (bottom[index] <= 0) * negative_slope);
+    top[index] = bottom[index] * ((bottom[index] > 0) * 1 +
+                                  (bottom[index] < 0) * negative_slope);
   }
 }
 #endif
@@ -61,21 +55,14 @@ void prelu_cpu(const real* const bottom, real* const top,
 __global__
 void relu_inplace_gpu(real* const bottom, const int data_size)
 {
-  for (int index = blockIdx.x * blockDim.x + threadIdx.x;
-       index < data_size;
-       index += blockDim.x) {
-    if (bottom[index] < 0) {
-      bottom[index] = 0;
-    }
-  }
+  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  bottom[index] *= (bottom[index] > 0);
 }
 #else
 void relu_inplace_cpu(real* const bottom, const int data_size)
 {
   for (int index = 0; index < data_size; ++index) {
-    if (bottom[index] < 0) {
-      bottom[index] = 0;
-    }
+    bottom[index] *= (bottom[index] > 0);
   }
 }
 #endif
@@ -86,22 +73,17 @@ __global__
 void prelu_inplace_gpu(real* const bottom, const int data_size,
                        const real negative_slope)
 {
-  for (int index = blockIdx.x * blockDim.x + threadIdx.x;
-       index < data_size;
-       index += blockDim.x) {
-    if (bottom[index] < 0) {
-      bottom[index] *= negative_slope;
-    }
-  }
+  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  bottom[index] *= ((bottom[index] > 0) * 1 +
+                    (bottom[index] < 0) * negative_slope);
 }
 #else
 void prelu_inplace_cpu(real* const bottom, const int data_size,
                        const real negative_slope)
 {
   for (int index = 0; index < data_size; ++index) {
-    if (bottom[index] < 0) {
-      bottom[index] *= negative_slope;
-    }
+    bottom[index] *= ((bottom[index] > 0) * 1 +
+                      (bottom[index] < 0) * negative_slope);
   }
 }
 #endif
