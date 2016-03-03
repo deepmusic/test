@@ -831,7 +831,7 @@ layer {
   bottom: 'pre_rois'
   top: 'rois'
   reproposal_param {
-    conf_thresh: 0.05
+    conf_thresh: 0.1
     nms_thresh: 0.7
     min_size: 16     
   }
