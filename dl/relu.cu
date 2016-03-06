@@ -16,7 +16,9 @@ void relu_gpu(const real* const bottom, real* const top,
               const int data_size)
 {
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
-  top[index] = (bottom[index] > 0) * bottom[index];
+  if (index < data_size) {
+    top[index] = (bottom[index] > 0) * bottom[index];
+  }
 }
 #else
 void relu_cpu(const real* const bottom, real* const top,
@@ -36,8 +38,10 @@ void prelu_gpu(const real* const bottom, real* const top,
                const int data_size, const real negative_slope)
 {
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
-  top[index] = bottom[index] * ((bottom[index] > 0) * 1 +
-                                (bottom[index] < 0) * negative_slope);
+  if (index < data_size) {
+    top[index] = bottom[index] * ((bottom[index] > 0) * 1 +
+                                  (bottom[index] < 0) * negative_slope);
+  }
 }
 #else
 void prelu_cpu(const real* const bottom, real* const top,
@@ -56,7 +60,9 @@ __global__
 void relu_inplace_gpu(real* const bottom, const int data_size)
 {
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
-  bottom[index] *= (bottom[index] > 0);
+  if (index < data_size) {
+    bottom[index] *= (bottom[index] > 0);
+  }
 }
 #else
 void relu_inplace_cpu(real* const bottom, const int data_size)
@@ -74,8 +80,10 @@ void prelu_inplace_gpu(real* const bottom, const int data_size,
                        const real negative_slope)
 {
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
-  bottom[index] *= ((bottom[index] > 0) * 1 +
-                    (bottom[index] < 0) * negative_slope);
+  if (index < data_size) {
+    bottom[index] *= ((bottom[index] > 0) * 1 +
+                      (bottom[index] < 0) * negative_slope);
+  }
 }
 #else
 void prelu_inplace_cpu(real* const bottom, const int data_size,
@@ -112,25 +120,25 @@ void relu_forward(const Tensor* const bottom,
   #ifdef GPU
   {
     const int threads_per_block = 512;
-    const int num_blocks = DIV_THEN_CEIL(data_size, threads_per_block);
+    const int num_blocks = DIV_THEN_CEIL(data_size,  threads_per_block);
     if (option->negative_slope == 0) {
       relu_gpu<<<num_blocks, threads_per_block>>>(
-          bottom->data, top->data, data_size);
+          bottom->data,  top->data,  data_size);
     }
     else {
       prelu_gpu<<<num_blocks, threads_per_block>>>(
-          bottom->data, top->data, data_size, option->negative_slope);
+          bottom->data,  top->data,  data_size,  option->negative_slope);
     }
   }
   #else
   {
     if (option->negative_slope == 0) {
       relu_cpu(
-          bottom->data, top->data, data_size);
+          bottom->data,  top->data,  data_size);
     }
     else {
       prelu_cpu(
-          bottom->data, top->data, data_size, option->negative_slope);
+          bottom->data,  top->data,  data_size,  option->negative_slope);
     }
   }
   #endif
@@ -162,28 +170,47 @@ void relu_forward_inplace(Tensor* const bottom,
   #ifdef GPU
   {
     const int threads_per_block = 512;
-    const int num_blocks = DIV_THEN_CEIL(data_size, threads_per_block);
+    const int num_blocks = DIV_THEN_CEIL(data_size,  threads_per_block);
     if (option->negative_slope == 0) {
       relu_inplace_gpu<<<num_blocks, threads_per_block>>>(
-          bottom->data, data_size);
+          bottom->data,  data_size);
     }
     else {
       prelu_inplace_gpu<<<num_blocks, threads_per_block>>>(
-          bottom->data, data_size, option->negative_slope);
+          bottom->data,  data_size,  option->negative_slope);
     }
   }
   #else
   {
     if (option->negative_slope == 0) {
       relu_inplace_cpu(
-          bottom->data, data_size);
+          bottom->data,  data_size);
     }
     else {
       prelu_inplace_cpu(
-          bottom->data, data_size, option->negative_slope);
+          bottom->data,  data_size,  option->negative_slope);
     }
   }
   #endif
+}
+
+
+
+// --------------------------------------------------------------------------
+// layer shape calculator code
+// --------------------------------------------------------------------------
+
+void relu_shape(const Tensor* const bottom,
+                Tensor* const top)
+{
+  // top shape = bottom shape
+  top->ndim = bottom->ndim;
+  top->num_items = bottom->num_items;
+  for (int n = 0; n < bottom->num_items; ++n) {
+    for (int i = 0; i < bottom->ndim; ++i) {
+      top->shape[n][i] = bottom->shape[n][i];
+    }
+  }
 }
 
 
@@ -196,15 +223,11 @@ void relu_forward_inplace(Tensor* const bottom,
 #include <stdio.h>
 #include <stdlib.h>
 
-#define DATA_SIZE 384*18*23
-
 int main(int argc, char *argv[])
 {
   // variable declaration & memory allocation
   Tensor X, Y_relu, Y_prelu;
-  real* const X_data = (real*)malloc(DATA_SIZE * sizeof(real));
-  real* const relu_data = (real*)malloc(DATA_SIZE * sizeof(real));
-  real* const prelu_data = (real*)malloc(DATA_SIZE * sizeof(real));
+  real *X_data = NULL, *relu_data = NULL, *prelu_data = NULL;
   ReluOption option;
 
   // set option
@@ -212,36 +235,38 @@ int main(int argc, char *argv[])
     option.negative_slope = 0;
   }
 
-  // set data shapes
-  {
-    X.ndim = 3;
-    X.num_items = 1;
-    for (int i = 0; i < X.num_items; ++i) {
-      X.shape[i][0] = 384;
-      X.shape[i][1] = 18;
-      X.shape[i][2] = 23;
-    }
-  }
- 
   // load data
   {
-    FILE* fp;
-    const int X_size = flatten_size(&X);
+    int ndim;
+    int shape[g_max_ndim];
+    int total_size;
 
-    printf("data loading\n");
-
-    fp = fopen("../data/temp/conv_top0.bin", "rb");
-    if ((int)fread(X_data, sizeof(real), X_size, fp) != X_size) {
-      printf("Error while reading conv_top0\n");
+    X_data = load_data("../data/temp/conv_top0.bin", &ndim, shape);
+    X.num_items = shape[0];
+    X.ndim = ndim - 1;
+    total_size = 0;
+    for (int n = 0; n < X.num_items; ++n) {
+      int size_n = 1;
+      for (int i = 0; i < X.ndim; ++i) {
+        X.shape[n][i] = shape[i + 1];
+        size_n *= shape[i + 1];
+      }
+      X.start[n] = total_size;
+      total_size += size_n;
     }
-    fclose(fp);
-  }
 
+    relu_shape(&X, &Y_relu);
+    relu_shape(&X, &Y_prelu);
+
+    relu_data = (real*)malloc(flatten_size(&Y_relu) * sizeof(real));
+    prelu_data = (real*)malloc(flatten_size(&Y_prelu) * sizeof(real));
+  }
+ 
   // CUDA initialization
   #ifdef GPU
   {
     printf("set device\n");
-    CUDA_CHECK(cudaSetDevice(0));
+    cudaSetDevice(0);
   }
   #endif
 
@@ -249,15 +274,17 @@ int main(int argc, char *argv[])
   #ifdef GPU
   {
     const int X_size = flatten_size(&X);
+    const int relu_size = flatten_size(&Y_relu);
+    const int prelu_size = flatten_size(&Y_prelu);
 
     printf("gpu malloc\n");
-    CUDA_CHECK(cudaMalloc(&X.data, X_size*sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&Y_relu.data, X_size*sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&Y_prelu.data, X_size*sizeof(real)));
+    cudaMalloc(&X.data, X_size * sizeof(real));
+    cudaMalloc(&Y_relu.data, relu_size * sizeof(real));
+    cudaMalloc(&Y_prelu.data, prelu_size * sizeof(real));
 
     printf("memcpy: cpu -> gpu\n");
-    CUDA_CHECK(cudaMemcpy(X.data, X_data, X_size*sizeof(real),
-                          cudaMemcpyHostToDevice));
+    cudaMemcpyAsync(X.data, X_data, X_size * sizeof(real),
+                    cudaMemcpyHostToDevice);
   }
   #else
   {
@@ -280,25 +307,27 @@ int main(int argc, char *argv[])
   // copy GPU data to main memory
   #ifdef GPU
   {
-    const int Y_size = flatten_size(&X);
+    const int relu_size = flatten_size(&Y_relu);
+    const int prelu_size = flatten_size(&Y_prelu);
 
     printf("memcpy: cpu <- gpu (relu)\n");
-    CUDA_CHECK(cudaMemcpy(relu_data, Y_relu.data, Y_size*sizeof(real),
-                          cudaMemcpyDeviceToHost));
+    cudaMemcpyAsync(relu_data, Y_relu.data, relu_size * sizeof(real),
+                    cudaMemcpyDeviceToHost);
 
     printf("memcpy: cpu <- gpu (prelu)\n");
-    CUDA_CHECK(cudaMemcpy(prelu_data, Y_prelu.data, Y_size*sizeof(real),
-                          cudaMemcpyDeviceToHost));
+    cudaMemcpyAsync(prelu_data, Y_prelu.data, prelu_size * sizeof(real),
+                    cudaMemcpyDeviceToHost);
   }
   #endif
 
   // verify results
   {
-    const int Y_size = flatten_size(&X);
+    const int relu_size = flatten_size(&Y_relu);
+    const int prelu_size = flatten_size(&Y_prelu);
 
     printf("verification (relu)\n");
 
-    for (int i = 0; i < Y_size; ++i) {
+    for (int i = 0; i < relu_size; ++i) {
       if (relu_data[i] != X_data[i]
           && (relu_data[i] != 0 || X_data[i] > 0)) {
         printf("top[%d] = %.6f, bottom[%d] = %.6f\n",
@@ -308,7 +337,7 @@ int main(int argc, char *argv[])
 
     printf("verification (prelu)\n");
 
-    for (int i = 0; i < Y_size; ++i) {
+    for (int i = 0; i < prelu_size; ++i) {
       if (prelu_data[i] != X_data[i]
           && (prelu_data[i] != option.negative_slope * X_data[i]
               || X_data[i] > 0)) {
@@ -328,9 +357,9 @@ int main(int argc, char *argv[])
   #ifdef GPU
   {
     printf("gpu free\n");
-    CUDA_CHECK(cudaFree(X.data));
-    CUDA_CHECK(cudaFree(Y_relu.data));
-    CUDA_CHECK(cudaFree(Y_prelu.data));
+    cudaFree(X.data);
+    cudaFree(Y_relu.data);
+    cudaFree(Y_prelu.data);
   }
   #endif
 

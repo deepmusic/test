@@ -1,36 +1,23 @@
-/*
-  Original version (21.8ms)
-    1. [1ms] memcpy, D->H
-      1-1. scores (75*2*36*46*float = 993.6KB)
-      1-2. bbox (75*4*36*46*float = 1987.2KB)
-    2. [15ms] all candidate enumeration & sort
-    3. [0ms] memcpy, H->D, 6000*5*float = 120KB
-    4. [3.3ms] nms kernel
-    5. [1.8ms] memcpy, D->H, 6000*94*uint64 = 4512KB
-    6. [0.7ms] roi retrieval (bitwise operations)
-    7. [0ms] roi -> top
-
-  Improved version (7ms)
-    1. [0ms] no memcpy required
-    2. [2.6ms] all candidate enumeration & sort
-      2-1. [0.3ms] all candidate enumeration
-      2-2. [0.6ms] memcpy, D->H, all candidates (75*36*46*5*float = 2484KB)
-      2-3. [1.6ms] partial quick-sort
-    3. [0ms] memcpy, H->D, 6000*5*float = 120KB
-    4. [1.1ms] nms kernel
-    5. [1.8ms] memcpy, D->H, 6000*94*uint64 = 4512KB
-    6. [0.7ms] roi retrieval
-    7. [0.8ms] roi -> top (300 memcpy, H->D, 4*float = 16B)
-
-  TODO
-    - GPU sort (improve 2-2, 2-3)
-    - GPU roi retrieval (remove 5)
-    - efficient roi -> top (improve 7)
-*/
-
 #include "layer.h"
 #include <stdlib.h>
 #include <math.h>
+
+// --------------------------------------------------------------------------
+// data structure
+//   struct BoundingBox
+// --------------------------------------------------------------------------
+
+// bounding-box in a given image
+//   (x1, y1): upper-left corner location of the box in the image
+//   (x2, y2): lower-right corner location of the box in the image
+//   score: objectness score of the region bounded by the box
+typedef struct BoundingBox_
+{
+  real x1, y1, x2, y2;
+  real score;
+} BoundingBox;
+
+
 
 // --------------------------------------------------------------------------
 // kernel code for NMS operation
@@ -47,10 +34,10 @@ __device__
 inline real iou(const real* const A, const real* const B)
 {
   // overlapped region (= box)
-  const real x1 = MAX(A[0],  B[0]);
-  const real y1 = MAX(A[1],  B[1]);
-  const real x2 = MIN(A[2],  B[2]);
-  const real y2 = MIN(A[3],  B[3]);
+  const real x1 = MAX(A[0], B[0]);
+  const real y1 = MAX(A[1], B[1]);
+  const real x2 = MIN(A[2], B[2]);
+  const real y2 = MIN(A[3], B[3]);
 
   // intersection area
   const real width = MAX(0.0f,  x2 - x1 + 1.0f);
@@ -146,7 +133,7 @@ void nms_mask_gpu(const real* const boxes,
       //     box j is significantly overlapped with box i = i_start + di,
       //     where i_start = bi * block_size
       {
-        const int num_blocks = DIV_THEN_CEIL(num_boxes,  NMS_BLOCK_SIZE);
+        const int num_blocks = DIV_THEN_CEIL(num_boxes, NMS_BLOCK_SIZE);
         const int bi = blockIdx.x;
         mask[(j_start + dj) * num_blocks + bi] = mask_j;
       }
@@ -159,7 +146,7 @@ void nms_mask_cpu(const real* const boxes,
                   const int num_boxes, const real nms_thresh)
 {
   // number of blocks along each dimension
-  const int num_blocks = DIV_THEN_CEIL(num_boxes,  NMS_BLOCK_SIZE);
+  const int num_blocks = DIV_THEN_CEIL(num_boxes, NMS_BLOCK_SIZE);
 
   // the whole 2-dim computations "num_boxes x num_boxes" is done by
   // sweeping all "64 x 64"-sized blocks
@@ -221,9 +208,9 @@ void nms_mask_cpu(const real* const boxes,
 //               two boxes are thought of as significantly overlapped
 void nms(const int num_boxes, const real* const boxes,
          int* const num_out, int* const keep_out,
-         const real nms_thresh, const int max_num_out)
+         const real nms_thresh)
 {
-  const int num_blocks = DIV_THEN_CEIL(num_boxes,  NMS_BLOCK_SIZE);
+  const int num_blocks = DIV_THEN_CEIL(num_boxes, NMS_BLOCK_SIZE);
   uint64* const mask
       = (uint64*)malloc(num_boxes * num_blocks * sizeof(uint64));
 
@@ -234,27 +221,29 @@ void nms(const int num_boxes, const real* const boxes,
     const dim3 blocks(num_blocks, num_blocks);
 
     // GPU memory allocation & copy box data
-    cudaMalloc(&boxes_dev, num_boxes * 5 * sizeof(real));
-    cudaMemcpyAsync(boxes_dev, boxes, num_boxes * 5 * sizeof(real),
-                    cudaMemcpyHostToDevice);
-    cudaMalloc(&mask_dev, num_boxes * num_blocks * sizeof(uint64));
+    CUDA_CHECK(cudaMalloc(&boxes_dev, num_boxes * 5 * sizeof(real)));
+    CUDA_CHECK(cudaMemcpy(boxes_dev, boxes, num_boxes * 5 * sizeof(real),
+                          cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMalloc(&mask_dev,
+                          num_boxes * num_blocks * sizeof(uint64)));
 
     // find all significantly-overlapped pairs of boxes
     nms_mask_gpu<<<blocks, NMS_BLOCK_SIZE>>>(
-        boxes_dev,  mask_dev,  num_boxes,  nms_thresh);
+        boxes_dev, mask_dev, num_boxes, nms_thresh);
 
     // copy mask data to main memory
-    cudaMemcpyAsync(mask, mask_dev, sizeof(uint64) * num_boxes * num_blocks,
-                    cudaMemcpyDeviceToHost);
+    CUDA_CHECK(cudaMemcpy(mask, mask_dev,
+                          sizeof(uint64) * num_boxes * num_blocks,
+                          cudaMemcpyDeviceToHost));
 
     // GPU memory deallocation
-    cudaFree(boxes_dev);
-    cudaFree(mask_dev);
+    CUDA_CHECK(cudaFree(boxes_dev));
+    CUDA_CHECK(cudaFree(mask_dev));
   }
   #else
   {
     // find all significantly-overlapped pairs of boxes
-    nms_mask_cpu(boxes,  mask,  num_boxes,  nms_thresh);
+    nms_mask_cpu(boxes, mask, num_boxes, nms_thresh);
   }
   #endif
 
@@ -274,10 +263,6 @@ void nms(const int num_boxes, const real* const boxes,
         for (int j = nblock; j < num_blocks; ++j) {
           remv[j] |= p[j];
         }
-
-        if (num_to_keep == max_num_out) {
-          break;
-        }
       }
     }
     *num_out = num_to_keep;
@@ -291,31 +276,27 @@ void nms(const int num_boxes, const real* const boxes,
 
 
 // --------------------------------------------------------------------------
-// kernel code for proposal operation
+// kernel code for for box data structure
 //   transform_box: transform a box according to a given gradient
 //   generate_anchors: generate anchor boxes of varying sizes and ratios
 //   sort_box: sort a list of boxes in descending order of their scores
-//   enumerate_proposals: generate all candidate boxes with their scores
 // --------------------------------------------------------------------------
 
 // transform a box according to a given gradient
 //   box: (x1, y1, x2, y2)
 //   gradient: dx, dy, d(log w), d(log h)
-#ifdef GPU
-__device__
-#endif
-int transform_box(real* const box,
+int transform_box(BoundingBox* const box,
                   const real dx, const real dy,
                   const real d_log_w, const real d_log_h,
                   const real img_W, const real img_H,
                   const real min_box_W, const real min_box_H)
 {
   // width & height of box
-  const real w = box[2] - box[0] + 1.0f;
-  const real h = box[3] - box[1] + 1.0f;
+  const real w = box->x2 - box->x1 + 1.0f;
+  const real h = box->y2 - box->y1 + 1.0f;
   // center location of box
-  const real ctr_x = box[0] + 0.5f * w;
-  const real ctr_y = box[1] + 0.5f * h;
+  const real ctr_x = box->x1 + 0.5f * w;
+  const real ctr_y = box->y1 + 0.5f * h;
 
   // new center location according to gradient (dx, dy)
   const real pred_ctr_x = dx * w + ctr_x;
@@ -325,24 +306,25 @@ int transform_box(real* const box,
   const real pred_h = exp(d_log_h) * h;
 
   // update upper-left corner location
-  box[0] = pred_ctr_x - 0.5f * pred_w;
-  box[1] = pred_ctr_y - 0.5f * pred_h;
+  box->x1 = pred_ctr_x - 0.5f * pred_w;
+  box->y1 = pred_ctr_y - 0.5f * pred_h;
   // update lower-right corner location
-  box[2] = pred_ctr_x + 0.5f * pred_w;
-  box[3] = pred_ctr_y + 0.5f * pred_h;
+  box->x2 = pred_ctr_x + 0.5f * pred_w;
+  box->y2 = pred_ctr_y + 0.5f * pred_h;
 
   // adjust new corner locations to be within the image region,
-  box[0] = MAX(0.0f,  MIN(box[0],  img_W - 1.0f));
-  box[1] = MAX(0.0f,  MIN(box[1],  img_H - 1.0f));
-  box[2] = MAX(0.0f,  MIN(box[2],  img_W - 1.0f));
-  box[3] = MAX(0.0f,  MIN(box[3],  img_H - 1.0f));
+  box->x1 = MAX(0.0f,  MIN(box->x1,  img_W - 1.0f));
+  box->y1 = MAX(0.0f,  MIN(box->y1,  img_H - 1.0f));
+  box->x2 = MAX(0.0f,  MIN(box->x2,  img_W - 1.0f));
+  box->y2 = MAX(0.0f,  MIN(box->y2,  img_H - 1.0f));
 
   // recompute new width & height
-  const real box_w = box[2] - box[0] + 1.0f;
-  const real box_h = box[3] - box[1] + 1.0f;
+  const real box_w = box->x2 - box->x1 + 1.0f;
+  const real box_h = box->y2 - box->y1 + 1.0f;
 
   // check if new box's size >= threshold
-  return (box_w >= min_box_W) * (box_h >= min_box_H);
+  if (box_w >= min_box_W && box_h >= min_box_H) return 1;
+  return 0;
 }
 
 // given a base box, enumerate transformed boxes of varying sizes and ratios
@@ -396,42 +378,28 @@ void generate_anchors(real* const anchors,
 // quick-sort a list of boxes in descending order of their scores
 //   if num_top <= end,  only top-k results are guaranteed to be sorted
 //   (for efficient computation)
-void sort_box(real* const list, const int start, const int end,
+void sort_box(BoundingBox* const list, const int start, const int end,
               const int num_top)
 {
-  const real pivot_score = list[start * 5 + 4];
+  const real pivot_score = list[start].score;
   int left = start + 1, right = end;
-  real temp[5];
+  BoundingBox temp;
   while (left <= right) {
-    while (left <= end && list[left * 5 + 4] >= pivot_score) ++left;
-    while (right > start && list[right * 5 + 4] <= pivot_score) --right;
+    while (left <= end && list[left].score >= pivot_score) ++left;
+    while (right > start && list[right].score <= pivot_score) --right;
     if (left <= right) {
-      for (int i = 0; i < 5; ++i) {
-        temp[i] = list[left * 5 + i];
-      }
-      for (int i = 0; i < 5; ++i) {
-        list[left * 5 + i] = list[right * 5 + i];
-      }
-      for (int i = 0; i < 5; ++i) {
-        list[right * 5 + i] = temp[i];
-      }
+      temp = list[left];
+      list[left] = list[right];
+      list[right] = temp;
       ++left;
       --right;
     }
   }
-
   if (right > start) {
-    for (int i = 0; i < 5; ++i) {
-      temp[i] = list[start * 5 + i];
-    }
-    for (int i = 0; i < 5; ++i) {
-      list[start * 5 + i] = list[right * 5 + i];
-    }
-    for (int i = 0; i < 5; ++i) {
-      list[right * 5 + i] = temp[i];
-    }
+    temp = list[right];
+    list[right] = list[start];
+    list[start] = temp;
   }
-
   if (start < right - 1) {
     sort_box(list, start, right - 1, num_top);
   }
@@ -439,101 +407,6 @@ void sort_box(real* const list, const int start, const int end,
     sort_box(list, right + 1, end, num_top);
   }
 }
-
-// enumerate_proposals: generate all candidate boxes with their scores
-//   bottom: 1 x num_anchors x H x W tensor
-//     bottom[0, k, h, w] = foreground score of anchor k at node (h, w)
-//   d_anchor: num_anchors x 4 x H x W tensor
-//     d_anchor[k, :, h, w] = gradient (dx, dy, d(log w), d(log h))
-//                            of anchor k at center location (h, w)
-//   num_anchors: number of anchors  (= # concats * # scales * # ratios)
-//   anchors: num_anchors * 4 array,  (x1, y1, x2, y2) for each anchor
-//   img_H, img_W: scaled image height & width
-//   min_box_H, min_box_W: minimum box height & width
-//   feat_stride: scaled image height (width) / bottom height (width)
-//   proposals: num_proposals * 5 array
-//     num_proposals = num_anchors * H * W
-//     (x1, y1, x2, y2, score) for each proposal
-#ifdef GPU
-__global__
-void enumerate_proposals_gpu(const real* const bottom4d,
-                             const real* const d_anchor4d,
-                             const real* const anchors,
-                             const int num_anchors,
-                             const int bottom_H, const int bottom_W,
-                             const real img_H, const real img_W,
-                             const real min_box_H, const real min_box_W,
-                             const int feat_stride,
-                             real* const proposals)
-{
-  const int bottom_area = bottom_H * bottom_W;
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
-  if (index < num_anchors * bottom_area) {
-    const int h = index / num_anchors / bottom_W;
-    const int w = (index / num_anchors) % bottom_W;
-    const int k = index % num_anchors;
-    const real x = w * feat_stride;
-    const real y = h * feat_stride;
-    const real* p_box = d_anchor4d + h * bottom_W + w;
-    const real* p_score = bottom4d + h * bottom_W + w;
-
-    const real dx = p_box[(k * 4 + 0) * bottom_area];
-    const real dy = p_box[(k * 4 + 1) * bottom_area];
-    const real d_log_w = p_box[(k * 4 + 2) * bottom_area];
-    const real d_log_h = p_box[(k * 4 + 3) * bottom_area];
-
-    proposals[index * 5 + 0] = x + anchors[k * 4 + 0];
-    proposals[index * 5 + 1] = y + anchors[k * 4 + 1];
-    proposals[index * 5 + 2] = x + anchors[k * 4 + 2];
-    proposals[index * 5 + 3] = y + anchors[k * 4 + 3];
-
-    proposals[index * 5 + 4]
-        = transform_box(&proposals[index * 5],
-                        dx, dy, d_log_w, d_log_h,
-                        img_W, img_H, min_box_W, min_box_H)
-          * p_score[k * bottom_area];
-  }
-}
-#else
-void enumerate_proposals_cpu(const real* const bottom4d,
-                             const real* const d_anchor4d,
-                             const real* const anchors,
-                             const int num_anchors,
-                             const int bottom_H, const int bottom_W,
-                             const real img_H, const real img_W,
-                             const real min_box_H, const real min_box_W,
-                             const int feat_stride,
-                             real* const proposals)
-{
-  const int bottom_area = bottom_H * bottom_W;
-  for (int h = 0; h < bottom_H; ++h) {
-    for (int w = 0; w < bottom_W; ++w) {
-      const real x = w * feat_stride;
-      const real y = h * feat_stride;
-      const real* p_box = d_anchor4d + h * bottom_W + w;
-      const real* p_score = bottom4d + h * bottom_W + w;
-      for (int k = 0; k < num_anchors; ++k) {
-        const real dx = p_box[(k * 4 + 0) * bottom_area];
-        const real dy = p_box[(k * 4 + 1) * bottom_area];
-        const real d_log_w = p_box[(k * 4 + 2) * bottom_area];
-        const real d_log_h = p_box[(k * 4 + 3) * bottom_area];
-
-        const int index = (h * bottom_W + w) * num_anchors + k;
-        proposals[index * 5 + 0] = x + anchors[k * 4 + 0];
-        proposals[index * 5 + 1] = y + anchors[k * 4 + 1];
-        proposals[index * 5 + 2] = x + anchors[k * 4 + 2];
-        proposals[index * 5 + 3] = y + anchors[k * 4 + 3];
-
-        proposals[index * 5 + 4]
-            = transform_box(&proposals[index * 5],
-                            dx, dy, d_log_w, d_log_h,
-                            img_W, img_H, min_box_W, min_box_H)
-              * p_score[k * bottom_area];
-      } // endfor k
-    } // endfor w
-  } // endfor h
-}
-#endif
 
 
 
@@ -544,17 +417,20 @@ void enumerate_proposals_cpu(const real* const bottom4d,
 
 // proposal: bottom -> top
 //   bottom: 2 x num_anchors x H x W tensor
-//     bottom[0, k, h, w] = background score of anchor k at node (h, w)
-//     bottom[1, k, h, w] = foreground score of anchor k at node (h, w)
+//     bottom[0, n, h, w] = foreground score of anchor n at node (h, w)
+//     bottom[1, n, h, w] = background score of anchor n at node (h, w)
 //   d_anchor: num_anchors x 4 x H x W tensor
-//     d_anchor[k, :, h, w] = gradient (dx, dy, d(log w), d(log h))
-//                            of anchor k at center location (h, w)
+//     d_anchor[n, :, h, w] = gradient (dx, dy, d(log w), d(log h))
+//                            of anchor n at center location (h, w)
 //   img_info: 4 x 1 tensor,  (img_H, img_W, min_box_W, min_box_H)
-//     img_H, img_W: scaled image height & width
+//     img_H, img_W: raw image height & width
 //     min_box_W: minimum box width in raw image
 //     min_box_H: minimum box height in raw image
 //   top: num_RoIs x 4 tensor,  (x1, y1, x2, y2) of each RoI
-//   anchors: num_anchors * 4 array,  (x1, y1, x2, y2) for each anchor
+//   anchors: num_anchors * 4 array,  (x1, y1, x2, y2) of each anchor
+#define MAX_DATA_WIDTH 80
+#define MAX_DATA_HEIGHT 80
+#define MAX_NUM_PROPOSAL 6000
 void proposal_forward(const Tensor* const bottom4d,
                       const Tensor* const d_anchor4d,
                       const Tensor* const img_info1d,
@@ -562,93 +438,92 @@ void proposal_forward(const Tensor* const bottom4d,
                       const real* const anchors,
                       const ProposalOption* const option)
 {
-
-  const int num_anchors
-      = option->num_concats * option->num_ratios * option->num_scales;
-
-  int* const keep = (int*)malloc(option->post_nms_topn * sizeof(int));
-  real* const proposals = (real*)malloc(num_anchors * 80*80 * 5 * sizeof(real));
-  #ifdef GPU
-  real* proposals_dev;
-  cudaMalloc(&proposals_dev, num_anchors * 80*80 * 5 * sizeof(real));
-  #endif
+  BoundingBox* const proposals
+      = (BoundingBox*)malloc(MAX_NUM_RATIO_SCALE * MAX_NUM_RATIO_SCALE *
+                             MAX_DATA_WIDTH * MAX_DATA_HEIGHT *
+                             sizeof(BoundingBox));
+  real* const sorted_dets
+      = (real*)malloc(MAX_NUM_PROPOSAL * 5 * sizeof(real));
+  int* const keep = (int*)malloc(MAX_NUM_PROPOSAL * sizeof(int));
 
   // do forward-pass for each item in the batch
   const real* p_bottom_item = bottom4d->data;
   const real* p_d_anchor_item = d_anchor4d->data;
   const real* p_img_info = img_info1d->data;
   real* p_top_item = top2d->data;
+  const int num_anchors
+      = option->num_concats * option->num_ratios * option->num_scales;
   for (int n = 0; n < bottom4d->num_items; ++n) {
     // bottom shape: 2 x num_anchors x H x W
     const int bottom_H = bottom4d->shape[n][2];
     const int bottom_W = bottom4d->shape[n][3];
     const int bottom_area = bottom_H * bottom_W;
-    // input image height & width
+    // raw image height & width
     const real img_H = p_img_info[0];
     const real img_W = p_img_info[1];
-    // minimum box width & height
+    // minimum box width & height in raw image
     const real min_box_W = option->min_size * p_img_info[2];
     const real min_box_H = option->min_size * p_img_info[3];
 
     // enumerate all proposals
-    //   num_proposals = num_anchors * H * W
-    //   (x1, y1, x2, y2, score) for each proposal
-    // NOTE: for bottom, only foreground scores are passed
-    {
-    #ifdef GPU
-      const int num_threads = num_anchors * bottom_area;
-      const int threads_per_block = 512;
-      const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
-      enumerate_proposals_gpu<<<num_blocks, threads_per_block>>>(
-          p_bottom_item + num_anchors * bottom_area,
-          p_d_anchor_item,  anchors,  num_anchors,
-          bottom_H,  bottom_W,  img_H,  img_W,  min_box_H,  min_box_W,
-          option->feat_stride,
-          proposals_dev);
-    #else
-      enumerate_proposals_cpu(
-          p_bottom_item + num_anchors * bottom_area,
-          p_d_anchor_item,  anchors,  num_anchors,
-          bottom_H,  bottom_W,  img_H,  img_W,  min_box_H,  min_box_W,
-          option->feat_stride,
-          proposals);
-    #endif
-    }
+    // TODO: GPU code
+    int num_proposals = 0;
+    for (int h = 0; h < bottom_H; ++h) {
+      for (int w = 0; w < bottom_W; ++w) {
+        const real x = w * option->feat_stride;
+        const real y = h * option->feat_stride;
+        const real* p_box = p_d_anchor_item + h * bottom_W + w;
+        const real* p_score
+            = p_bottom_item + num_anchors * bottom_area + h * bottom_W + w;
+        for (int k = 0; k < num_anchors; ++k) {
+          const real dx = p_box[(k * 4 + 0) * bottom_area];
+          const real dy = p_box[(k * 4 + 1) * bottom_area];
+          const real d_log_w = p_box[(k * 4 + 2) * bottom_area];
+          const real d_log_h = p_box[(k * 4 + 3) * bottom_area];
+          proposals[num_proposals].x1 = x + anchors[k * 4 + 0];
+          proposals[num_proposals].y1 = y + anchors[k * 4 + 1];
+          proposals[num_proposals].x2 = x + anchors[k * 4 + 2];
+          proposals[num_proposals].y2 = y + anchors[k * 4 + 3];
+          proposals[num_proposals].score = p_score[k * bottom_area];
+          {
+            const int box_created
+                = transform_box(&proposals[num_proposals],
+                                dx, dy, d_log_w, d_log_h,
+                                img_W, img_H, min_box_W, min_box_H);
+            if (box_created) ++num_proposals;
+          }
+        } // endfor k
+      } // endfor w
+    } // endfor h
 
     // choose candidates according to scores
     // TODO: copy proposals to GPU memory directly
-    {
-      const int num_proposals = num_anchors * bottom_area;
-    #ifdef GPU
-      cudaMemcpyAsync(proposals, proposals_dev,
-                      num_proposals * 5 * sizeof(real),
-                      cudaMemcpyDeviceToHost);
-    #endif
-      sort_box(proposals, 0, num_proposals - 1, option->pre_nms_topn);
+    sort_box(proposals, 0, num_proposals - 1, option->pre_nms_topn);
+    if (num_proposals > option->pre_nms_topn) {
+      num_proposals = option->pre_nms_topn;
+    }
+    for (int i = 0; i < num_proposals; ++i) {
+      sorted_dets[i * 5 + 0] = proposals[i].x1;
+      sorted_dets[i * 5 + 1] = proposals[i].y1;
+      sorted_dets[i * 5 + 2] = proposals[i].x2;
+      sorted_dets[i * 5 + 3] = proposals[i].y2;
+      sorted_dets[i * 5 + 4] = proposals[i].score;
     }
 
     // NMS & RoI retrieval
     {
-      const int num_proposals
-          = MIN(num_anchors * bottom_area,  option->pre_nms_topn);
       int num_rois = 0;
-      nms(num_proposals,  proposals,  &num_rois,  keep,
-          option->nms_thresh,  option->post_nms_topn);
+      nms(num_proposals, sorted_dets, &num_rois, keep, option->nms_thresh);
 
-    #ifdef GPU
-      for (int i = 0; i < num_rois; ++i) {
-        cudaMemcpyAsync(p_top_item + i * 4, proposals + keep[i] * 5,
-                        4 * sizeof(real),
-                        cudaMemcpyHostToDevice);
+      if (num_rois > option->post_nms_topn) {
+        num_rois = option->post_nms_topn;
       }
-    #else
       for (int i = 0; i < num_rois; ++i) {
-        p_top_item[i * 4 + 0] = proposals[keep[i] * 5 + 0];
-        p_top_item[i * 4 + 1] = proposals[keep[i] * 5 + 1];
-        p_top_item[i * 4 + 2] = proposals[keep[i] * 5 + 2];
-        p_top_item[i * 4 + 3] = proposals[keep[i] * 5 + 3];
+        p_top_item[i * 4 + 0] = proposals[keep[i]].x1;
+        p_top_item[i * 4 + 1] = proposals[keep[i]].y1;
+        p_top_item[i * 4 + 2] = proposals[keep[i]].x2;
+        p_top_item[i * 4 + 3] = proposals[keep[i]].y2;
       }
-    #endif
 
       // set top shape: num_rois x 4,  (x1, y1, x2, y2) for each RoI
       top2d->shape[n][0] = num_rois;
@@ -671,10 +546,8 @@ void proposal_forward(const Tensor* const bottom4d,
   top2d->ndim = 2;
   top2d->num_items = bottom4d->num_items;
 
-  #ifdef GPU
-  cudaFree(proposals_dev);
-  #endif
   free(proposals);
+  free(sorted_dets);
   free(keep);
 }
 
@@ -715,7 +588,7 @@ int main(int argc, char *argv[])
   real *roi_data, *roi_true_data;
   real scales[5] = {3, 6, 9, 16, 32};
   real ratios[5] = {0.5, 0.666, 1.0, 1.5, 2.0};
-  real *anchors, *p_anchors;
+  real *anchors;
   int num_anchors;
   ProposalOption option;
 
@@ -802,7 +675,7 @@ int main(int argc, char *argv[])
         roi_true_data[i * 4 + 1] = y1;
         roi_true_data[i * 4 + 2] = x2;
         roi_true_data[i * 4 + 3] = y2;
-        num_items = MAX(num_items,  n);
+        num_items = MAX(num_items, n);
       }
       roi_true.num_items = num_items + 1;
     }
@@ -819,62 +692,23 @@ int main(int argc, char *argv[])
   #ifdef GPU
   {
     printf("set device\n");
-    cudaSetDevice(0);
+    CUDA_CHECK(cudaSetDevice(0));
   }
   #endif
 
   // bind loaded data to corresponding tensors
-  #ifdef GPU
   {
-    const int score_size = flatten_size(&score);
-    const int d_anchor_size = flatten_size(&d_anchor);
-    const int roi_size = flatten_size(&roi);
-
-    printf("gpu malloc\n");
-    cudaMalloc(&score.data, score_size * sizeof(real));
-    cudaMalloc(&d_anchor.data, d_anchor_size * sizeof(real));
-    cudaMalloc(&p_anchors, num_anchors * 4 * sizeof(real));
-    cudaMalloc(&roi.data, roi_size * sizeof(real));
-
-    printf("memcpy: cpu -> gpu\n");
-    cudaMemcpyAsync(score.data, score_data,
-                    score_size * sizeof(real),
-                    cudaMemcpyHostToDevice);
-    cudaMemcpyAsync(d_anchor.data, d_anchor_data,
-                    d_anchor_size * sizeof(real),
-                    cudaMemcpyHostToDevice);
-    cudaMemcpyAsync(p_anchors, anchors,
-                    num_anchors * 4 * sizeof(real),
-                    cudaMemcpyHostToDevice);
-
-    img_info.data = img_info_data;
+    score.data = &score_data[0];
+    d_anchor.data = &d_anchor_data[0];
+    img_info.data = &img_info_data[0];
+    roi.data = &roi_data[0];
   }
-  #else
-  {
-    score.data = score_data;
-    d_anchor.data = d_anchor_data;
-    p_anchors = anchors;
-    img_info.data = img_info_data;
-    roi.data = roi_data;
-  }
-  #endif
 
   // do forward operation
   {
     printf("do forward\n");
-    proposal_forward(&score, &d_anchor, &img_info, &roi, p_anchors, &option);
+    proposal_forward(&score, &d_anchor, &img_info, &roi, anchors, &option);
   }
-
-  // copy GPU data to main memory
-  #ifdef GPU
-  {
-    const int roi_size = flatten_size(&roi);
-
-    printf("memcpy: cpu <- gpu\n");
-    cudaMemcpyAsync(roi_data, roi.data, roi_size * sizeof(real),
-                    cudaMemcpyDeviceToHost);
-  }
-  #endif
 
   // verify results
   {
@@ -937,25 +771,6 @@ int main(int argc, char *argv[])
              roi_true_data[i_true + 2], roi_true_data[i_true + 3]);
     }
   }
-
-  // memory deallocation
-  {
-    free(anchors);
-    free(score_data);
-    free(d_anchor_data);
-    free(img_info_data);
-    free(roi_data);
-    free(roi_true_data);
-  }
-  #ifdef GPU
-  {
-    printf("gpu free\n");
-    cudaFree(score.data);
-    cudaFree(d_anchor.data);
-    cudaFree(p_anchors);
-    cudaFree(roi.data);
-  }
-  #endif
 
   return 0;
 }

@@ -25,7 +25,7 @@ void convert_bottom_gpu(const real* const bottom3d,
   // thread index: (c, h5, w5) = c*H5*W5 + h5*W5 + w5
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
   const int H5W5 = H5 * W5;
-  {
+  if (index < C * H5W5) {
     // parse thread index -> (c, h5, w5)
     const int c = index / H5W5;
     const int h5 = (index / W5) % H5;
@@ -42,17 +42,13 @@ void convert_bottom_gpu(const real* const bottom3d,
     // bottom5d[c][kh][kw][h5][w5] = bottom3d[c][h][w]
     //   h = h_start + kh,  kh = {0, 1, ..., kernel_h - 1}
     //   w = w_start + kw,  kw = {0, 1, ..., kernel_w - 1}
+    //   if (h, w) is in a zero-padded region, assign 0
     for (int kh = 0; kh < kernel_h; ++kh) {
       for (int kw = 0; kw < kernel_w; ++kw) {
         const int h = h_start + kh;
         const int w = w_start + kw;
-        if (h >= 0 && h < H && w >= 0 && w < W) {
-          p_bottom5d[(kh * kernel_w + kw) * H5W5] = p_bottom3d[kh * W + kw];
-        }
-        else {
-          // if (h, w) is in a zero-padded region, assign 0
-          p_bottom5d[(kh * kernel_w + kw) * H5W5] = 0;
-        }
+        p_bottom5d[(kh * kernel_w + kw) * H5W5] = p_bottom3d[kh * W + kw]
+            * (h >= 0) * (h < H) * (w >= 0) * (w < W);
       }
     }
   }
@@ -177,7 +173,7 @@ void conv_forward(const Tensor* const bottom3d,
       // one thread computes "kernel_h * kernel_w" entries in top
       const int num_threads = num_groups * bottom_C * top_H * top_W;
       const int threads_per_block = 512;
-      const int num_blocks = DIV_THEN_CEIL(num_threads, threads_per_block);
+      const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
       convert_bottom_gpu<<<num_blocks, threads_per_block>>>(
           p_bottom_item,  temp_data,
           num_groups * bottom_C,  bottom_H,  bottom_W,
@@ -304,6 +300,89 @@ void conv_forward(const Tensor* const bottom3d,
 
 
 // --------------------------------------------------------------------------
+// layer shape calculator code
+// --------------------------------------------------------------------------
+
+void conv_shape(const Tensor* const bottom3d,
+                Tensor* const top3d,
+                Tensor* const weight5d,
+                Tensor* const bias1d,
+                int* const temp_size,
+                int* const const_size,
+                const ConvOption* const option)
+{
+  const int num_groups = option->num_groups; // G
+  const int top_C = option->out_channels / option->num_groups;  // C'
+  const int bottom_C = bottom3d->shape[0][0] / option->num_groups;  // C
+  const int kernel_h = option->kernel_h;
+  const int kernel_w = option->kernel_w;
+  const int pad_h = option->pad_h;
+  const int pad_w = option->pad_w;
+  const int stride_h = option->stride_h;
+  const int stride_w = option->stride_w;
+
+  // calculate shape for each item in the batch
+  int max_top_area = 0;
+  int total_size = 0;
+  for (int n = 0; n < bottom3d->num_items; ++n) {
+    // bottom shape: (G * C) x H x W
+    const int bottom_H = bottom3d->shape[n][1];  // H
+    const int bottom_W = bottom3d->shape[n][2];  // W
+
+    // top shape: (G * C') x H' x W'
+    //   H' = 1 + (H + 2*pad_h - kernel_h) / stride_h
+    //   W' = 1 + (W + 2*pad_w - kernel_w) / stride_w
+    const int top_H = 1 + (bottom_H + 2 * pad_h - kernel_h) / stride_h;
+    const int top_W = 1 + (bottom_W + 2 * pad_w - kernel_w) / stride_w;
+    const int top_area = top_H * top_W;
+    top3d->shape[n][0] = num_groups * top_C;
+    top3d->shape[n][1] = top_H;
+    top3d->shape[n][2] = top_W;
+
+    // start position for n-th item in top3d->data
+    top3d->start[n] = total_size;
+    total_size += num_groups * top_C * top_H * top_W;
+
+    // max(H' * W') in the batch
+    max_top_area = MAX(max_top_area,  top_area);
+  }
+  top3d->ndim = 3;
+  top3d->num_items = bottom3d->num_items;
+
+  // weight shape: G x C' x C x kernel_h x kernel_w
+  weight5d->num_items = 1;
+  weight5d->ndim = 5;
+  weight5d->shape[0][0] = num_groups;
+  weight5d->shape[0][1] = top_C;
+  weight5d->shape[0][2] = bottom_C;
+  weight5d->shape[0][3] = kernel_h;
+  weight5d->shape[0][4] = kernel_w;
+  weight5d->start[0] = 0;
+
+  // bias shape: (G * C') x 1
+  if (option->bias) {
+    bias1d->num_items = 1;
+    bias1d->ndim = 1;
+    bias1d->shape[0][0] = num_groups * top_C;
+    bias1d->start[0] = 0;
+  }
+  else {
+    bias1d->num_items = 0;
+    bias1d->ndim = 0;
+    bias1d->shape[0][0] = 0;
+    bias1d->start[0] = 0;
+  }
+
+  // temporary data size: G * C * kernel_h * kernel_w * max(H' * W')
+  *temp_size = num_groups * bottom_C * kernel_h * kernel_w * max_top_area;
+
+  // constant data size: max(H' * W')
+  *const_size = max_top_area;
+}
+
+
+
+// --------------------------------------------------------------------------
 // test code
 // --------------------------------------------------------------------------
 
@@ -311,32 +390,15 @@ void conv_forward(const Tensor* const bottom3d,
 #include <stdio.h>
 #include <stdlib.h>
 
-#define DATA_SIZE 384*36*46
-#define WEIGHT_SIZE 384*256*3*3
-#define BIAS_SIZE 384
-#define CONST_SIZE 36*46
-
 int main(int argc, char *argv[])
 {
   // variable declaration & memory allocation
   Tensor X, Y, W, b;
-  real* X_data;
-  real* Y_data;
-  real* Y_true_data;
-  real* W_data;
-  real* b_data;
-  real* const_data;
-/*
-  real* const X_data = (real*)malloc(DATA_SIZE * sizeof(real));
-  real* const Y_data = (real*)malloc(DATA_SIZE * sizeof(real));
-  real* const Y_true_data = (real*)malloc(DATA_SIZE * sizeof(real));
-  real* const W_data = (real*)malloc(WEIGHT_SIZE * sizeof(real));
-  real* const b_data = (real*)malloc(BIAS_SIZE * sizeof(real));
-  real* const const_data = (real*)malloc(CONST_SIZE * sizeof(real));
-*/
-  real* p_temp_data;
-  real* p_const_data;
+  real *X_data = NULL, *Y_data = NULL, *Y_true_data = NULL;
+  real *W_data = NULL, *b_data = NULL;
+  real *p_temp_data = NULL, *const_data = NULL, *p_const_data = NULL;
   ConvOption option;
+  int temp_size, const_size;
 
   // set option
   {
@@ -351,135 +413,47 @@ int main(int argc, char *argv[])
     option.bias = 1;
   }
 
-  // set data shapes
-  {
-    X.ndim = 3;
-    X.num_items = 1;
-    for (int i = 0; i < X.num_items; ++i) {
-      X.shape[i][0] = 256;
-      X.shape[i][1] = 36;
-      X.shape[i][2] = 46;
-    }
-
-    Y.ndim = X.ndim;
-    Y.num_items = X.num_items;
-    for (int i = 0; i < Y.num_items; ++i) {
-      Y.shape[i][0] = option.out_channels;
-      Y.shape[i][1] = 1 + (X.shape[i][1] + 2 * option.pad_h - option.kernel_h)
-                          / option.stride_h;
-      Y.shape[i][2] = 1 + (X.shape[i][2] + 2 * option.pad_w - option.kernel_w)
-                          / option.stride_w;
-    }
-
-    W.ndim = 5; W.num_items = 1;
-    W.shape[0][0] = option.num_groups;
-    W.shape[0][1] = option.out_channels / option.num_groups;
-    W.shape[0][2] = X.shape[0][0] / option.num_groups;
-    W.shape[0][3] = option.kernel_h;
-    W.shape[0][4] = option.kernel_w;
-
-    b.ndim = 1; b.num_items = 1;
-    b.shape[0][0] = option.out_channels;
-  }
- 
   // load data
   {
     int ndim;
-    int shape[10];
+    int shape[g_max_ndim];
+    int total_size;
 
     X_data = load_data("../data/temp/conv_bottom0.bin", &ndim, shape);
-    X.ndim = ndim - 1;
     X.num_items = shape[0];
-    for (int i = 0; i < X.num_items; ++i) {
-      for (int j = 0; j < X.ndim; ++j) {
-        X.shape[i][j] = shape[j + 1];
+    X.ndim = ndim - 1;
+    total_size = 0;
+    for (int n = 0; n < X.num_items; ++n) {
+      int size_n = 1;
+      for (int i = 0; i < X.ndim; ++i) {
+        X.shape[n][i] = shape[i + 1];
+        size_n *= shape[i + 1];
       }
+      X.start[n] = total_size;
+      total_size += size_n;
     }
+    conv_shape(&X, &Y, &W, &b, &temp_size, &const_size, &option);
 
     Y_true_data = load_data("../data/temp/conv_top0.bin", &ndim, shape);
-    Y.ndim = ndim - 1;
-    Y.num_items = shape[0];
-    for (int i = 0; i < Y.num_items; ++i) {
-      for (int j = 0; j < Y.ndim; ++j) {
-        Y.shape[i][j] = shape[j + 1];
-      }
-    }
     Y_data = (real*)malloc(flatten_size(&Y) * sizeof(real));
-    const_data = (real*)malloc(Y.shape[0][1] * Y.shape[0][2] * sizeof(real));
-    for (int i = 0; i < Y.shape[0][1] * Y.shape[0][2]; ++i) {
-      const_data[i] = 1;
-    }
 
     W_data = load_data("../data/temp/conv_param0.bin", &ndim, shape);
-    W.ndim = ndim + 1;
-    W.shape[0][0] = option.num_groups;
-    for (int j = 0; j < ndim; ++j) {
-      W.shape[0][j + 1] = shape[j];
-    }
-    W.shape[0][1] /= option.num_groups;
 
     if (option.bias) {
       b_data = load_data("../data/temp/conv_param1.bin", &ndim, shape);
-      b.ndim = ndim;
-      b.num_items = 1;
-      for (int j = 0; j < b.ndim; ++j) {
-        b.shape[0][j] = shape[j];
-      }
-    }
-    else {
-      b_data = (real*)malloc(1 * sizeof(real));
-      b.ndim = 1;
-      b.num_items = 1;
-      b.shape[0][0] = 1;
-    }
-  }
-  /*
-  {
-    FILE* fp;
-    const int X_size = flatten_size(&X);
-    const int Y_size = flatten_size(&Y);
-    const int W_size = flatten_size(&W);
-    const int b_size = flatten_size(&b);
 
-    printf("data loading\n");
-
-    fp = fopen("../data/temp/conv_bottom0.bin", "rb");
-    if ((int)fread(X_data, sizeof(real), X_size, fp) != X_size) {
-      printf("Error while reading conv_bottom0\n");
-    }
-    fclose(fp);
-
-    fp = fopen("../data/temp/conv_param0.bin", "rb");
-    if ((int)fread(W_data, sizeof(real), W_size, fp) != W_size) {
-      printf("Error while reading conv_param0\n");
-    }
-    fclose(fp);
-
-    if (option.bias) {
-      fp = fopen("../data/temp/conv_param1.bin", "rb");
-      if ((int)fread(b_data, sizeof(real), b_size, fp) != b_size) {
-        printf("Error while reading conv_param1\n");
-      }
-      fclose(fp);
-
-      for (int i = 0; i < CONST_SIZE; ++i) {
+      const_data = (real*)malloc(const_size * sizeof(real));
+      for (int i = 0; i < const_size; ++i) {
         const_data[i] = 1;
       }
     }
-
-    fp = fopen("../data/temp/conv_top0.bin", "rb");
-    if ((int)fread(Y_true_data, sizeof(real), Y_size, fp) != Y_size) {
-      printf("Error while reading conv_top0\n");
-    }
-    fclose(fp);
   }
-*/
 
   // CUDA initialization
   #ifdef GPU
   {
     printf("set device\n");
-    CUDA_CHECK(cudaSetDevice(0));
+    cudaSetDevice(0);
     option.handle = (cublasHandle_t*)malloc(sizeof(cublasHandle_t));
     if (cublasCreate((cublasHandle_t*)option.handle)
           != CUBLAS_STATUS_SUCCESS) {
@@ -495,39 +469,45 @@ int main(int argc, char *argv[])
     const int Y_size = flatten_size(&Y);
     const int W_size = flatten_size(&W);
     const int b_size = flatten_size(&b);
-    const int temp_size = option.kernel_h * option.kernel_w *
-                          X.shape[0][0] * Y.shape[0][1] * Y.shape[0][2];
 
     printf("gpu malloc\n");
-    CUDA_CHECK(cudaMalloc(&X.data, X_size * sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&Y.data, Y_size * sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&W.data, W_size * sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&b.data, b_size * sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&p_temp_data, temp_size * sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&p_const_data, CONST_SIZE * sizeof(real)));
+    cudaMalloc(&X.data, X_size * sizeof(real));
+    cudaMalloc(&Y.data, Y_size * sizeof(real));
+    cudaMalloc(&W.data, W_size * sizeof(real));
+    cudaMalloc(&p_temp_data, temp_size * sizeof(real));
+    if (option.bias) {
+      cudaMalloc(&b.data, b_size * sizeof(real));
+      cudaMalloc(&p_const_data, const_size * sizeof(real));
+    }
+    else {
+      b.data = NULL;
+    }
 
     printf("memcpy: cpu -> gpu\n");
-    CUDA_CHECK(cudaMemcpy(X.data, X_data, X_size * sizeof(real),
-                          cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(W.data, W_data, W_size * sizeof(real),
-                          cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(b.data, b_data, b_size * sizeof(real),
-                          cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(p_const_data, const_data,
-                          CONST_SIZE * sizeof(real),
-                          cudaMemcpyHostToDevice));
+    cudaMemcpyAsync(X.data, X_data, X_size * sizeof(real),
+                    cudaMemcpyHostToDevice);
+    cudaMemcpyAsync(W.data, W_data, W_size * sizeof(real),
+                    cudaMemcpyHostToDevice);
+    if (option.bias) {
+      cudaMemcpyAsync(b.data, b_data, b_size * sizeof(real),
+                      cudaMemcpyHostToDevice);
+      cudaMemcpyAsync(p_const_data, const_data, const_size * sizeof(real),
+                      cudaMemcpyHostToDevice);
+    }
   }
   #else
   {
-    const int temp_size = option.kernel_h * option.kernel_w *
-                          X.shape[0][0] * Y.shape[0][1] * Y.shape[0][2];
-
     X.data = X_data;
     Y.data = Y_data;
     W.data = W_data;
-    b.data = b_data;
     p_temp_data = (real*)malloc(temp_size * sizeof(real));
-    p_const_data = const_data;
+    if (option.bias) {
+      b.data = b_data;
+      p_const_data = const_data;
+    }
+    else {
+      b.data = NULL;
+    }
   }
   #endif
 
@@ -543,8 +523,8 @@ int main(int argc, char *argv[])
     const int Y_size = flatten_size(&Y);
 
     printf("memcpy: cpu <- gpu\n");
-    CUDA_CHECK(cudaMemcpy(Y_data, Y.data, Y_size * sizeof(real),
-                          cudaMemcpyDeviceToHost));
+    cudaMemcpyAsync(Y_data, Y.data, Y_size * sizeof(real),
+                    cudaMemcpyDeviceToHost);
   }
   #endif
 
@@ -559,7 +539,7 @@ int main(int argc, char *argv[])
         for (int h = 0; h < Y.shape[n][1]; ++h) {
           for (int w = 0; w < Y.shape[n][2]; ++w) {
             real diff = ABS(Y_data[i] - Y_true_data[i]);
-            diff /= 1e-10f + MIN(ABS(Y_data[i]), ABS(Y_true_data[i]));
+            diff /= 1e-10f + MIN(ABS(Y_data[i]),  ABS(Y_true_data[i]));
           #ifdef GPU
             if (diff > 0) {
               printf("Y[%d,%d,%d,%d] = %.6f  Y_true[%d,%d,%d,%d] = %.6f\n",
@@ -585,20 +565,25 @@ int main(int argc, char *argv[])
     free(Y_data);
     free(Y_true_data);
     free(W_data);
-    free(b_data);
-    free(const_data);
+    if (option.bias) {
+      free(b_data);
+      free(const_data);
+    }
   }
   #ifdef GPU
   {
     printf("gpu free\n");
-    CUDA_CHECK(cudaFree(X.data));
-    CUDA_CHECK(cudaFree(Y.data));
-    CUDA_CHECK(cudaFree(W.data));
-    CUDA_CHECK(cudaFree(b.data));
-    CUDA_CHECK(cudaFree(p_temp_data));
-    CUDA_CHECK(cudaFree(p_const_data));
+    cudaFree(X.data);
+    cudaFree(Y.data);
+    cudaFree(W.data);
+    cudaFree(p_temp_data);
+    if (option.bias) {
+      cudaFree(b.data);
+      cudaFree(p_const_data);
+    }
 
-    if (cublasDestroy(*((cublasHandle_t*)option.handle)) != CUBLAS_STATUS_SUCCESS) {
+    if (cublasDestroy(*((cublasHandle_t*)option.handle))
+        != CUBLAS_STATUS_SUCCESS) {
       printf("cublas destruction failed\n");
     }
     free(option.handle);

@@ -49,6 +49,7 @@ typedef struct Tensor_
   int num_items;
   int ndim;
   int shape[g_max_num_items][g_max_ndim];
+  int start[g_max_num_items];
   real* data;
 } Tensor;
 
@@ -282,11 +283,11 @@ void relu_forward_inplace(Tensor* const bottom,
 
 typedef struct ProposalOption_
 {
-  int num_concats;
-  real* ratios;
-  int num_ratios;
   real* scales;
+  real* ratios;
   int num_scales;
+  int num_ratios;
+  int num_concats;
   int base_size;
   int feat_stride;
   int min_size;
@@ -314,6 +315,40 @@ void proposal_forward(const Tensor* const bottom4d,
                       Tensor* const top2d,
                       const real* const anchors,
                       const ProposalOption* const option);
+
+
+
+// --------------------------------------------------------------------------
+// dropout
+//   struct DropoutOption
+//   dropout_forward
+//   dropout_forward_inplace
+// --------------------------------------------------------------------------
+
+typedef struct DropoutOption_
+{
+  int scaled;
+  int test;
+  real threshold;
+} DropoutOption;
+
+// dropout transform: bottom -> top
+//   if option->scaled = 1, perform scaled dropout
+//   if option->test = 1, perform testing-time dropout
+//   if both = 1, perform testing-time scaled dropout,
+//                which is actually do nothing:  top[i] = bottom[i]
+//   if both = 0, perform dropout
+//   data size: total number of nodes (N * C * H * W or something)
+//   mask: data_size x 1 temporary array
+void dropout_forward(const Tensor* const bottom,
+                     unsigned int* const mask,
+                     Tensor* const top,
+                     const DropoutOption* const option);
+
+// in-place dropout transform: bottom -> bottom
+void dropout_forward_inplace(Tensor* const bottom,
+                             unsigned int* const mask,
+                             const DropoutOption* const option);
 
 
 #endif // endifndef PVA_DL_LAYER_H

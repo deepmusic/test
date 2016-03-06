@@ -1,4 +1,4 @@
-all: cpu_conv gpu_conv cpu_deconv gpu_deconv cpu_fc gpu_fc cpu_pool gpu_pool cpu_roipool gpu_roipool cpu_relu gpu_relu cpu_proposal gpu_proposal
+all: cpu_conv gpu_conv cpu_deconv gpu_deconv cpu_fc gpu_fc cpu_pool gpu_pool cpu_roipool gpu_roipool cpu_relu gpu_relu cpu_proposal gpu_proposal cpu_dropout gpu_dropout
 cpu_conv:
 	cp conv.cu conv.c
 	gcc -O3 -Wall -std=c99 -DTEST -o cpu_conv.o conv.c -lcblas
@@ -27,6 +27,10 @@ cpu_proposal:
 	cp proposal.cu proposal.c
 	gcc -O3 -Wall -std=c99 -DTEST -o cpu_proposal.o proposal.c -lm
 	rm proposal.c
+cpu_dropout:
+	cp dropout.cu dropout.c
+	gcc -O3 -Wall -std=c99 -DTEST -o cpu_dropout.o dropout.c
+	rm dropout.c
 gpu_conv:
 	nvcc -O3 -use_fast_math -Xcompiler -Wall -DGPU -DTEST -o gpu_conv.o conv.cu -lcublas -lcuda
 gpu_deconv:
@@ -41,3 +45,5 @@ gpu_relu:
 	nvcc -O3 -use_fast_math -Xcompiler -Wall -DGPU -DTEST -o gpu_relu.o relu.cu -lcuda
 gpu_proposal:
 	nvcc -O3 -use_fast_math -Xcompiler -Wall -DGPU -DTEST -o gpu_proposal.o proposal.cu -lcuda
+gpu_dropout:
+	nvcc -O3 -use_fast_math -Xcompiler -Wall -DGPU -DTEST -o gpu_dropout.o dropout.cu -lcuda

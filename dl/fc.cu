@@ -120,6 +120,56 @@ void fc_forward(const Tensor* const bottom2d,
 
 
 // --------------------------------------------------------------------------
+// layer shape calculator code
+// --------------------------------------------------------------------------
+
+void fc_shape(const Tensor* const bottom2d,
+              Tensor* const top2d,
+              Tensor* const weight2d,
+              Tensor* const bias1d,
+              int* const const_size,
+              const FCOption* const option)
+{
+  // bottom shape: N x D
+  const int N = bottom2d->shape[0][0];
+  const int bottom_D = bottom2d->shape[0][1]; // D
+
+  // top shape: N x D'
+  const int top_D = option->out_channels;  // D'
+  top2d->num_items = 1;
+  top2d->ndim = 2;
+  top2d->shape[0][0] = N;
+  top2d->shape[0][1] = top_D;
+  top2d->start[0] = 0;
+
+  // weight shape: D' x D
+  weight2d->num_items = 1;
+  weight2d->ndim = 2;
+  weight2d->shape[0][0] = top_D;
+  weight2d->shape[0][1] = bottom_D;
+  weight2d->start[0] = 0;
+
+  // bias shape: D' x 1
+  if (option->bias) {
+    bias1d->num_items = 1;
+    bias1d->ndim = 1;
+    bias1d->shape[0][0] = top_D;
+    bias1d->start[0] = 0;
+  }
+  else {
+    bias1d->num_items = 0;
+    bias1d->ndim = 0;
+    bias1d->shape[0][0] = 0;
+    bias1d->start[0] = 0;
+  }
+
+  // constant data size: N
+  *const_size = N;
+}
+
+
+
+// --------------------------------------------------------------------------
 // test code
 // --------------------------------------------------------------------------
 
@@ -127,24 +177,15 @@ void fc_forward(const Tensor* const bottom2d,
 #include <stdio.h>
 #include <stdlib.h>
 
-#define IN_DATA_SIZE 300*4096
-#define OUT_DATA_SIZE 300*84
-#define WEIGHT_SIZE 84*4096
-#define BIAS_SIZE 84
-#define CONST_SIZE 300
-
 int main(int argc, char *argv[])
 {
   // variable declaration & memory allocation
   Tensor X, Y, W, b;
-  real* const X_data = (real*)malloc(IN_DATA_SIZE * sizeof(real));
-  real* const Y_data = (real*)malloc(OUT_DATA_SIZE * sizeof(real));
-  real* const Y_true_data = (real*)malloc(OUT_DATA_SIZE * sizeof(real));
-  real* const W_data = (real*)malloc(WEIGHT_SIZE * sizeof(real));
-  real* const b_data = (real*)malloc(BIAS_SIZE * sizeof(real));
-  real* const const_data = (real*)malloc(CONST_SIZE * sizeof(real));
-  real* p_const_data;
+  real *X_data = NULL, *Y_data = NULL, *Y_true_data = NULL;
+  real *W_data = NULL, *b_data = NULL;
+  real *const_data = NULL, *p_const_data = NULL;
   FCOption option;
+  int const_size;
 
   // set option
   {
@@ -152,70 +193,41 @@ int main(int argc, char *argv[])
     option.bias = 1;
   }
 
-  // set data shapes
-  {
-    X.ndim = 2; X.num_items = 1;
-    X.shape[0][0] = 300;
-    X.shape[0][1] = 4096;
-
-    Y.ndim = X.ndim; Y.num_items = 1;
-    Y.shape[0][0] = X.shape[0][0];
-    Y.shape[0][1] = option.out_channels;
-
-    W.ndim = 2; W.num_items = 1;
-    W.shape[0][0] = option.out_channels;
-    W.shape[0][1] = X.shape[0][1];
-
-    b.ndim = 1; b.num_items = 1;
-    b.shape[0][0] = option.out_channels;
-  }
- 
   // load data
   {
-    FILE* fp;
-    const int X_size = flatten_size(&X);
-    const int Y_size = flatten_size(&Y);
-    const int W_size = flatten_size(&W);
-    const int b_size = flatten_size(&b);
+    int ndim;
+    int shape[g_max_ndim];
 
-    printf("data loading\n");
-
-    fp = fopen("../data/temp/fc_bottom0.bin", "rb");
-    if ((int)fread(X_data, sizeof(real), X_size, fp) != X_size) {
-      printf("Error while reading fc_bottom0\n");
+    X_data = load_data("../data/temp/fc_bottom0.bin", &ndim, shape);
+    X.num_items = 1;
+    X.ndim = ndim;
+    for (int i = 0; i < X.ndim; ++i) {
+      X.shape[0][i] = shape[i];
     }
-    fclose(fp);
+    X.start[0] = 0;
 
-    fp = fopen("../data/temp/fc_param0.bin", "rb");
-    if ((int)fread(W_data, sizeof(real), W_size, fp) != W_size) {
-      printf("Error while reading fc_param0\n");
-    }
-    fclose(fp);
+    fc_shape(&X, &Y, &W, &b, &const_size, &option);
+
+    Y_true_data = load_data("../data/temp/fc_top0.bin", &ndim, shape);
+    Y_data = (real*)malloc(flatten_size(&Y) * sizeof(real));
+
+    W_data = load_data("../data/temp/fc_param0.bin", &ndim, shape);
 
     if (option.bias) {
-      fp = fopen("../data/temp/fc_param1.bin", "rb");
-      if ((int)fread(b_data, sizeof(real), b_size, fp) != b_size) {
-        printf("Error while reading fc_param1\n");
-      }
-      fclose(fp);
+      b_data = load_data("../data/temp/fc_param1.bin", &ndim, shape);
 
-      for (int i = 0; i < CONST_SIZE; ++i) {
+      const_data = (real*)malloc(const_size * sizeof(real));
+      for (int i = 0; i < const_size; ++i) {
         const_data[i] = 1;
       }
     }
-
-    fp = fopen("../data/temp/fc_top0.bin", "rb");
-    if ((int)fread(Y_true_data, sizeof(real), Y_size, fp) != Y_size) {
-      printf("Error while reading fc_top0\n");
-    }
-    fclose(fp);
   }
-
+ 
   // CUDA initialization
   #ifdef GPU
   {
     printf("set device\n");
-    CUDA_CHECK(cudaSetDevice(0));
+    cudaSetDevice(0);
     option.handle = (cublasHandle_t*)malloc(sizeof(cublasHandle_t));
     if (cublasCreate((cublasHandle_t*)option.handle)
           != CUBLAS_STATUS_SUCCESS) {
@@ -233,30 +245,41 @@ int main(int argc, char *argv[])
     const int b_size = flatten_size(&b);
 
     printf("gpu malloc\n");
-    CUDA_CHECK(cudaMalloc(&X.data, X_size * sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&Y.data, Y_size * sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&W.data, W_size * sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&b.data, b_size * sizeof(real)));
-    CUDA_CHECK(cudaMalloc(&p_const_data, CONST_SIZE * sizeof(real)));
+    cudaMalloc(&X.data, X_size * sizeof(real));
+    cudaMalloc(&Y.data, Y_size * sizeof(real));
+    cudaMalloc(&W.data, W_size * sizeof(real));
+    if (option.bias) {
+      cudaMalloc(&b.data, b_size * sizeof(real));
+      cudaMalloc(&p_const_data, const_size * sizeof(real));
+    }
+    else {
+      b.data = NULL;
+    }
 
     printf("memcpy: cpu -> gpu\n");
-    CUDA_CHECK(cudaMemcpy(X.data, X_data, X_size * sizeof(real),
-                          cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(W.data, W_data, W_size * sizeof(real),
-                          cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(b.data, b_data, b_size * sizeof(real),
-                          cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(p_const_data, const_data,
-                          CONST_SIZE * sizeof(real),
-                          cudaMemcpyHostToDevice));
+    cudaMemcpyAsync(X.data, X_data, X_size * sizeof(real),
+                    cudaMemcpyHostToDevice);
+    cudaMemcpyAsync(W.data, W_data, W_size * sizeof(real),
+                    cudaMemcpyHostToDevice);
+    if (option.bias) {
+      cudaMemcpyAsync(b.data, b_data, b_size * sizeof(real),
+                      cudaMemcpyHostToDevice);
+      cudaMemcpyAsync(p_const_data, const_data, const_size * sizeof(real),
+                      cudaMemcpyHostToDevice);
+    }
   }
   #else
   {
     X.data = X_data;
     Y.data = Y_data;
     W.data = W_data;
-    b.data = b_data;
-    p_const_data = const_data;
+    if (option.bias) {
+      b.data = b_data;
+      p_const_data = const_data;
+    }
+    else {
+      b.data = NULL;
+    }
   }
   #endif
 
@@ -272,8 +295,8 @@ int main(int argc, char *argv[])
     const int Y_size = flatten_size(&Y);
 
     printf("memcpy: cpu <- gpu\n");
-    CUDA_CHECK(cudaMemcpy(Y_data, Y.data, Y_size * sizeof(real),
-                          cudaMemcpyDeviceToHost));
+    cudaMemcpyAsync(Y_data, Y.data, Y_size * sizeof(real),
+                    cudaMemcpyDeviceToHost);
   }
   #endif
 
@@ -310,19 +333,24 @@ int main(int argc, char *argv[])
     free(Y_data);
     free(Y_true_data);
     free(W_data);
-    free(b_data);
-    free(const_data);
+    if (option.bias) {
+      free(b_data);
+      free(const_data);
+    }
   }
   #ifdef GPU
   {
     printf("gpu free\n");
-    CUDA_CHECK(cudaFree(X.data));
-    CUDA_CHECK(cudaFree(Y.data));
-    CUDA_CHECK(cudaFree(W.data));
-    CUDA_CHECK(cudaFree(b.data));
-    CUDA_CHECK(cudaFree(p_const_data));
+    cudaFree(X.data);
+    cudaFree(Y.data);
+    cudaFree(W.data);
+    if (option.bias) {
+      cudaFree(b.data);
+      cudaFree(p_const_data);
+    }
 
-    if (cublasDestroy(*((cublasHandle_t*)option.handle)) != CUBLAS_STATUS_SUCCESS) {
+    if (cublasDestroy(*((cublasHandle_t*)option.handle))
+        != CUBLAS_STATUS_SUCCESS) {
       printf("cublas destruction failed\n");
     }
     free(option.handle);
