@@ -1,79 +1,48 @@
 CC := gcc
 CFLAGS := -O3 -Wall -std=c99
+LDFLAGS := -lcblas -lm
 NVCC := nvcc
 NVCCFLAGS := -O3 -use_fast_math -Xcompiler -Wall -DGPU
+NVLDFLAGS := -lcuda -lcublas
 BUILD_DIR := build
 
-test_cpu: test_cpu_conv test_cpu_deconv test_cpu_fc test_cpu_dropout test_cpu_relu test_cpu_roipool test_cpu_pool test_cpu_proposal
-test_gpu: test_gpu_conv test_gpu_deconv test_gpu_fc test_gpu_dropout test_gpu_relu test_gpu_roipool test_gpu_pool test_gpu_proposal
+test_cpu: conv.cpu.test.bin deconv.cpu.test.bin dropout.cpu.test.bin fc.cpu.test.bin pool.cpu.test.bin proposal.nms.cpu.test.bin relu.cpu.test.bin roipool.cpu.test.bin
+test_gpu: conv.gpu.test.bin deconv.gpu.test.bin dropout.gpu.test.bin fc.gpu.test.bin pool.gpu.test.bin proposal.nms.gpu.test.bin relu.gpu.test.bin roipool.gpu.test.bin
+
+lib_cpu: tensor.cpu.o nms.cpu.o conv.cpu.o deconv.cpu.o fc.cpu.o dropout.cpu.o relu.cpu.o roipool.cpu.o pool.cpu.o proposal.cpu.o
+	ar rcs $(BUILD_DIR)/libdlcpu.a $^
+	rm $^
+lib_gpu: tensor.gpu.o nms.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o
+	ar rcs $(BUILD_DIR)/libdlgpu.a $^
+	rm $^
 
 clean:
 	rm -rf $(BUILD_DIR)
 
-$(BUILD_DIR)/%.cpu.o: %.cu layer.h
-	mkdir -p $(BUILD_DIR)
+%.cpu.o: %.cu layer.h
 	cp $< $*.c
-	$(CC) $(CFLAGS) -c $*.c
-	mv $*.o $@
+	$(CC) $(CFLAGS) -c $*.c -o $@
 	rm $*.c
-$(BUILD_DIR)/%.cpu.test.o: %.cu layer.h
-	mkdir -p $(BUILD_DIR)
+%.cpu.test.o: %.cu layer.h
 	cp $< $*.c
-	$(CC) $(CFLAGS) -DTEST -c $*.c
-	mv $*.o $@
+	$(CC) $(CFLAGS) -DTEST -c $*.c -o $@
 	rm $*.c
 
-$(BUILD_DIR)/%.gpu.o: %.cu layer.h
-	$(NVCC) $(NVCCFLAGS) -c $<
-	mv $*.o $@
-$(BUILD_DIR)/%.gpu.test.o: %.cu layer.h
-	$(NVCC) $(NVCCFLAGS) -DTEST -c $<
-	mv $*.o $@
+%.gpu.o: %.cu layer.h cuda_settings.h
+	$(NVCC) $(NVCCFLAGS) -c $< -o $@
+%.gpu.test.o: %.cu layer.h cuda_settings.h
+	$(NVCC) $(NVCCFLAGS) -DTEST -c $< -o $@
 
-$(BUILD_DIR)/%.cpu.test: $(BUILD_DIR)/%.cpu.test.o $(BUILD_DIR)/tensor.cpu.o
-	$(CC) -o $@ $< $(BUILD_DIR)/tensor.cpu.o
-$(BUILD_DIR)/%.blas.cpu.test: $(BUILD_DIR)/%.cpu.test.o $(BUILD_DIR)/tensor.cpu.o
-	$(CC) -o $@ $< $(BUILD_DIR)/tensor.cpu.o -lcblas
-$(BUILD_DIR)/%.nms.cpu.test: $(BUILD_DIR)/%.cpu.test.o $(BUILD_DIR)/tensor.cpu.o $(BUILD_DIR)/nms.cpu.o
-	$(CC) -o $@ $< $(BUILD_DIR)/tensor.cpu.o $(BUILD_DIR)/nms.cpu.o -lm
+%.cpu.test.bin: %.cpu.test.o tensor.cpu.o
+	mkdir -p $(BUILD_DIR)
+	$(CC) -o $(BUILD_DIR)/$@ $^ $(LDFLAGS)
+%.nms.cpu.test.bin: %.cpu.test.o tensor.cpu.o nms.cpu.o
+	mkdir -p $(BUILD_DIR)
+	$(CC) -o $(BUILD_DIR)/$@ $^ $(LDFLAGS)
 
-$(BUILD_DIR)/%.gpu.test: $(BUILD_DIR)/%.gpu.test.o $(BUILD_DIR)/tensor.gpu.o
-	$(NVCC) -o $@ $< $(BUILD_DIR)/tensor.gpu.o -lcuda
-$(BUILD_DIR)/%.blas.gpu.test: $(BUILD_DIR)/%.gpu.test.o $(BUILD_DIR)/tensor.gpu.o
-	$(NVCC) -o $@ $< $(BUILD_DIR)/tensor.gpu.o -lcuda -lcublas
-$(BUILD_DIR)/%.nms.gpu.test: $(BUILD_DIR)/%.gpu.test.o $(BUILD_DIR)/tensor.gpu.o $(BUILD_DIR)/nms.gpu.o
-	$(NVCC) -o $@ $< $(BUILD_DIR)/tensor.gpu.o $(BUILD_DIR)/nms.gpu.o -lcuda
-
-test_cpu_conv: $(BUILD_DIR)/conv.blas.cpu.test
-	mv $< $(BUILD_DIR)/test_cpu_conv.o
-test_cpu_deconv: $(BUILD_DIR)/deconv.blas.cpu.test
-	mv $< $(BUILD_DIR)/test_cpu_deconv.o
-test_cpu_fc: $(BUILD_DIR)/fc.blas.cpu.test
-	mv $< $(BUILD_DIR)/test_cpu_fc.o
-test_cpu_dropout: $(BUILD_DIR)/dropout.cpu.test
-	mv $< $(BUILD_DIR)/test_cpu_dropout.o
-test_cpu_relu: $(BUILD_DIR)/relu.cpu.test
-	mv $< $(BUILD_DIR)/test_cpu_relu.o
-test_cpu_roipool: $(BUILD_DIR)/roipool.cpu.test
-	mv $< $(BUILD_DIR)/test_cpu_roipool.o
-test_cpu_pool: $(BUILD_DIR)/pool.cpu.test
-	mv $< $(BUILD_DIR)/test_cpu_pool.o
-test_cpu_proposal: $(BUILD_DIR)/proposal.nms.cpu.test
-	mv $< $(BUILD_DIR)/test_cpu_proposal.o
-
-test_gpu_conv: $(BUILD_DIR)/conv.blas.gpu.test
-	mv $< $(BUILD_DIR)/test_gpu_conv.o
-test_gpu_deconv: $(BUILD_DIR)/deconv.blas.gpu.test
-	mv $< $(BUILD_DIR)/test_gpu_deconv.o
-test_gpu_fc: $(BUILD_DIR)/fc.blas.gpu.test
-	mv $< $(BUILD_DIR)/test_gpu_fc.o
-test_gpu_dropout: $(BUILD_DIR)/dropout.gpu.test
-	mv $< $(BUILD_DIR)/test_gpu_dropout.o
-test_gpu_relu: $(BUILD_DIR)/relu.gpu.test
-	mv $< $(BUILD_DIR)/test_gpu_relu.o
-test_gpu_roipool: $(BUILD_DIR)/roipool.gpu.test
-	mv $< $(BUILD_DIR)/test_gpu_roipool.o
-test_gpu_pool: $(BUILD_DIR)/pool.gpu.test
-	mv $< $(BUILD_DIR)/test_gpu_pool.o
-test_gpu_proposal: $(BUILD_DIR)/proposal.nms.gpu.test
-	mv $< $(BUILD_DIR)/test_gpu_proposal.o
+%.gpu.test.bin: %.gpu.test.o tensor.gpu.o
+	mkdir -p $(BUILD_DIR)
+	$(NVCC) -o $(BUILD_DIR)/$@ $^ $(NVLDFLAGS)
+%.nms.gpu.test.bin: %.gpu.test.o tensor.gpu.o nms.gpu.o
+	mkdir -p $(BUILD_DIR)
+	$(NVCC) -o $(BUILD_DIR)/$@ $^ $(NVLDFLAGS)
