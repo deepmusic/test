@@ -1,5 +1,5 @@
 /*
-  Original version (21.8ms)
+  Original version (25.8ms)
     1. [1ms] memcpy, D->H
       1-1. scores (75*2*36*46*float = 993.6KB)
       1-2. bbox (75*4*36*46*float = 1987.2KB)
@@ -7,10 +7,10 @@
     3. [0ms] memcpy, H->D, 6000*5*float = 120KB
     4. [3.3ms] nms kernel
     5. [1.8ms] memcpy, D->H, 6000*94*uint64 = 4512KB
-    6. [0.7ms] roi retrieval (bitwise operations)
-    7. [0ms] roi -> top
+    6. [0.7ms] nms post processing (bitwise calculations)
+    7. [4ms] roi -> top
 
-  Improved version (7ms)
+  Improved version (6.3ms)
     1. [0ms] no memcpy required
     2. [2.6ms] all candidate enumeration & sort
       2-1. [0.3ms] all candidate enumeration
@@ -19,13 +19,12 @@
     3. [0ms] memcpy, H->D, 6000*5*float = 120KB
     4. [1.1ms] nms kernel
     5. [1.8ms] memcpy, D->H, 6000*94*uint64 = 4512KB
-    6. [0.7ms] roi retrieval
-    7. [0.8ms] roi -> top (300 memcpy, H->D, 4*float = 16B)
+    6. [0.7ms] nms post processing
+    7. [0.1ms] roi -> top
 
   TODO
     - GPU sort (improve 2-2, 2-3)
-    - GPU roi retrieval (remove 5)
-    - efficient roi -> top (improve 7)
+    - GPU nms post processing (remove 5)
 */
 
 #include "layer.h"
@@ -33,269 +32,12 @@
 #include <math.h>
 
 // --------------------------------------------------------------------------
-// kernel code for NMS operation
-//   iou: compute overlap between two boxes
-//   nms_mask: given a set of boxes, compute overlap between all box pairs
-//   nms: given a set of boxes, discard significantly-overlapped boxes
-// --------------------------------------------------------------------------
-
-// "IoU = intersection area / union area" of two boxes A, B
-//   A, B: 4-dim array (x1, y1, x2, y2)
-#ifdef GPU
-__device__
-#endif
-inline real iou(const real* const A, const real* const B)
-{
-  // overlapped region (= box)
-  const real x1 = MAX(A[0],  B[0]);
-  const real y1 = MAX(A[1],  B[1]);
-  const real x2 = MIN(A[2],  B[2]);
-  const real y2 = MIN(A[3],  B[3]);
-
-  // intersection area
-  const real width = MAX(0.0f,  x2 - x1 + 1.0f);
-  const real height = MAX(0.0f,  y2 - y1 + 1.0f);
-  const real area = width * height;
-
-  // area of A, B
-  const real A_area = (A[2] - A[0] + 1.0f) * (A[3] - A[1] + 1.0f);
-  const real B_area = (B[2] - B[0] + 1.0f) * (B[3] - B[1] + 1.0f);
-
-  // IoU
-  return area / (A_area + B_area - area);
-}
-
-// given box proposals, compute overlap between all box pairs
-// (overlap = intersection area / union area)
-// and then set mask-bit to 1 if a pair is significantly overlapped
-//   num_boxes: number of box proposals given
-//   boxes: "num_boxes x 5" array (x1, y1, x2, y2, score)
-//   nms_thresh: threshold for determining "significant overlap"
-//               if "intersection area / union area > nms_thresh",
-//               two boxes are thought of as significantly overlapped
-// the all-pair computation (num_boxes x num_boxes) is done by
-// divide-and-conquer:
-//   each GPU block (bj, bi) computes for "64 x 64" box pairs (j, i),
-//     j = bj * 64 + { 0, 1, ..., 63 }
-//     i = bi * 64 + { 0, 1, ..., 63 },
-//   and each "1 x 64" results is saved into a 64-bit mask
-//     mask: "num_boxes x num_blocks" array
-//     for mask[j][bi], "di-th bit = 1" means:
-//       box j is significantly overlapped with box i,
-//       where i = bi * 64 + di
-typedef unsigned long long uint64;
-#define NMS_BLOCK_SIZE 64
-#ifdef GPU
-__global__
-void nms_mask_gpu(const real* const boxes,
-                  uint64* const mask,
-                  const int num_boxes, const real nms_thresh)
-{
-  // block region
-  //   j = j_start + { 0, ..., dj_end - 1 }
-  //   i = i_start + { 0, ..., di_end - 1 }
-  const int i_start = blockIdx.x * NMS_BLOCK_SIZE;
-  const int di_end = MIN(num_boxes - i_start,  NMS_BLOCK_SIZE);
-  const int j_start = blockIdx.y * NMS_BLOCK_SIZE;
-  const int dj_end = MIN(num_boxes - j_start,  NMS_BLOCK_SIZE);
-
-  // copy all i-th boxes to GPU cache
-  //   i = i_start + { 0, ..., di_end - 1 }
-  __shared__ real boxes_i[NMS_BLOCK_SIZE * 5];
-  {
-    const int di = threadIdx.x;
-    if (di < di_end) {
-      boxes_i[di * 5 + 0] = boxes[(i_start + di) * 5 + 0];
-      boxes_i[di * 5 + 1] = boxes[(i_start + di) * 5 + 1];
-      boxes_i[di * 5 + 2] = boxes[(i_start + di) * 5 + 2];
-      boxes_i[di * 5 + 3] = boxes[(i_start + di) * 5 + 3];
-      boxes_i[di * 5 + 4] = boxes[(i_start + di) * 5 + 4];
-    }
-  }
-  __syncthreads();
-
-  // given j = j_start + dj,
-  //   check whether box i is significantly overlapped with box j
-  //   (i.e., IoU(box j, box i) > threshold)
-  //   for all i = i_start + { 0, ..., di_end - 1 } except for i == j
-  {
-    const int dj = threadIdx.x;
-    if (dj < dj_end) {
-      // box j
-      const real* const box_j = boxes + (j_start + dj) * 5;
-
-      // mask for significant overlap
-      //   if IoU(box j, box i) > threshold,  di-th bit = 1
-      uint64 mask_j = 0;
-
-      // check for all i = i_start + { 0, ..., di_end - 1 }
-      // except for i == j
-      const int di_start = (i_start == j_start) ? (dj + 1) : 0;
-      for (int di = di_start; di < di_end; ++di) {
-        // box i
-        const real* const box_i = boxes_i + di * 5;
-
-        // if IoU(box j, box i) > threshold,  di-th bit = 1
-        if (iou(box_j, box_i) > nms_thresh) {
-          mask_j |= 1ULL << di;
-        }
-      }
-
-      // mask: "num_boxes x num_blocks" array
-      //   for mask[j][bi], "di-th bit = 1" means:
-      //     box j is significantly overlapped with box i = i_start + di,
-      //     where i_start = bi * block_size
-      {
-        const int num_blocks = DIV_THEN_CEIL(num_boxes,  NMS_BLOCK_SIZE);
-        const int bi = blockIdx.x;
-        mask[(j_start + dj) * num_blocks + bi] = mask_j;
-      }
-    } // endif dj < dj_end
-  }
-}
-#else
-void nms_mask_cpu(const real* const boxes,
-                  uint64* const mask,
-                  const int num_boxes, const real nms_thresh)
-{
-  // number of blocks along each dimension
-  const int num_blocks = DIV_THEN_CEIL(num_boxes,  NMS_BLOCK_SIZE);
-
-  // the whole 2-dim computations "num_boxes x num_boxes" is done by
-  // sweeping all "64 x 64"-sized blocks
-  for (int j_start = 0; j_start < num_boxes; j_start += NMS_BLOCK_SIZE) {
-    for (int i_start = 0; i_start < num_boxes; i_start += NMS_BLOCK_SIZE) {
-      // block region
-      //   j = j_start + { 0, ..., dj_end - 1 }
-      //   i = i_start + { 0, ..., di_end - 1 }
-      const int di_end = MIN(num_boxes - i_start,  NMS_BLOCK_SIZE);
-      const int dj_end = MIN(num_boxes - j_start,  NMS_BLOCK_SIZE);
-
-      // check whether box i is significantly overlapped with box j
-      // for all j = j_start + { 0, ..., dj_end - 1 },
-      //         i = i_start + { 0, ..., di_end - 1 },
-      // except for i == j
-      for (int dj = 0; dj < dj_end; ++dj) {
-        // box j & overlap mask
-        const real* const box_j = boxes + (j_start + dj) * 5;
-        uint64 mask_j = 0;
-
-        // check for all i = i_start + { 0, ..., di_end - 1 }
-        // except for i == j
-        const int di_start = (i_start == j_start) ? (dj + 1) : 0;
-        for (int di = di_start; di < di_end; ++di) {
-          // box i
-          const real* const box_i = boxes + (i_start + di) * 5;
-
-          // if IoU(box j, box i) > threshold,  di-th bit = 1
-          if (iou(box_j, box_i) > nms_thresh) {
-            mask_j |= 1ULL << di;
-          }
-        }
-
-        // mask: "num_boxes x num_blocks" array
-        //   for mask[j][bi], "di-th bit = 1" means:
-        //     box j is significantly overlapped with box i = i_start + di,
-        //     where i_start = bi * block_size
-        {
-          const int bi = i_start / NMS_BLOCK_SIZE;
-          mask[(j_start + dj) * num_blocks + bi] = mask_j;
-        }
-      } // endfor dj
-    } // endfor j_start
-  } // endfor i_start
-}
-#endif
-
-// given box proposals (sorted in descending order of their scores),
-// discard a box if it is significantly overlapped with
-// one or more previous (= scored higher) boxes
-//   num_boxes: number of box proposals given
-//   boxes: "num_boxes x 5" array (x1, y1, x2, y2, score)
-//          sorted in descending order of scores
-//   num_out: number of remaining boxes
-//   keep_out: "num_out x 1" array
-//             indices of remaining boxes
-//   nms_thresh: threshold for determining "significant overlap"
-//               if "intersection area / union area > nms_thresh",
-//               two boxes are thought of as significantly overlapped
-void nms(const int num_boxes, const real* const boxes,
-         int* const num_out, int* const keep_out,
-         const real nms_thresh, const int max_num_out)
-{
-  const int num_blocks = DIV_THEN_CEIL(num_boxes,  NMS_BLOCK_SIZE);
-  uint64* const mask
-      = (uint64*)malloc(num_boxes * num_blocks * sizeof(uint64));
-
-  #ifdef GPU
-  {
-    uint64* mask_dev;
-    real* boxes_dev;
-    const dim3 blocks(num_blocks, num_blocks);
-
-    // GPU memory allocation & copy box data
-    cudaMalloc(&boxes_dev, num_boxes * 5 * sizeof(real));
-    cudaMemcpyAsync(boxes_dev, boxes, num_boxes * 5 * sizeof(real),
-                    cudaMemcpyHostToDevice);
-    cudaMalloc(&mask_dev, num_boxes * num_blocks * sizeof(uint64));
-
-    // find all significantly-overlapped pairs of boxes
-    nms_mask_gpu<<<blocks, NMS_BLOCK_SIZE>>>(
-        boxes_dev,  mask_dev,  num_boxes,  nms_thresh);
-
-    // copy mask data to main memory
-    cudaMemcpyAsync(mask, mask_dev, sizeof(uint64) * num_boxes * num_blocks,
-                    cudaMemcpyDeviceToHost);
-
-    // GPU memory deallocation
-    cudaFree(boxes_dev);
-    cudaFree(mask_dev);
-  }
-  #else
-  {
-    // find all significantly-overlapped pairs of boxes
-    nms_mask_cpu(boxes,  mask,  num_boxes,  nms_thresh);
-  }
-  #endif
-
-  // discard i-th box if it is significantly overlapped with
-  // one or more previous (= scored higher) boxes
-  {
-    int num_to_keep = 0;
-    uint64* const remv = (uint64*)calloc(num_blocks, sizeof(uint64));
-
-    for (int i = 0; i < num_boxes; ++i) {
-      const int nblock = i / NMS_BLOCK_SIZE;
-      const int inblock = i % NMS_BLOCK_SIZE;
-
-      if (!(remv[nblock] & (1ULL << inblock))) {
-        keep_out[num_to_keep++] = i;
-        uint64* p = mask + i * num_blocks;
-        for (int j = nblock; j < num_blocks; ++j) {
-          remv[j] |= p[j];
-        }
-
-        if (num_to_keep == max_num_out) {
-          break;
-        }
-      }
-    }
-    *num_out = num_to_keep;
-
-    free(remv);
-  }
-
-  free(mask);
-}
-
-
-
-// --------------------------------------------------------------------------
-// kernel code for proposal operation
+// kernel code
 //   transform_box: transform a box according to a given gradient
 //   generate_anchors: generate anchor boxes of varying sizes and ratios
 //   sort_box: sort a list of boxes in descending order of their scores
 //   enumerate_proposals: generate all candidate boxes with their scores
+//   retrieve_rois: retrieve boxes that are determined to be kept by NMS
 // --------------------------------------------------------------------------
 
 // transform a box according to a given gradient
@@ -440,7 +182,7 @@ void sort_box(real* const list, const int start, const int end,
   }
 }
 
-// enumerate_proposals: generate all candidate boxes with their scores
+// generate all candidate boxes with their scores
 //   bottom: 1 x num_anchors x H x W tensor
 //     bottom[0, k, h, w] = foreground score of anchor k at node (h, w)
 //   d_anchor: num_anchors x 4 x H x W tensor
@@ -535,6 +277,44 @@ void enumerate_proposals_cpu(const real* const bottom4d,
 }
 #endif
 
+// retrieve proposals that are determined to be kept as RoIs by NMS
+//   proposals : "num_boxes x 5" array,  (x1, y1, x2, y2, score) for each box
+//   num_rois: number of RoIs to be retrieved
+//   keep: "num_rois x 1" array
+//     keep[i]: index of i-th RoI in proposals
+//   rois: "num_rois x 4" array,  (x1, y1, x2, y2) for each RoI
+#ifdef GPU
+__global__
+void retrieve_rois_gpu(const real* const proposals,
+                       const int* const keep,
+                       real* const rois,
+                       const int num_rois)
+{
+  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index < num_rois) {
+    const real* const proposals_index = proposals + keep[index] * 5;
+    rois[index * 4 + 0] = proposals_index[0];
+    rois[index * 4 + 1] = proposals_index[1];
+    rois[index * 4 + 2] = proposals_index[2];
+    rois[index * 4 + 3] = proposals_index[3];
+  }
+}
+#else
+void retrieve_rois_cpu(const real* const proposals,
+                       const int* const keep,
+                       real* const rois,
+                       const int num_rois)
+{
+  for (int i = 0; i < num_rois; ++i) {
+    const real* const proposals_index = proposals + keep[i] * 5;
+    rois[i * 4 + 0] = proposals_index[0];
+    rois[i * 4 + 1] = proposals_index[1];
+    rois[i * 4 + 2] = proposals_index[2];
+    rois[i * 4 + 3] = proposals_index[3];
+  }
+}
+#endif
+
 
 
 // --------------------------------------------------------------------------
@@ -566,18 +346,22 @@ void proposal_forward(const Tensor* const bottom4d,
   const int num_anchors
       = option->num_concats * option->num_ratios * option->num_scales;
 
-  int* const keep = (int*)malloc(option->post_nms_topn * sizeof(int));
   real* const proposals = (real*)malloc(num_anchors * 80*80 * 5 * sizeof(real));
-  #ifdef GPU
-  real* proposals_dev;
-  cudaMalloc(&proposals_dev, num_anchors * 80*80 * 5 * sizeof(real));
-  #endif
+  int* const keep = (int*)malloc(option->post_nms_topn * sizeof(int));
 
   // do forward-pass for each item in the batch
   const real* p_bottom_item = bottom4d->data;
   const real* p_d_anchor_item = d_anchor4d->data;
   const real* p_img_info = img_info1d->data;
   real* p_top_item = top2d->data;
+
+  #ifdef GPU
+  real* proposals_dev;
+  int* keep_dev;
+  cudaMalloc(&proposals_dev, num_anchors * 80*80 * 5 * sizeof(real));
+  cudaMalloc(&keep_dev, option->post_nms_topn * sizeof(int));
+  #endif
+
   for (int n = 0; n < bottom4d->num_items; ++n) {
     // bottom shape: 2 x num_anchors x H x W
     const int bottom_H = bottom4d->shape[n][2];
@@ -594,8 +378,8 @@ void proposal_forward(const Tensor* const bottom4d,
     //   num_proposals = num_anchors * H * W
     //   (x1, y1, x2, y2, score) for each proposal
     // NOTE: for bottom, only foreground scores are passed
-    {
     #ifdef GPU
+    {
       const int num_threads = num_anchors * bottom_area;
       const int threads_per_block = 512;
       const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
@@ -605,50 +389,60 @@ void proposal_forward(const Tensor* const bottom4d,
           bottom_H,  bottom_W,  img_H,  img_W,  min_box_H,  min_box_W,
           option->feat_stride,
           proposals_dev);
+      cudaMemcpyAsync(proposals, proposals_dev,
+                      num_threads * 5 * sizeof(real),
+                      cudaMemcpyDeviceToHost);
+    }
     #else
+    {
       enumerate_proposals_cpu(
           p_bottom_item + num_anchors * bottom_area,
           p_d_anchor_item,  anchors,  num_anchors,
           bottom_H,  bottom_W,  img_H,  img_W,  min_box_H,  min_box_W,
           option->feat_stride,
           proposals);
-    #endif
     }
+    #endif
 
     // choose candidates according to scores
     // TODO: copy proposals to GPU memory directly
     {
       const int num_proposals = num_anchors * bottom_area;
-    #ifdef GPU
-      cudaMemcpyAsync(proposals, proposals_dev,
-                      num_proposals * 5 * sizeof(real),
-                      cudaMemcpyDeviceToHost);
-    #endif
       sort_box(proposals, 0, num_proposals - 1, option->pre_nms_topn);
     }
 
     // NMS & RoI retrieval
     {
+      // NMS
       const int num_proposals
           = MIN(num_anchors * bottom_area,  option->pre_nms_topn);
       int num_rois = 0;
       nms(num_proposals,  proposals,  &num_rois,  keep,
           option->nms_thresh,  option->post_nms_topn);
 
-    #ifdef GPU
-      for (int i = 0; i < num_rois; ++i) {
-        cudaMemcpyAsync(p_top_item + i * 4, proposals + keep[i] * 5,
-                        4 * sizeof(real),
+      // RoI retrieval
+      #ifdef GPU
+      {
+        const int num_threads = num_rois;
+        const int threads_per_block = 128;
+        const int num_blocks
+            = DIV_THEN_CEIL(num_threads,  threads_per_block);
+
+        cudaMemcpyAsync(keep_dev, keep, num_rois * sizeof(int),
                         cudaMemcpyHostToDevice);
+        cudaMemcpyAsync(proposals_dev, proposals,
+                        num_proposals * 5 * sizeof(int),
+                        cudaMemcpyHostToDevice);
+
+        retrieve_rois_gpu<<<num_blocks, threads_per_block>>>(
+            proposals_dev,  keep_dev,  p_top_item,  num_rois);
       }
-    #else
-      for (int i = 0; i < num_rois; ++i) {
-        p_top_item[i * 4 + 0] = proposals[keep[i] * 5 + 0];
-        p_top_item[i * 4 + 1] = proposals[keep[i] * 5 + 1];
-        p_top_item[i * 4 + 2] = proposals[keep[i] * 5 + 2];
-        p_top_item[i * 4 + 3] = proposals[keep[i] * 5 + 3];
+      #else
+      {
+        retrieve_rois_cpu(
+            proposals,  keep,  p_top_item,  num_rois);
       }
-    #endif
+      #endif
 
       // set top shape: num_rois x 4,  (x1, y1, x2, y2) for each RoI
       top2d->shape[n][0] = num_rois;
@@ -671,11 +465,16 @@ void proposal_forward(const Tensor* const bottom4d,
   top2d->ndim = 2;
   top2d->num_items = bottom4d->num_items;
 
+  // memory deallocation
+  {
+    free(proposals);
+    free(keep);
+
   #ifdef GPU
-  cudaFree(proposals_dev);
+    cudaFree(proposals_dev);
+    cudaFree(keep_dev);
   #endif
-  free(proposals);
-  free(keep);
+  }
 }
 
 

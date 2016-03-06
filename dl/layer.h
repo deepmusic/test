@@ -11,7 +11,6 @@
   #include <cblas.h>
 #endif
 
-#include <stdio.h>
 #include <stdlib.h>
 
 
@@ -56,63 +55,10 @@ typedef struct Tensor_
 // total number of elements in a tensor
 int flatten_size(const Tensor* const tensor);
 
-inline int flatten_size(const Tensor* const tensor)
-{
-  int total_size = 0;
-  for (int n = 0; n < tensor->num_items; ++n) {
-    int size = 1;
-    for (int d = 0; d < tensor->ndim; ++d) {
-      size *= tensor->shape[n][d];
-    }
-    total_size += size;
-  }
-  return total_size;
-}
-
 // allocate memory & load binary data from file
 real* load_data(const char* const filename,
                 int* const ndim,
                 int* const shape);
-
-inline real* load_data(const char* const filename,
-                       int* const ndim,
-                       int* const shape)
-{
-  FILE* fp = fopen(filename, "rb");
-
-  // load data shape
-  {
-    if ((int)fread(ndim, sizeof(int), 1, fp) < 1) {
-      printf("Error while reading ndim from %s\n", filename);
-    }
-    if ((int)fread(shape, sizeof(int), *ndim, fp) != *ndim) {
-      printf("Error while reading shape from %s\n", filename);
-    }
-  }
-
-  // compute total number of elements
-  {
-    const int ndim_ = *ndim;
-    int count = 1;
-    for (int i = 0; i < ndim_; ++i) {
-      count *= shape[i];
-    }
-    shape[ndim_] = count;
-  }
-
-  // memory allocation & load data
-  {
-    const int count = shape[*ndim];
-    real* data = (real*)malloc(count * sizeof(real));
-    if ((int)fread(data, sizeof(real), count, fp) != count) {
-      printf("Error while reading data from %s\n", filename);
-    }
-
-    // file close & return data
-    fclose(fp);
-    return data;
-  }
-}
 
 
 
@@ -349,6 +295,29 @@ void dropout_forward(const Tensor* const bottom,
 void dropout_forward_inplace(Tensor* const bottom,
                              unsigned int* const mask,
                              const DropoutOption* const option);
+
+
+
+// --------------------------------------------------------------------------
+// NMS operation
+//   nms
+// --------------------------------------------------------------------------
+
+// given box proposals (sorted in descending order of their scores),
+// discard a box if it is significantly overlapped with
+// one or more previous (= scored higher) boxes
+//   num_boxes: number of box proposals given
+//   boxes: "num_boxes x 5" array (x1, y1, x2, y2, score)
+//          sorted in descending order of scores
+//   num_out: number of remaining boxes
+//   keep_out: "num_out x 1" array
+//             indices of remaining boxes
+//   nms_thresh: threshold for determining "significant overlap"
+//               if "intersection area / union area > nms_thresh",
+//               two boxes are thought of as significantly overlapped
+void nms(const int num_boxes, const real* const boxes,
+         int* const num_out, int* const keep_out,
+         const real nms_thresh, const int max_num_out);
 
 
 #endif // endifndef PVA_DL_LAYER_H
