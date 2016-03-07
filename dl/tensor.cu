@@ -15,7 +15,9 @@ int flatten_size(const Tensor* const tensor)
   return total_size;
 }
 
-// allocate memory & load binary data from file
+// load binary data from file
+//   if "data" is NULL, allocate memory & load data & return pointer
+//   otherwise, load data to "data"
 real* load_data(const char* const filename,
                 int* const ndim,
                 int* const shape,

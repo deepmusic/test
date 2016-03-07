@@ -37,6 +37,7 @@
 // tensor data structure & some functions
 //   struct Tensor
 //   flatten_size
+//   load_data
 // --------------------------------------------------------------------------
 
 typedef float real;
@@ -55,7 +56,9 @@ typedef struct Tensor_
 // total number of elements in a tensor
 int flatten_size(const Tensor* const tensor);
 
-// allocate memory & load binary data from file
+// load binary data from file
+//   if "data" is NULL, allocate memory & load data & return pointer
+//   otherwise, load data to "data"
 real* load_data(const char* const filename,
                 int* const ndim,
                 int* const shape,
@@ -67,7 +70,9 @@ real* load_data(const char* const filename,
 // convolution & deconvolution
 //   struct ConvOption
 //   conv_forward
+//   conv_shape
 //   deconv_forward
+//   deconv_shape
 // --------------------------------------------------------------------------
 
 typedef struct ConvOption_
@@ -135,6 +140,7 @@ void deconv_shape(const Tensor* const bottom3d,
 // fully-connected
 //   struct FCOption
 //   fc_forward
+//   fc_shape
 // --------------------------------------------------------------------------
 
 typedef struct FCOption_
@@ -170,6 +176,7 @@ void fc_shape(const Tensor* const bottom2d,
 // pooling
 //   struct PoolOption
 //   pool_forward
+//   pool_shape
 // --------------------------------------------------------------------------
 
 typedef struct PoolOption_
@@ -199,6 +206,7 @@ void pool_shape(const Tensor* const bottom3d,
 // RoI pooling
 //   struct ROIPoolOption
 //   roipool_forward
+//   roipool_shape
 // --------------------------------------------------------------------------
 
 typedef struct ROIPoolOption_
@@ -232,6 +240,7 @@ void roipool_shape(const Tensor* const bottom3d,
 //   struct ReluOption
 //   relu_forward
 //   relu_forward_inplace
+//   relu_shape
 // --------------------------------------------------------------------------
 
 typedef struct ReluOption_
@@ -263,6 +272,8 @@ void relu_shape(const Tensor* const bottom,
 // top-n proposal generation
 //   struct ProposalOption
 //   proposal_forward
+//   proposal_shape
+//   generate_anchors
 // --------------------------------------------------------------------------
 
 typedef struct ProposalOption_
@@ -304,6 +315,9 @@ void proposal_shape(const Tensor* const bottom4d,
                     Tensor* const top2d,
                     const ProposalOption* const option);
 
+void generate_anchors(real* const anchors,
+                      const ProposalOption* const option);
+
 
 
 // --------------------------------------------------------------------------
@@ -311,6 +325,7 @@ void proposal_shape(const Tensor* const bottom4d,
 //   struct DropoutOption
 //   dropout_forward
 //   dropout_forward_inplace
+//   dropout_shape
 // --------------------------------------------------------------------------
 
 typedef struct DropoutOption_
@@ -346,6 +361,7 @@ void dropout_shape(const Tensor* const bottom,
 // --------------------------------------------------------------------------
 // concat
 //   concat_forward
+//   concat_shape
 // --------------------------------------------------------------------------
 
 // concat: bottom[0], bottom[1], ..., bottom[M-1] -> top
@@ -359,6 +375,32 @@ void concat_forward(const Tensor* const bottom3d[],
 void concat_shape(const Tensor* const bottom3d[],
                   Tensor* const top3d,
                   const int num_bottoms);
+
+
+
+// --------------------------------------------------------------------------
+// softmax
+//   softmax_forward
+//   softmax_inplace_forward
+//   softmax_shape
+// --------------------------------------------------------------------------
+
+// channel-wise softmax transform: bottom3d (N x C x D) -> top3d (N x C x D)
+//   top[n][c][d] = exp(bottom[n][c][d]) / sum_c(exp(bottom[n][c][d]))
+//   temp_data: N * D array,  temporary space for channel-wise sum or max
+//     e.g., temp_data[n][d] = sum_c(exp(bottom[n][c][d]))
+void softmax_forward(const Tensor* const bottom3d,
+                     Tensor* const top3d,
+                     real* const temp_data);
+
+// channel-wise in-place softmax transform:
+//   bottom[n][c][d] = exp(bottom[n][c][d]) / sum_c(exp(bottom[n][c][d]))
+void softmax_inplace_forward(Tensor* const bottom3d,
+                             real* const temp_data);
+
+void softmax_shape(const Tensor* const bottom3d,
+                   Tensor* const top3d,
+                   int* const temp_size);
 
 
 

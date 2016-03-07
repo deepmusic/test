@@ -105,6 +105,12 @@ void roi_pool_cpu(const real* const bottom3d,
     const int wb_end = MIN(W,  MAX(0,
                            x1 + DIV_THEN_CEIL((w + 1) * roi_W,  top_W)));
 
+    if (hb_start >= hb_end || wb_start >= wb_end) {
+      top4d[index] = 0;
+      argmax4d[index] = -1;
+      continue;
+    }
+
     // find maximum in the bottom region
     const real* p_bottom3d = bottom3d + c * H * W;
     int maxidx = hb_start * W + wb_start;
@@ -118,6 +124,9 @@ void roi_pool_cpu(const real* const bottom3d,
         }
       }
     }
+    top4d[index] = maxval;
+    argmax4d[index] = maxidx;
+    continue;
 
     // if the bottom region is not empty,
     //   top[r][c][h][w] = "max in the region"
@@ -276,7 +285,8 @@ int main(int argc, char* argv[])
     int shape[g_max_ndim];
     int total_size;
 
-    X_data = load_data("../data/temp/roipool_bottom0.bin", &ndim, shape);
+    X_data = load_data("../data/temp/roipool_bottom0.bin",
+                       &ndim, shape, NULL);
     X.num_items = shape[0];
     X.ndim = ndim - 1;
     total_size = 0;
@@ -290,7 +300,8 @@ int main(int argc, char* argv[])
       total_size += size_n;
     }
 
-    roi_data = load_data("../data/temp/roipool_bottom1.bin", &ndim, shape);
+    roi_data = load_data("../data/temp/roipool_bottom1.bin",
+                         &ndim, shape, NULL);
     roi.num_items = X.num_items;
     roi.ndim = 2;
     for (int n = 0; n < roi.num_items; ++n) {
@@ -314,7 +325,8 @@ int main(int argc, char* argv[])
 
     roipool_shape(&X, &roi, &Y, &argmax_size, &option);
 
-    Y_true_data = load_data("../data/temp/roipool_top0.bin", &ndim, shape);
+    Y_true_data = load_data("../data/temp/roipool_top0.bin",
+                            &ndim, shape, NULL);
     Y_data = (real*)malloc(flatten_size(&Y) * sizeof(real));
   }
 
