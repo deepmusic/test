@@ -1,0 +1,103 @@
+#include "layer.h"
+#include <string.h>
+
+// --------------------------------------------------------------------------
+// layer operator code
+//   concat_forward
+// --------------------------------------------------------------------------
+
+// concat: bottom[0], bottom[1], ..., bottom[M-1] -> top
+//   M = num_bottoms
+//   bottom[m]: C_m x H x W  (C_m may different from each other)
+//   top: sum(C_m) x H x W  (channel-wise concatenation)
+void concat_forward(const Tensor* const bottom3d[],
+                    Tensor* const top3d,
+                    const int num_bottoms)
+{
+  const real* * p_bottom_data
+      = (const real* *)malloc(num_bottoms * sizeof(real*));
+  real* p_top_data = top3d->data;
+  for (int m = 0; m < num_bottoms; ++m) {
+    p_bottom_data[m] = bottom3d[m]->data;
+  }
+
+  // do forward-pass for each item in the batch
+  for (int n = 0; n < bottom3d[0]->num_items; ++n) {
+    // for each item, H and W should be same for all bottoms
+    const int H = bottom3d[0]->shape[n][1];
+    const int W = bottom3d[0]->shape[n][2];
+    int top_C = 0;
+
+    for (int m = 0; m < num_bottoms; ++m) {
+      const int C = bottom3d[m]->shape[n][0];
+      const int bottom_size = C * H * W;
+      top_C += C;
+
+      // channel-wise concatenation
+      {
+        // memcpy
+      #ifdef GPU
+        cudaMemcpyAsync(p_top_data, p_bottom_data[m],
+                        bottom_size * sizeof(real),
+                        cudaMemcpyDeviceToDevice);
+      #else
+        memcpy(p_top_data, p_bottom_data[m], bottom_size * sizeof(real));
+      #endif
+
+        // locate next data
+        p_top_data += bottom_size;
+        p_bottom_data[m] += bottom_size;
+      }
+    } // endfor bottoms
+
+    top3d->shape[n][0] = top_C;
+    top3d->shape[n][1] = H;
+    top3d->shape[n][2] = W;
+  } // endfor batch
+
+  top3d->ndim = 3;
+  top3d->num_items = bottom3d[0]->num_items;
+}
+
+
+
+// --------------------------------------------------------------------------
+// layer shape calculator code
+// --------------------------------------------------------------------------
+
+void concat_shape(const Tensor* const bottom3d[],
+                  Tensor* const top3d,
+                  const int num_bottoms)
+{
+  // calculate shape for each item in the batch
+  for (int n = 0; n < bottom3d[0]->num_items; ++n) {
+    const int H = bottom3d[0]->shape[n][1];
+    const int W = bottom3d[0]->shape[n][2];
+    int top_C = 0;
+    for (int m = 0; m < num_bottoms; ++m) {
+      top_C += bottom3d[m]->shape[n][0];
+    }
+
+    top3d->shape[n][0] = top_C;
+    top3d->shape[n][1] = H;
+    top3d->shape[n][2] = W;
+  }
+
+  top3d->ndim = 3;
+  top3d->num_items = bottom3d[0]->num_items;
+}
+
+
+
+// --------------------------------------------------------------------------
+// test code
+// --------------------------------------------------------------------------
+
+#ifdef TEST
+#include <stdio.h>
+
+int main(int argc, char* argv[])
+{
+  return 0;
+}
+#endif

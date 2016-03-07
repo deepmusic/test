@@ -28,7 +28,6 @@
 */
 
 #include "layer.h"
-#include <stdlib.h>
 #include <math.h>
 
 // --------------------------------------------------------------------------
@@ -506,7 +505,7 @@ void proposal_shape(const Tensor* const bottom4d,
 #ifdef TEST
 #include <stdio.h>
 
-int main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
   // variable declaration & memory allocation
   Tensor score, d_anchor, img_info, roi, roi_true;

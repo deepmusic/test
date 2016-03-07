@@ -252,9 +252,8 @@ void roipool_shape(const Tensor* const bottom3d,
 
 #ifdef TEST
 #include <stdio.h>
-#include <stdlib.h>
 
-int main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
   // variable declaration & memory allocation
   Tensor X, Y, roi;

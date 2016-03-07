@@ -58,7 +58,8 @@ int flatten_size(const Tensor* const tensor);
 // allocate memory & load binary data from file
 real* load_data(const char* const filename,
                 int* const ndim,
-                int* const shape);
+                int* const shape,
+                real* data);
 
 
 
@@ -96,6 +97,14 @@ void conv_forward(const Tensor* const bottom3d,
                   const real* const const_data,
                   const ConvOption* const option);
 
+void conv_shape(const Tensor* const bottom3d,
+                Tensor* const top3d,
+                Tensor* const weight5d,
+                Tensor* const bias1d,
+                int* const temp_size,
+                int* const const_size,
+                const ConvOption* const option);
+
 // deconvolution: bottom -> top
 //   G: number of groups
 //   bottom: (G * C') x H' x W'
@@ -111,6 +120,14 @@ void deconv_forward(const Tensor* const bottom3d,
                     real* const temp_data,
                     const real* const const_data,
                     const ConvOption* const option);
+
+void deconv_shape(const Tensor* const bottom3d,
+                  Tensor* const top3d,
+                  Tensor* const weight5d,
+                  Tensor* const bias1d,
+                  int* const temp_size,
+                  int* const const_size,
+                  const ConvOption* const option);
 
 
 
@@ -140,6 +157,13 @@ void fc_forward(const Tensor* const bottom2d,
                 const real* const const_data,
                 const FCOption* const option);
 
+void fc_shape(const Tensor* const bottom2d,
+              Tensor* const top2d,
+              Tensor* const weight2d,
+              Tensor* const bias1d,
+              int* const const_size,
+              const FCOption* const option);
+
 
 
 // --------------------------------------------------------------------------
@@ -163,6 +187,11 @@ void pool_forward(const Tensor* const bottom3d,
                   Tensor* const top3d,
                   int* const argmax_data,
                   const PoolOption* const option);
+
+void pool_shape(const Tensor* const bottom3d,
+                Tensor* const top3d,
+                int* const argmax_size,
+                const PoolOption* const option);
 
 
 
@@ -189,6 +218,12 @@ void roipool_forward(const Tensor* const bottom3d,
                      Tensor* const top4d,
                      int* const argmax_data,
                      const ROIPoolOption* option);
+
+void roipool_shape(const Tensor* const bottom3d,
+                   const Tensor* const roi2d,
+                   Tensor* const top4d,
+                   int* const argmax_size,
+                   const ROIPoolOption* option);
 
 
 
@@ -218,6 +253,9 @@ void relu_forward(const Tensor* const bottom,
 //                             > 0, perform soft ReLU
 void relu_forward_inplace(Tensor* const bottom,
                           const ReluOption* const option);
+
+void relu_shape(const Tensor* const bottom,
+                Tensor* const top);
 
 
 
@@ -262,6 +300,10 @@ void proposal_forward(const Tensor* const bottom4d,
                       const real* const anchors,
                       const ProposalOption* const option);
 
+void proposal_shape(const Tensor* const bottom4d,
+                    Tensor* const top2d,
+                    const ProposalOption* const option);
+
 
 
 // --------------------------------------------------------------------------
@@ -295,6 +337,28 @@ void dropout_forward(const Tensor* const bottom,
 void dropout_forward_inplace(Tensor* const bottom,
                              unsigned int* const mask,
                              const DropoutOption* const option);
+
+void dropout_shape(const Tensor* const bottom,
+                   Tensor* const top);
+
+
+
+// --------------------------------------------------------------------------
+// concat
+//   concat_forward
+// --------------------------------------------------------------------------
+
+// concat: bottom[0], bottom[1], ..., bottom[M-1] -> top
+//   M = num_bottoms
+//   bottom[m]: C_m x H x W  (C_m may different from each other)
+//   top: sum(C_m) x H x W  (channel-wise concatenation)
+void concat_forward(const Tensor* const bottom3d[],
+                    Tensor* const top3d,
+                    const int num_bottoms);
+
+void concat_shape(const Tensor* const bottom3d[],
+                  Tensor* const top3d,
+                  const int num_bottoms);
 
 
 

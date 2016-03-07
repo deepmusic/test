@@ -388,9 +388,8 @@ void conv_shape(const Tensor* const bottom3d,
 
 #ifdef TEST
 #include <stdio.h>
-#include <stdlib.h>
 
-int main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
   // variable declaration & memory allocation
   Tensor X, Y, W, b;
@@ -403,13 +402,13 @@ int main(int argc, char *argv[])
   // set option
   {
     option.num_groups = 1;
-    option.out_channels = 384;
-    option.kernel_h = 3;
-    option.kernel_w = 3;
-    option.pad_h = 1;
-    option.pad_w = 1;
-    option.stride_h = 2;
-    option.stride_w = 2;
+    option.out_channels = 512;
+    option.kernel_h = 1;
+    option.kernel_w = 1;
+    option.pad_h = 0;
+    option.pad_w = 0;
+    option.stride_h = 1;
+    option.stride_w = 1;
     option.bias = 1;
   }
 
@@ -419,7 +418,8 @@ int main(int argc, char *argv[])
     int shape[g_max_ndim];
     int total_size;
 
-    X_data = load_data("../data/temp/conv_bottom0.bin", &ndim, shape);
+    X_data = load_data("../data/temp/conv_bottom0.bin",
+                       &ndim, shape, NULL);
     X.num_items = shape[0];
     X.ndim = ndim - 1;
     total_size = 0;
@@ -434,13 +434,16 @@ int main(int argc, char *argv[])
     }
     conv_shape(&X, &Y, &W, &b, &temp_size, &const_size, &option);
 
-    Y_true_data = load_data("../data/temp/conv_top0.bin", &ndim, shape);
+    Y_true_data = load_data("../data/temp/conv_top0.bin",
+                            &ndim, shape, NULL);
     Y_data = (real*)malloc(flatten_size(&Y) * sizeof(real));
 
-    W_data = load_data("../data/temp/conv_param0.bin", &ndim, shape);
+    W_data = load_data("../data/temp/conv_param0.bin",
+                       &ndim, shape, NULL);
 
     if (option.bias) {
-      b_data = load_data("../data/temp/conv_param1.bin", &ndim, shape);
+      b_data = load_data("../data/temp/conv_param1.bin",
+                         &ndim, shape, NULL);
 
       const_data = (real*)malloc(const_size * sizeof(real));
       for (int i = 0; i < const_size; ++i) {

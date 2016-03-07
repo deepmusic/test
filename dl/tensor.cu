@@ -18,7 +18,8 @@ int flatten_size(const Tensor* const tensor)
 // allocate memory & load binary data from file
 real* load_data(const char* const filename,
                 int* const ndim,
-                int* const shape)
+                int* const shape,
+                real* data)
 {
   FILE* fp = fopen(filename, "rb");
 
@@ -45,7 +46,9 @@ real* load_data(const char* const filename,
   // memory allocation & load data
   {
     const int count = shape[*ndim];
-    real* data = (real*)malloc(count * sizeof(real));
+    if (data == NULL) {
+      data = (real*)malloc(count * sizeof(real));
+    }
     if ((int)fread(data, sizeof(real), count, fp) != count) {
       printf("Error while reading data from %s\n", filename);
     }
