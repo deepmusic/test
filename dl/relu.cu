@@ -240,7 +240,8 @@ int main(int argc, char* argv[])
     int shape[g_max_ndim];
     int total_size;
 
-    X_data = load_data("../data/temp/conv_top0.bin", &ndim, shape);
+    X_data = load_data("../data/temp/conv_top0.bin",
+                       &ndim, shape, NULL);
     X.num_items = shape[0];
     X.ndim = ndim - 1;
     total_size = 0;

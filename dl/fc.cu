@@ -197,7 +197,8 @@ int main(int argc, char* argv[])
     int ndim;
     int shape[g_max_ndim];
 
-    X_data = load_data("../data/temp/fc_bottom0.bin", &ndim, shape);
+    X_data = load_data("../data/temp/fc_bottom0.bin",
+                       &ndim, shape, NULL);
     X.num_items = 1;
     X.ndim = ndim;
     for (int i = 0; i < X.ndim; ++i) {
@@ -207,13 +208,16 @@ int main(int argc, char* argv[])
 
     fc_shape(&X, &Y, &W, &b, &const_size, &option);
 
-    Y_true_data = load_data("../data/temp/fc_top0.bin", &ndim, shape);
+    Y_true_data = load_data("../data/temp/fc_top0.bin",
+                            &ndim, shape, NULL);
     Y_data = (real*)malloc(flatten_size(&Y) * sizeof(real));
 
-    W_data = load_data("../data/temp/fc_param0.bin", &ndim, shape);
+    W_data = load_data("../data/temp/fc_param0.bin",
+                       &ndim, shape, NULL);
 
     if (option.bias) {
-      b_data = load_data("../data/temp/fc_param1.bin", &ndim, shape);
+      b_data = load_data("../data/temp/fc_param1.bin",
+                         &ndim, shape, NULL);
 
       const_data = (real*)malloc(const_size * sizeof(real));
       for (int i = 0; i < const_size; ++i) {

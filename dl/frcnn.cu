@@ -437,14 +437,23 @@ void forward_frcnn_7_1_1(void)
                const_data, &fc_option);
 
     // pred
-    rcnn.pred.ndim = 2;
-    rcnn.pred.num_items = rcnn.roipool.num_items;
-    for (int n = 0; n < rcnn.roipool.num_items; ++n) {
-      rcnn.pred.shape[n][0] = rcnn.roipool.shape[n][0];
-      rcnn.pred.shape[n][1] = 21;
+    rcnn.pred.ndim = 3;
+    rcnn.pred.num_items = rcnn.roipool_flat.shape[0][0];
+    for (int n = 0; n < rcnn.pred.num_items; ++n) {
+      rcnn.pred.shape[n][0] = 21;
+      rcnn.pred.shape[n][1] = 1;
+      rcnn.pred.shape[n][2] = 1;
     }
     rcnn.pred.data = rcnn.score.data;
     softmax_inplace_forward(&rcnn.pred, temp_data);
+
+    // pred reshape
+    rcnn.pred.ndim = 2;
+    rcnn.pred.num_items = rcnn.roipool.num_items;
+    for (int n = 0; n < rcnn.pred.num_items; ++n) {
+      rcnn.pred.shape[n][0] = rcnn.roipool.shape[n][0];
+      rcnn.pred.shape[n][1] = 21;
+    }
   }
 }
 
@@ -1263,27 +1272,50 @@ int main(int argc, char* argv[])
 
   // retrieve output
   {
-    const int output_size = flatten_size(&rcnn.pred);
+    const int output1_size = flatten_size(&rcnn.pred);
+    const int output2_size = flatten_size(&rcnn.bbox);
 
   #ifdef GPU
     cudaMemcpyAsync(output_data, rcnn.pred.data,
-                    output_size * sizeof(real),
+                    output1_size * sizeof(real),
+                    cudaMemcpyDeviceToHost);
+    cudaMemcpyAsync(output_data + output1_size, rcnn.bbox.data,
+                    output2_size * sizeof(real),
                     cudaMemcpyDeviceToHost);
   #else
-    memcpy(output_data, rcnn.pred.data, output_size * sizeof(real));
+    memcpy(output_data, rcnn.pred.data, output1_size * sizeof(real));
+    memcpy(output_data + output1_size, rcnn.bbox.data,
+           output2_size * sizeof(real));
   #endif
   }
 
   {
-    int i = 0;
+    const int output1_size = flatten_size(&rcnn.pred);
+    const int output2_size = flatten_size(&rcnn.bbox);
+    const real* const p_pred = output_data;
+    const real* const p_bbox = output_data + output1_size;
+    int i = 0, j = 0;
     for (int n = 0; n < rcnn.pred.num_items; ++n) {
       for (int r = 0; r < rcnn.pred.shape[n][0]; ++r) {
-        printf("[Image %d / Box %d]", n, r);
+        real maxpred = p_pred[i];
+        int maxclass = 0;
         for (int c = 0; c < rcnn.pred.shape[n][1]; ++c) {
-          printf("%d:%.2f ", c, output_data[i]);
+          if (p_pred[i] > maxpred) {
+            maxclass = c;
+            maxpred = p_pred[i];
+          }
           ++i;
-        } // endfor c
-        printf("\n");
+        }
+
+        if (maxclass > 0 && maxpred >= 0.8f) {
+          const int x1 = (int)ROUND(p_bbox[j + maxclass * 4 + 0]);
+          const int x2 = (int)ROUND(p_bbox[j + maxclass * 4 + 1]);
+          const int y1 = (int)ROUND(p_bbox[j + maxclass * 4 + 2]);
+          const int y2 = (int)ROUND(p_bbox[j + maxclass * 4 + 3]);
+          printf("[Image %d] Box (%d, %d, %d, %d): class %d, score = %.2f\n",
+                 n, x1, x2, y1, y2, maxclass, maxpred);
+        }
+        j += 21 * 4;
       } // endfor r
     } // endfor n
   }

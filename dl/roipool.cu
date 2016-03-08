@@ -300,7 +300,7 @@ int main(int argc, char* argv[])
       total_size += size_n;
     }
 
-    roi_data = load_data("../data/temp/proposal_top0.bin",
+    roi_data = load_data("../data/temp/roipool_bottom1.bin",
                          &ndim, shape, NULL);
     roi.num_items = X.num_items;
     roi.ndim = 2;

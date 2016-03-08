@@ -401,7 +401,8 @@ int main(int argc, char* argv[])
     int shape[g_max_ndim];
     int total_size;
 
-    X_data = load_data("../data/temp/deconv_bottom0.bin", &ndim, shape);
+    X_data = load_data("../data/temp/deconv_bottom0.bin",
+                       &ndim, shape, NULL);
     X.num_items = shape[0];
     X.ndim = ndim - 1;
     total_size = 0;
@@ -416,13 +417,16 @@ int main(int argc, char* argv[])
     }
     deconv_shape(&X, &Y, &W, &b, &temp_size, &const_size, &option);
 
-    Y_true_data = load_data("../data/temp/deconv_top0.bin", &ndim, shape);
+    Y_true_data = load_data("../data/temp/deconv_top0.bin",
+                            &ndim, shape, NULL);
     Y_data = (real*)malloc(flatten_size(&Y) * sizeof(real));
 
-    W_data = load_data("../data/temp/deconv_param0.bin", &ndim, shape);
+    W_data = load_data("../data/temp/deconv_param0.bin",
+                       &ndim, shape, NULL);
 
     if (option.bias) {
-      b_data = load_data("../data/temp/deconv_param1.bin", &ndim, shape);
+      b_data = load_data("../data/temp/deconv_param1.bin",
+                         &ndim, shape, NULL);
 
       const_data = (real*)malloc(const_size * sizeof(real));
       for (int i = 0; i < const_size; ++i) {

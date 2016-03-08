@@ -283,7 +283,8 @@ int main(int argc, char* argv[])
     int shape[g_max_ndim];
     int total_size;
 
-    X_data = load_data("../data/temp/pool_bottom0.bin", &ndim, shape);
+    X_data = load_data("../data/temp/pool_bottom0.bin",
+                       &ndim, shape, NULL);
     X.num_items = shape[0];
     X.ndim = ndim - 1;
     total_size = 0;
@@ -299,7 +300,8 @@ int main(int argc, char* argv[])
 
     pool_shape(&X, &Y, &argmax_size, &option);
 
-    Y_true_data = load_data("../data/temp/pool_top0.bin", &ndim, shape);
+    Y_true_data = load_data("../data/temp/pool_top0.bin",
+                            &ndim, shape, NULL);
     Y_data = (real*)malloc(flatten_size(&Y) * sizeof(real));
   }
  
