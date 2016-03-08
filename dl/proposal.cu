@@ -29,6 +29,7 @@
 
 #include "layer.h"
 #include <math.h>
+#include <stdio.h>
 
 // --------------------------------------------------------------------------
 // kernel code
@@ -334,33 +335,35 @@ void retrieve_rois_cpu(const real* const proposals,
 //     min_box_H: minimum box height in raw image
 //   top: num_RoIs x 4 tensor,  (x1, y1, x2, y2) of each RoI
 //   anchors: num_anchors * 4 array,  (x1, y1, x2, y2) for each anchor
+//   4 temporary arrays
+//     proposals: all box proposals with their scores
+//       "num_boxes x 5" array,  (x1, y1, x2, y2, score) for each box
+//       TODO: always stored in main memory due to implementation issue
+//     keep: indices of proposals to be retrieved as RoIs
+//       "num_rois x 1" array,  keep[i]: index of i-th RoI in proposals
+//       TODO: always stored in main memory due to implementation issue
+//     proposals_dev: GPU memory space, required in GPU mode
+//     keep_dev: GPU memory space, required in GPU mode
 void proposal_forward(const Tensor* const bottom4d,
                       const Tensor* const d_anchor4d,
                       const Tensor* const img_info1d,
                       Tensor* const top2d,
                       const real* const anchors,
+                      real* const proposals,
+                      int* const keep,
+                      real* const proposals_dev,
+                      int* const keep_dev,
                       const ProposalOption* const option)
 {
-
+  // number of anchors  (= number of concats * scales * ratios)
   const int num_anchors
       = option->num_concats * option->num_ratios * option->num_scales;
-
-  real* const proposals = (real*)malloc(num_anchors * 80*80 * 5 * sizeof(real));
-  int* const keep = (int*)malloc(option->post_nms_topn * sizeof(int));
 
   // do forward-pass for each item in the batch
   const real* p_bottom_item = bottom4d->data;
   const real* p_d_anchor_item = d_anchor4d->data;
   const real* p_img_info = img_info1d->data;
   real* p_top_item = top2d->data;
-
-  #ifdef GPU
-  real* proposals_dev;
-  int* keep_dev;
-  cudaMalloc(&proposals_dev, num_anchors * 80*80 * 5 * sizeof(real));
-  cudaMalloc(&keep_dev, option->post_nms_topn * sizeof(int));
-  #endif
-
   for (int n = 0; n < bottom4d->num_items; ++n) {
     // bottom shape: 2 x num_anchors x H x W
     const int bottom_H = bottom4d->shape[n][2];
@@ -463,17 +466,6 @@ void proposal_forward(const Tensor* const bottom4d,
 
   top2d->ndim = 2;
   top2d->num_items = bottom4d->num_items;
-
-  // memory deallocation
-  {
-    free(proposals);
-    free(keep);
-
-  #ifdef GPU
-    cudaFree(proposals_dev);
-    cudaFree(keep_dev);
-  #endif
-  }
 }
 
 
@@ -483,16 +475,34 @@ void proposal_forward(const Tensor* const bottom4d,
 // --------------------------------------------------------------------------
 void proposal_shape(const Tensor* const bottom4d,
                     Tensor* const top2d,
+                    int* const proposals_size,
+                    int* const keep_size,
                     const ProposalOption* const option)
 {
+  int max_area = 0;
+
   // calculate shape for each item in the batch
   top2d->ndim = 2;
   top2d->num_items = bottom4d->num_items;
   for (int n = 0; n < bottom4d->num_items; ++n) {
+    // calculate maximum area size for determining temporary space size
+    const int bottom_H = bottom4d->shape[n][2];
+    const int bottom_W = bottom4d->shape[n][3];
+    const int bottom_area = bottom_H * bottom_W;
+    max_area = MAX(max_area,  bottom_area);
+
     // top shape <= post_nms_topn x 4
     //   exact row size will be determined after forward-pass
     top2d->shape[n][0] = option->post_nms_topn;
     top2d->shape[n][1] = 4;
+  }
+
+  // temporary space size
+  {
+    const int num_anchors 
+        = option->num_concats * option->num_ratios * option->num_scales;
+    *proposals_size = num_anchors * max_area * 5;
+    *keep_size = option->post_nms_topn;
   }
 }
 
@@ -510,10 +520,12 @@ int main(int argc, char* argv[])
   // variable declaration & memory allocation
   Tensor score, d_anchor, img_info, roi, roi_true;
   real *score_data = NULL, *d_anchor_data = NULL, *img_info_data = NULL;
-  real *roi_data, *roi_true_data;
+  real *roi_data = NULL, *roi_true_data = NULL;
   real scales[5] = {3, 6, 9, 16, 32};
   real ratios[5] = {0.5, 0.666, 1.0, 1.5, 2.0};
-  real *anchors, *p_anchors;
+  real *anchors = NULL, *p_anchors = NULL;
+  real *proposals = NULL, *proposals_dev = NULL;
+  int *keep = NULL, *keep_dev = NULL;
   int num_anchors;
   ProposalOption option;
 
@@ -547,8 +559,8 @@ int main(int argc, char* argv[])
     int total_size;
 
     // score: 2 x num_anchors x H x W tensor
-    score_data
-        = load_data("../data/temp/proposal_bottom0.bin", &ndim, shape);
+    score_data = load_data("../data/temp/proposal_bottom0.bin",
+                           &ndim, shape, NULL);
     score.num_items = shape[0];
     score.ndim = 4;
     total_size = 0;
@@ -562,8 +574,8 @@ int main(int argc, char* argv[])
     }
 
     // d_anchor: num_anchors x 4 x H x W tensor
-    d_anchor_data
-        = load_data("../data/temp/proposal_bottom1.bin", &ndim, shape);
+    d_anchor_data = load_data("../data/temp/proposal_bottom1.bin",
+                              &ndim, shape, NULL);
     d_anchor.num_items = shape[0];
     d_anchor.ndim = 4;
     total_size = 0;
@@ -577,15 +589,15 @@ int main(int argc, char* argv[])
     }
 
     // img_info: 4 x 1 tensor
-    img_info_data
-        = load_data("../data/temp/proposal_bottom2.bin", &ndim, shape);
+    img_info_data = load_data("../data/temp/proposal_bottom2.bin",
+                              &ndim, shape, NULL);
     img_info.num_items = 1;
     img_info.ndim = 1;
     img_info.shape[0][0] = shape[0];
 
     // roi_true: num_rois x 4 tensor
-    roi_true_data
-        = load_data("../data/temp/proposal_top0.bin", &ndim, shape);
+    roi_true_data = load_data("../data/temp/proposal_top0.bin",
+                              &ndim, shape, NULL);
     {
       const int num_rois = shape[0];
       int num_items = 0;
@@ -609,8 +621,22 @@ int main(int argc, char* argv[])
       roi_true.shape[n][1] = 4;
     }
 
-    proposal_shape(&score, &roi, &option);
-    roi_data = (real*)malloc(flatten_size(&roi) * sizeof(real));
+    // memory allocation for output & temporary data
+    {
+      int proposals_size, keep_size;
+      proposal_shape(&score, &roi, &proposals_size, &keep_size, &option);
+
+      // temporary space for proposal_forward operation
+      proposals = (real*)malloc(proposals_size * sizeof(real));
+      keep = (int*)malloc(keep_size * sizeof(int));
+      #ifdef GPU
+      cudaMalloc(&proposals_dev, proposals_size * sizeof(real));
+      cudaMalloc(&keep_dev, keep_size * sizeof(int));
+      #endif
+
+      // output data
+      roi_data = (real*)malloc(flatten_size(&roi) * sizeof(real));
+    }
   }
 
   // CUDA initialization
@@ -660,7 +686,9 @@ int main(int argc, char* argv[])
   // do forward operation
   {
     printf("do forward\n");
-    proposal_forward(&score, &d_anchor, &img_info, &roi, p_anchors, &option);
+    proposal_forward(&score, &d_anchor, &img_info, &roi, p_anchors,
+                     proposals, keep, proposals_dev, keep_dev,
+                     &option);
   }
 
   // copy GPU data to main memory
@@ -738,20 +766,24 @@ int main(int argc, char* argv[])
 
   // memory deallocation
   {
-    free(anchors);
     free(score_data);
     free(d_anchor_data);
     free(img_info_data);
     free(roi_data);
     free(roi_true_data);
+    free(anchors);
+    free(proposals);
+    free(keep);
   }
   #ifdef GPU
   {
     printf("gpu free\n");
     cudaFree(score.data);
     cudaFree(d_anchor.data);
-    cudaFree(p_anchors);
     cudaFree(roi.data);
+    cudaFree(p_anchors);
+    cudaFree(proposals_dev);
+    cudaFree(keep_dev);
   }
   #endif
 

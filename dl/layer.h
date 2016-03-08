@@ -304,17 +304,43 @@ typedef struct ProposalOption_
 //     min_box_H: minimum box height in raw image
 //   top: num_RoIs x 4 tensor,  (x1, y1, x2, y2) of each RoI
 //   anchors: num_anchors * 4 array,  (x1, y1, x2, y2) of each anchor
+//   4 temporary arrays
+//     proposals: all box proposals with their scores
+//       "num_boxes x 5" array,  (x1, y1, x2, y2, score) for each box
+//       TODO: always stored in main memory due to implementation issue
+//     keep: indices of proposals to be retrieved as RoIs
+//       "num_rois x 1" array,  keep[i]: index of i-th RoI in proposals
+//       TODO: always stored in main memory due to implementation issue
+//     proposals_dev: GPU memory space, required in GPU mode
+//     keep_dev: GPU memory space, required in GPU mode
 void proposal_forward(const Tensor* const bottom4d,
                       const Tensor* const d_anchor4d,
                       const Tensor* const img_info1d,
                       Tensor* const top2d,
                       const real* const anchors,
+                      real* const proposals,
+                      int* const keep,
+                      real* const proposals_dev,
+                      int* const keep_dev,
                       const ProposalOption* const option);
 
 void proposal_shape(const Tensor* const bottom4d,
                     Tensor* const top2d,
+                    int* const proposals_size,
+                    int* const keep_size,
                     const ProposalOption* const option);
 
+// given a base box, enumerate transformed boxes of varying sizes and ratios
+//   option->base_size: base box's width & height (i.e., base box is square)
+//   option->scales: "option->num_scales x 1" array
+//                   varying scale factor for base box
+//   option->ratios: "option->num_ratios x 1" array
+//                   varying height-width ratio
+//   option->num_concats: repeat count of anchor set generation
+//                        (required for separated RPN)
+//   anchors: "num_boxes x 4" array,  (x1, y1, x2, y2) for each box
+//     num_boxes = total number of transformations
+//         = option->num_scales * option->num_ratios * option->num_concats
 void generate_anchors(real* const anchors,
                       const ProposalOption* const option);
 
