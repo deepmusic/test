@@ -135,6 +135,62 @@ void generate_anchors(real* const anchors,
   }
 }
 
+__global__ void bitonic_sort_step(real* list,
+                                  const int j, const int k)
+{
+  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const int index_xor = index ^ j;
+  real temp[5];
+
+  /* The threads with the lowest ids sort the array. */
+  if (index_xor > index) {
+    if (index & k) {
+      /* Sort ascending */
+      if (list[index * 5 + 4] > list[index_xor * 5 + 4]) {
+        for (int i = 0; i < 5; ++i) {
+          temp[i] = list[index * 5 + i];
+        }
+        for (int i = 0; i < 5; ++i) {
+          list[index * 5 + i] = list[index_xor * 5 + i];
+        }
+        for (int i = 0; i < 5; ++i) {
+          list[index_xor * 5 + i] = temp[i];
+        }
+      }
+    }
+    else {
+      /* Sort descending */
+      if (list[index * 5 + 4] < list[index_xor * 5 + 4]) {
+        for (int i = 0; i < 5; ++i) {
+          temp[i] = list[index * 5 + i];
+        }
+        for (int i = 0; i < 5; ++i) {
+          list[index * 5 + i] = list[index_xor * 5 + i];
+        }
+        for (int i = 0; i < 5; ++i) {
+          list[index_xor * 5 + i] = temp[i];
+        }
+      }
+    }
+  }
+}
+void bitonic_sort_box(real* const list, const int start, const int end)
+{
+  const int num_threads = end - start + 1;
+  const int threads_per_block = 512;
+  const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
+
+  // major step
+  for (int k = 2; k <= num_threads; k *= 2) {
+    // minor step
+    for (int j = k / 2; j > 0; j /= 2) {
+      bitonic_sort_step<<<num_blocks, threads_per_block>>>(list, j, k);
+    }
+  }
+  cudaMemcpy(values, dev_values, size, cudaMemcpyDeviceToHost);
+  cudaFree(dev_values);
+}
+
 // quick-sort a list of boxes in descending order of their scores
 //   if num_top <= end,  only top-k results are guaranteed to be sorted
 //   (for efficient computation)
