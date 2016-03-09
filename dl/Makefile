@@ -1,7 +1,7 @@
 CC := gcc
 CFLAGS := -O3 -Wall -std=c99
 LDFLAGS := -lcblas -lm
-NVCC := nvcc
+NVCC := /usr/local/cuda/bin/nvcc
 NVCCFLAGS := -O3 -use_fast_math -Xcompiler -Wall -DGPU
 NVLDFLAGS := -lcuda -lcublas
 BUILD_DIR := build
