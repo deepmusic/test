@@ -135,18 +135,21 @@ void generate_anchors(real* const anchors,
   }
 }
 
-__global__ void bitonic_sort_step(real* list,
-                                  const int j, const int k)
+// sort a list of boxes in descending order of their scores
+#ifdef GPU
+__global__
+void bitonic_sort_step(real* list, const int j, const int k,
+                       const int num_boxes)
 {
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
-  const int index_xor = index ^ j;
+  const unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const unsigned int index_xor = index ^ j;
   real temp[5];
 
   /* The threads with the lowest ids sort the array. */
-  if (index_xor > index) {
+  if (index < num_boxes && index_xor < num_boxes && index_xor > index) {
     if (index & k) {
       /* Sort ascending */
-      if (list[index * 5 + 4] > list[index_xor * 5 + 4]) {
+      if (list[index * 5 + 4] < list[index_xor * 5 + 4]) {
         for (int i = 0; i < 5; ++i) {
           temp[i] = list[index * 5 + i];
         }
@@ -160,7 +163,7 @@ __global__ void bitonic_sort_step(real* list,
     }
     else {
       /* Sort descending */
-      if (list[index * 5 + 4] < list[index_xor * 5 + 4]) {
+      if (list[index * 5 + 4] > list[index_xor * 5 + 4]) {
         for (int i = 0; i < 5; ++i) {
           temp[i] = list[index * 5 + i];
         }
@@ -174,26 +177,21 @@ __global__ void bitonic_sort_step(real* list,
     }
   }
 }
-void bitonic_sort_box(real* const list, const int start, const int end)
+void bitonic_sort_box(real* const list, const int num_boxes)
 {
-  const int num_threads = end - start + 1;
   const int threads_per_block = 512;
-  const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
+  const int num_blocks = DIV_THEN_CEIL(num_boxes,  threads_per_block);
 
   // major step
-  for (int k = 2; k <= num_threads; k *= 2) {
+  for (int k = 2; k <= num_boxes; k *= 2) {
     // minor step
     for (int j = k / 2; j > 0; j /= 2) {
-      bitonic_sort_step<<<num_blocks, threads_per_block>>>(list, j, k);
+      bitonic_sort_step<<<num_blocks, threads_per_block>>>(
+          list, j, k, num_boxes);
     }
   }
-  cudaMemcpy(values, dev_values, size, cudaMemcpyDeviceToHost);
-  cudaFree(dev_values);
 }
-
-// quick-sort a list of boxes in descending order of their scores
-//   if num_top <= end,  only top-k results are guaranteed to be sorted
-//   (for efficient computation)
+#else
 void sort_box(real* const list, const int start, const int end,
               const int num_top)
 {
@@ -230,6 +228,8 @@ void sort_box(real* const list, const int start, const int end,
     }
   }
 
+  // if num_top <= end,  only top-k results are guaranteed to be sorted
+  // (for efficient computation)
   if (start < right - 1) {
     sort_box(list, start, right - 1, num_top);
   }
@@ -237,6 +237,7 @@ void sort_box(real* const list, const int start, const int end,
     sort_box(list, right + 1, end, num_top);
   }
 }
+#endif
 
 // generate all candidate boxes with their scores
 //   bottom: 1 x num_anchors x H x W tensor
@@ -447,9 +448,9 @@ void proposal_forward(const Tensor* const bottom4d,
           bottom_H,  bottom_W,  img_H,  img_W,  min_box_H,  min_box_W,
           option->feat_stride,
           proposals_dev);
-      cudaMemcpyAsync(proposals, proposals_dev,
-                      num_threads * 5 * sizeof(real),
-                      cudaMemcpyDeviceToHost);
+      //cudaMemcpyAsync(proposals, proposals_dev,
+      //                num_threads * 5 * sizeof(real),
+      //                cudaMemcpyDeviceToHost);
     }
     #else
     {
@@ -463,10 +464,13 @@ void proposal_forward(const Tensor* const bottom4d,
     #endif
 
     // choose candidates according to scores
-    // TODO: copy proposals to GPU memory directly
     {
       const int num_proposals = num_anchors * bottom_area;
+      #ifdef GPU
+      bitonic_sort_box(proposals_dev, num_proposals);
+      #else
       sort_box(proposals, 0, num_proposals - 1, option->pre_nms_topn);
+      #endif
     }
 
     // NMS & RoI retrieval
@@ -488,9 +492,9 @@ void proposal_forward(const Tensor* const bottom4d,
 
         cudaMemcpyAsync(keep_dev, keep, num_rois * sizeof(int),
                         cudaMemcpyHostToDevice);
-        cudaMemcpyAsync(proposals_dev, proposals,
-                        num_proposals * 5 * sizeof(int),
-                        cudaMemcpyHostToDevice);
+        //cudaMemcpyAsync(proposals_dev, proposals,
+        //                num_proposals * 5 * sizeof(int),
+        //                cudaMemcpyHostToDevice);
 
         retrieve_rois_gpu<<<num_blocks, threads_per_block>>>(
             proposals_dev,  keep_dev,  p_top_item,  num_rois);
