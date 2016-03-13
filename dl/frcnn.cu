@@ -37,10 +37,13 @@ typedef struct SRPN_
 typedef struct RCNN_
 {
   Tensor roipool, roipool_flat;
-  Tensor fc6, fc7;
-  Tensor weight6, bias6, weight7, bias7;
+  Tensor fc6_1, fc6_2;
+  Tensor weight6_1, bias6_1, weight6_2, bias6_2;
+  Tensor fc7_1, fc7_2;
+  Tensor weight7_1, bias7_1, weight7_2, bias7_2;
   Tensor score, bbox, pred;
   Tensor weight_s, bias_s, weight_b, bias_b;
+  Tensor out;
 } RCNN;
 
 PVANET pvanet;
@@ -54,9 +57,11 @@ ConvOption conv5x5_option;
 ConvOption deconv_option;
 PoolOption pool_option;
 ReluOption relu_option;
+DropoutOption dropout_option;
 ProposalOption proposal_option;
 ROIPoolOption roipool_option;
 FCOption fc_option;
+ODOutOption odout_option;
 
 const Tensor* const concat_bottoms[3]
     = { &pvanet.downsample, &pvanet.conv4_3, &pvanet.upsample };
@@ -405,21 +410,40 @@ void forward_frcnn_7_1_1(void)
 
     // fc6
     rcnn.roipool_flat.data = rcnn.roipool.data;
-    rcnn.fc6.data = layer2_data;
-    fc_option.out_channels = 4096;
-    fc_forward(&rcnn.roipool_flat, &rcnn.fc6, &rcnn.weight6, &rcnn.bias6,
+    rcnn.fc6_1.data = layer2_data;
+    fc_option.out_channels = 512;
+    fc_option.bias = 0;
+    fc_forward(&rcnn.roipool_flat, &rcnn.fc6_1,
+               &rcnn.weight6_1, &rcnn.bias6_1,
                const_data, &fc_option);
+    rcnn.fc6_2.data = layer1_data;
+    fc_option.out_channels = 4096;
+    fc_option.bias = 1;
+    fc_forward(&rcnn.fc6_1, &rcnn.fc6_2, &rcnn.weight6_2, &rcnn.bias6_2,
+               const_data, &fc_option);
+    relu_forward_inplace(&rcnn.fc6_2, &relu_option);
+    dropout_forward_inplace(&rcnn.fc6_2, NULL, &dropout_option);
 
     // fc7
-    rcnn.fc7.data = layer1_data;
+    rcnn.fc7_1.data = layer2_data;
     fc_option.out_channels = 4096;
-    fc_forward(&rcnn.fc6, &rcnn.fc7, &rcnn.weight7, &rcnn.bias7,
+    fc_option.bias = 1;
+    fc_forward(&rcnn.fc6_2, &rcnn.fc7_1, &rcnn.weight7_1, &rcnn.bias7_2,
                const_data, &fc_option);
+/*
+    rcnn.fc7_2.data = layer1_data;
+    fc_option.out_channels = 4096;
+    fc_option.bias = 1;
+    fc_forward(&rcnn.fc7_1, &rcnn.fc7_2, &rcnn.weight7_2, &rcnn.bias7_2,
+               const_data, &fc_option);
+*/
+    relu_forward_inplace(&rcnn.fc7_1, &relu_option);
+    dropout_forward_inplace(&rcnn.fc7_1, NULL, &dropout_option);
 
     // bbox
-    rcnn.bbox.data = backup2_data;
+    rcnn.bbox.data = layer1_data;
     fc_option.out_channels = 84;
-    fc_forward(&rcnn.fc7, &rcnn.bbox, &rcnn.weight_b, &rcnn.bias_b,
+    fc_forward(&rcnn.fc7_1, &rcnn.bbox, &rcnn.weight_b, &rcnn.bias_b,
                const_data, &fc_option);
     // bbox reshape
     rcnn.bbox.ndim = 3;
@@ -433,7 +457,7 @@ void forward_frcnn_7_1_1(void)
     // score
     rcnn.score.data = backup1_data;
     fc_option.out_channels = 21;
-    fc_forward(&rcnn.fc7, &rcnn.score, &rcnn.weight_s, &rcnn.bias_s,
+    fc_forward(&rcnn.fc7_1, &rcnn.score, &rcnn.weight_s, &rcnn.bias_s,
                const_data, &fc_option);
 
     // pred
@@ -454,6 +478,13 @@ void forward_frcnn_7_1_1(void)
       rcnn.pred.shape[n][0] = rcnn.roipool.shape[n][0];
       rcnn.pred.shape[n][1] = 21;
     }
+
+    rcnn.out.data = backup2_data;
+    odout_forward(&rcnn.pred, &rcnn.bbox, &srpn.roi, &srpn.img_info,
+                  &rcnn.out,
+                  proposal_temp, proposal_tempint,
+                  temp_data, tempint_data,
+                  &odout_option);
   }
 }
 
@@ -826,29 +857,50 @@ void shape_frcnn_7_1_1(const int print_network_info)
                                       * rcnn.roipool.shape[0][3]; 
     }
 
-    // fc6
-    fc_option.out_channels = 4096;
-    fc_shape(&rcnn.roipool_flat, &rcnn.fc6, &rcnn.weight6, &rcnn.bias6,
+    // fc6_1
+    fc_option.out_channels = 512;
+    fc_option.bias = 0;
+    fc_shape(&rcnn.roipool_flat, &rcnn.fc6_1,
+             &rcnn.weight6_1, &rcnn.bias6_1,
              &const_size, &fc_option);
-    max_layer_size = MAX(max_layer_size, flatten_size(&rcnn.fc6));
-    max_param_size = MAX(max_param_size,  flatten_size(&rcnn.weight6));
-    max_const_size = MAX(max_const_size, const_size);
+    max_layer_size = MAX(max_layer_size,  flatten_size(&rcnn.fc6_1));
+    max_param_size = MAX(max_param_size,  flatten_size(&rcnn.weight6_1));
+    max_const_size = MAX(max_const_size,  const_size);
 
-    // fc7
+    // fc6_2
     fc_option.out_channels = 4096;
-    fc_shape(&rcnn.fc6, &rcnn.fc7, &rcnn.weight7, &rcnn.bias7,
+    fc_option.bias = 1;
+    fc_shape(&rcnn.fc6_1, &rcnn.fc6_2, &rcnn.weight6_2, &rcnn.bias6_2,
              &const_size, &fc_option);
-    max_layer_size = MAX(max_layer_size, flatten_size(&rcnn.fc7));
-    max_param_size = MAX(max_param_size,  flatten_size(&rcnn.weight7));
-    max_const_size = MAX(max_const_size, const_size);
+    max_layer_size = MAX(max_layer_size,  flatten_size(&rcnn.fc6_2));
+    max_param_size = MAX(max_param_size,  flatten_size(&rcnn.weight6_2));
+    max_const_size = MAX(max_const_size,  const_size);
 
+    // fc7_1
+    fc_option.out_channels = 4096;
+    fc_option.bias = 1;
+    fc_shape(&rcnn.fc6_2, &rcnn.fc7_1, &rcnn.weight7_1, &rcnn.bias7_2,
+             &const_size, &fc_option);
+    max_layer_size = MAX(max_layer_size,  flatten_size(&rcnn.fc7_1));
+    max_param_size = MAX(max_param_size,  flatten_size(&rcnn.weight7_1));
+    max_const_size = MAX(max_const_size,  const_size);
+/*
+    // fc7_2
+    fc_option.out_channels = 4096;
+    fc_option.bias = 1;
+    fc_shape(&rcnn.fc7_1, &rcnn.fc7_2, &rcnn.weight7_2, &rcnn.bias7_2,
+             &const_size, &fc_option);
+    max_layer_size = MAX(max_layer_size,  flatten_size(&rcnn.fc7_2));
+    max_param_size = MAX(max_param_size,  flatten_size(&rcnn.weight7_2));
+    max_const_size = MAX(max_const_size,  const_size);
+*/
     // bbox
     fc_option.out_channels = 84;
-    fc_shape(&rcnn.fc7, &rcnn.bbox, &rcnn.weight_b, &rcnn.bias_b,
+    fc_shape(&rcnn.fc7_1, &rcnn.bbox, &rcnn.weight_b, &rcnn.bias_b,
              &const_size, &fc_option);
-    max_layer_size = MAX(max_layer_size, flatten_size(&rcnn.bbox));
+    max_layer_size = MAX(max_layer_size,  flatten_size(&rcnn.bbox));
     max_param_size = MAX(max_param_size,  flatten_size(&rcnn.weight_b));
-    max_const_size = MAX(max_const_size, const_size);
+    max_const_size = MAX(max_const_size,  const_size);
     // bbox reshape
     rcnn.bbox.ndim = 3;
     rcnn.bbox.num_items = rcnn.roipool.num_items;
@@ -860,11 +912,11 @@ void shape_frcnn_7_1_1(const int print_network_info)
 
     // score
     fc_option.out_channels = 21;
-    fc_shape(&rcnn.fc7, &rcnn.score, &rcnn.weight_s, &rcnn.bias_s,
+    fc_shape(&rcnn.fc7_1, &rcnn.score, &rcnn.weight_s, &rcnn.bias_s,
              &const_size, &fc_option);
-    max_layer_size = MAX(max_layer_size, flatten_size(&rcnn.score));
+    max_layer_size = MAX(max_layer_size,  flatten_size(&rcnn.score));
     max_param_size = MAX(max_param_size,  flatten_size(&rcnn.weight_s));
-    max_const_size = MAX(max_const_size, const_size);
+    max_const_size = MAX(max_const_size,  const_size);
 
     // pred
     rcnn.pred.ndim = 2;
@@ -873,16 +925,26 @@ void shape_frcnn_7_1_1(const int print_network_info)
       rcnn.pred.shape[n][0] = rcnn.roipool.shape[n][0];
       rcnn.pred.shape[n][1] = 21;
     }
+
+    // output
+    odout_shape(&rcnn.score, &rcnn.out,
+                &temp_size, &tempint_size, &odout_option);
+    max_layer_size = MAX(max_layer_size,  flatten_size(&rcnn.out));
+    max_temp_size = MAX(max_temp_size,  temp_size);
+    max_tempint_size = MAX(max_tempint_size,  tempint_size);
   }
 
   if (print_network_info) {
     print_tensor_info("roipool", &rcnn.roipool);
     print_tensor_info("roipool_flat", &rcnn.roipool_flat);
-    print_tensor_info("fc6", &rcnn.fc6);
-    print_tensor_info("fc7", &rcnn.fc7);
+    print_tensor_info("fc6_1", &rcnn.fc6_1);
+    print_tensor_info("fc6_2", &rcnn.fc6_2);
+    print_tensor_info("fc7_1", &rcnn.fc7_1);
+    print_tensor_info("fc7_2", &rcnn.fc7_2);
     print_tensor_info("bbox", &rcnn.bbox);
     print_tensor_info("score", &rcnn.score);
     print_tensor_info("pred", &rcnn.pred);
+    print_tensor_info("out", &rcnn.out);
   }
 }
 
@@ -931,6 +993,10 @@ void init_frcnn_7_1_1(void)
 
     relu_option.negative_slope = 0;
 
+    dropout_option.threshold = 0.5f;
+    dropout_option.test = 1;
+    dropout_option.scaled = 0;
+
     proposal_option.scales = &anchor_scales[0];
     proposal_option.ratios = &anchor_ratios[0];
     proposal_option.num_scales = 5;
@@ -942,6 +1008,10 @@ void init_frcnn_7_1_1(void)
     proposal_option.pre_nms_topn = 6000;
     proposal_option.post_nms_topn = 300;
     proposal_option.nms_thresh = 0.7f;
+
+    odout_option.min_size = 16;
+    odout_option.score_thresh = 0.7f;
+    odout_option.nms_thresh = 0.3f;
 
     roipool_option.pooled_height = 6;
     roipool_option.pooled_width = 6;
@@ -1008,7 +1078,7 @@ void init_frcnn_7_1_1(void)
       proposal_temp = (real*)malloc(max_temp_size * sizeof(real));
       proposal_tempint = (int*)malloc(max_tempint_size * sizeof(int));
       space_cpu += sizeof(real) * (max_temp_size)
-                 + sizeof(int) * (max_tempint_size);
+                   + sizeof(int) * (max_tempint_size);
     }
 
     // PVANET parameters
@@ -1040,7 +1110,6 @@ void init_frcnn_7_1_1(void)
       space += malloc_tensor(&pvanet.weight5_3);
       space += malloc_tensor(&pvanet.bias5_3);
       space += malloc_tensor(&pvanet.weight_up);
-      space += malloc_tensor(&pvanet.bias_up);
       space += malloc_tensor(&pvanet.weightf);
       space += malloc_tensor(&pvanet.biasf);
     }
@@ -1083,10 +1152,12 @@ void init_frcnn_7_1_1(void)
 
     // RCNN parameters
     {
-      space += malloc_tensor(&rcnn.weight6);
-      space += malloc_tensor(&rcnn.bias6);
-      space += malloc_tensor(&rcnn.weight7);
-      space += malloc_tensor(&rcnn.bias7);
+      space += malloc_tensor(&rcnn.weight6_1);
+      space += malloc_tensor(&rcnn.weight6_2);
+      space += malloc_tensor(&rcnn.bias6_2);
+      space += malloc_tensor(&rcnn.weight7_1);
+      //space += malloc_tensor(&rcnn.weight7_2);
+      space += malloc_tensor(&rcnn.bias7_2);
       space += malloc_tensor(&rcnn.weight_s);
       space += malloc_tensor(&rcnn.bias_s);
       space += malloc_tensor(&rcnn.weight_b);
@@ -1193,15 +1264,103 @@ void init_frcnn_7_1_1(void)
 
   // RCNN parameter loading
   {
-    load_tensor("../data/temp/fc6_param0.bin", &rcnn.weight6);
-    load_tensor("../data/temp/fc6_param1.bin", &rcnn.bias6);
-    load_tensor("../data/temp/fc7_param0.bin", &rcnn.weight7);
-    load_tensor("../data/temp/fc7_param1.bin", &rcnn.bias7);
+    load_tensor("../data/temp/fc6_1_param0.bin", &rcnn.weight6_1);
+    load_tensor("../data/temp/fc6_2_param0.bin", &rcnn.weight6_2);
+    load_tensor("../data/temp/fc6_param1.bin", &rcnn.bias6_2);
+    load_tensor("../data/temp/fc7_param0.bin", &rcnn.weight7_1);
+    //load_tensor("../data/temp/fc7_2_param0.bin", &rcnn.weight7_2);
+    load_tensor("../data/temp/fc7_param1.bin", &rcnn.bias7_2);
     load_tensor("../data/temp/cls_score_param0.bin", &rcnn.weight_s);
     load_tensor("../data/temp/cls_score_param1.bin", &rcnn.bias_s);
     load_tensor("../data/temp/bbox_pred_param0.bin", &rcnn.weight_b);
     load_tensor("../data/temp/bbox_pred_param1.bin", &rcnn.bias_b);
   }
+}
+
+void img2input(const unsigned char* const img,
+               Tensor* const input3d,
+               Tensor* const img_info1d,
+               const int height, const int width, const int stride)
+{
+  const real gs_max_size = 1000.0f;
+  const real gs_base_size = 600.0f;
+  const real meanB = 102.9801f;
+  const real meanG = 115.9465f;
+  const real meanR = 122.7717f;
+  const int img_size_min = MIN(height,  width);
+  const int img_size_max = MAX(height,  width);
+
+  real img_scale = gs_base_size / img_size_min;
+  if (ROUND(img_scale * img_size_max) > gs_max_size) {
+    img_scale = gs_max_size / img_size_max;
+  }
+
+  const int gs_scale_base = 32;
+  const real img_scale_x = (real)((int)(width * img_scale / gs_scale_base) * gs_scale_base) / width;
+  const real img_scale_y = (real)((int)(height * img_scale / gs_scale_base) * gs_scale_base) / height;
+
+  const int resized_height = ROUND(height * img_scale_y);
+  const int resized_width = ROUND(width * img_scale_x);
+  const int input_area = resized_height * resized_width;
+
+  const int n = img_info1d->num_items;
+  real* const p_img_info1d = img_info1d->data + n * 4;
+  p_img_info1d[0] = resized_height;
+  p_img_info1d[1] = resized_width;
+  p_img_info1d[2] = img_scale_x;
+  p_img_info1d[3] = img_scale_y;
+
+  real* const p_inputB = input3d->data + (n * 3 + 0) * input_area;
+  real* const p_inputG = input3d->data + (n * 3 + 1) * input_area;
+  real* const p_inputR = input3d->data + (n * 3 + 2) * input_area;
+
+  for (int i = 0; i < resized_height; i++) {
+    float y = i / img_scale_y;
+    int y0 = (int)y;
+    int y1 = y0 + 1;
+    float ay = y - y0;
+    float by = 1 - ay;
+    for (int j = 0; j < resized_width; j++) {
+      float x = j / img_scale_x;		
+      int x0 = (int)x;			
+      int x1 = x0 + 1;
+      float ax = x - x0;
+      float bx = 1 - ax;
+      float B = 0, G = 0, R = 0;
+      if (ax > 0 && ay > 0) {
+        B += ax * ay * img[y1 * stride + x1 * 3 + 0];
+        G += ax * ay * img[y1 * stride + x1 * 3 + 1];
+        R += ax * ay * img[y1 * stride + x1 * 3 + 2];
+      }
+      if (ax > 0 && by > 0) {
+        B += ax * by * img[y0 * stride + x1 * 3 + 0];
+        G += ax * by * img[y0 * stride + x1 * 3 + 1];
+        R += ax * by * img[y0 * stride + x1 * 3 + 2];
+      }
+      if (bx > 0 && ay > 0) {
+        B += bx * ay * img[y1 * stride + x0 * 3 + 0];
+        G += bx * ay * img[y1 * stride + x0 * 3 + 1];
+        R += bx * ay * img[y1 * stride + x0 * 3 + 2];
+      }
+      if (bx > 0 && by > 0) {
+        B += bx * by * img[y0 * stride + x0 * 3 + 0];
+        G += bx * by * img[y0 * stride + x0 * 3 + 1];
+        R += bx * by * img[y0 * stride + x0 * 3 + 2];
+      }
+
+      p_inputB[i * resized_width + j] = B - meanB;
+      p_inputG[i * resized_width + j] = G - meanG;
+      p_inputR[i * resized_width + j] = R - meanR;
+    }
+  }
+
+  input3d->shape[n][0] = 3;
+  input3d->shape[n][1] = resized_height;
+  input3d->shape[n][2] = resized_width;
+  ++input3d->num_items;
+
+  img_info1d->shape[n][0] = 4;
+  ++img_info1d->num_items;
 }
 
 int main(int argc, char* argv[])
@@ -1289,12 +1448,26 @@ int main(int argc, char* argv[])
   #endif
   }
 
+  // load true output
   {
     const int output1_size = flatten_size(&rcnn.pred);
-    const int output2_size = flatten_size(&rcnn.bbox);
+    int ndim;
+    int shape[g_max_ndim];
+    load_data("../data/temp/cls_score_top0.bin",
+              &ndim, shape, true_data);
+    load_data("../data/temp/bbox_pred_top0.bin",
+              &ndim, shape, true_data + output1_size);
+  }
+
+  // verify results
+  #ifdef PASS
+  {
+    const int output1_size = flatten_size(&rcnn.pred);
     const real* const p_pred = output_data;
     const real* const p_bbox = output_data + output1_size;
-    int i = 0, j = 0;
+    const real* const p_true_pred = true_data;
+    const real* const p_true_bbox = true_data + output1_size;
+    int i = 0, j = 0, i_true = 0, j_true = 0;
     for (int n = 0; n < rcnn.pred.num_items; ++n) {
       for (int r = 0; r < rcnn.pred.shape[n][0]; ++r) {
         real maxpred = p_pred[i];
@@ -1312,13 +1485,34 @@ int main(int argc, char* argv[])
           const int x2 = (int)ROUND(p_bbox[j + maxclass * 4 + 1]);
           const int y1 = (int)ROUND(p_bbox[j + maxclass * 4 + 2]);
           const int y2 = (int)ROUND(p_bbox[j + maxclass * 4 + 3]);
-          printf("[Image %d] Box (%d, %d, %d, %d): class %d, score = %.2f\n",
+          printf("[Image %d] Box (%d, %d, %d, %d): class %d, score = %.2f  ",
                  n, x1, x2, y1, y2, maxclass, maxpred);
         }
         j += 21 * 4;
+
+        maxpred = p_true_pred[i_true];
+        maxclass = 0;
+        for (int c = 0; c < rcnn.pred.shape[n][1]; ++c) {
+          if (p_true_pred[i_true] > maxpred) {
+            maxclass = c;
+            maxpred = p_true_pred[i_true];
+          }
+          ++i_true;
+        }
+
+        if (maxpred >= 0.8f) {
+          const int x1 = (int)ROUND(p_true_bbox[j_true + maxclass * 4 + 0]);
+          const int x2 = (int)ROUND(p_true_bbox[j_true + maxclass * 4 + 1]);
+          const int y1 = (int)ROUND(p_true_bbox[j_true + maxclass * 4 + 2]);
+          const int y2 = (int)ROUND(p_true_bbox[j_true + maxclass * 4 + 3]);
+          printf("True Box (%d, %d, %d, %d): class %d, score = %.2f\n",
+                 x1, x2, y1, y2, maxclass, maxpred);
+        }
+        j_true += 21 * 4;
       } // endfor r
     } // endfor n
   }
+  #endif
 
   // verify results
   #ifdef PASS
@@ -1431,10 +1625,12 @@ int main(int argc, char* argv[])
     cudaFree(srpn.img_info.data);
     cudaFree(srpn.roi.data);
 
-    cudaFree(rcnn.weight6.data);
-    cudaFree(rcnn.bias6.data);
-    cudaFree(rcnn.weight7.data);
-    cudaFree(rcnn.bias7.data);
+    cudaFree(rcnn.weight6_1.data);
+    cudaFree(rcnn.weight6_2.data);
+    cudaFree(rcnn.bias6_2.data);
+    cudaFree(rcnn.weight7_1.data);
+    //cudaFree(rcnn.weight7_2.data);
+    cudaFree(rcnn.bias7_2.data);
     cudaFree(rcnn.weight_s.data);
     cudaFree(rcnn.bias_s.data);
     cudaFree(rcnn.weight_b.data);
@@ -1510,10 +1706,12 @@ int main(int argc, char* argv[])
     free(srpn.img_info.data);
     free(srpn.roi.data);
 
-    free(rcnn.weight6.data);
-    free(rcnn.bias6.data);
-    free(rcnn.weight7.data);
-    free(rcnn.bias7.data);
+    free(rcnn.weight6_1.data);
+    free(rcnn.weight6_2.data);
+    free(rcnn.bias6_2.data);
+    free(rcnn.weight7_1.data);
+    //free(rcnn.weight7_2.data);
+    free(rcnn.bias7_2.data);
     free(rcnn.weight_s.data);
     free(rcnn.bias_s.data);
     free(rcnn.weight_b.data);

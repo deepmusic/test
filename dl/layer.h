@@ -307,11 +307,14 @@ typedef struct ProposalOption_
 //   4 temporary arrays
 //     proposals: all box proposals with their scores
 //       "num_boxes x 5" array,  (x1, y1, x2, y2, score) for each box
-//       TODO: always stored in main memory due to implementation issue
+//       in GPU mode, if proposals = NULL, use bitonic sort in GPU
+//       if proposals != NULL & allocated in main memory, quicksort in CPU
 //     keep: indices of proposals to be retrieved as RoIs
 //       "num_rois x 1" array,  keep[i]: index of i-th RoI in proposals
 //       TODO: always stored in main memory due to implementation issue
 //     proposals_dev: GPU memory space, required in GPU mode
+//       in GPU mode, total space allocated for proposals should be
+//       a power of 2 >= num_boxes
 //     keep_dev: GPU memory space, required in GPU mode
 void proposal_forward(const Tensor* const bottom4d,
                       const Tensor* const d_anchor4d,
@@ -431,6 +434,38 @@ void softmax_shape(const Tensor* const bottom3d,
 
 
 // --------------------------------------------------------------------------
+// object detection output
+//   struct ODOutOption
+//   odout_forward
+//   odout_shape
+// --------------------------------------------------------------------------
+typedef struct ODOutOption_
+{
+  int min_size;
+  real score_thresh;
+  real nms_thresh;
+} ODOutOption;
+
+void odout_forward(const Tensor* const bottom2d,
+                   const Tensor* const d_anchor3d,
+                   const Tensor* const roi2d,
+                   const Tensor* const img_info1d,
+                   Tensor* const top2d,
+                   real* const proposals,
+                   int* const keep,
+                   real* const proposals_dev,
+                   int* const keep_dev,
+                   const ODOutOption* const option);
+
+void odout_shape(const Tensor* const bottom2d,
+                 Tensor* const top2d,
+                 int* const proposals_size,
+                 int* const keep_size,
+                 const ODOutOption* const option);
+
+
+
+// --------------------------------------------------------------------------
 // NMS operation
 //   nms
 // --------------------------------------------------------------------------
@@ -444,11 +479,13 @@ void softmax_shape(const Tensor* const bottom3d,
 //   num_out: number of remaining boxes
 //   keep_out: "num_out x 1" array
 //             indices of remaining boxes
+//   base_index: a constant added to keep_out,  usually 0
+//               keep_out[i] = base_index + actual index in boxes
 //   nms_thresh: threshold for determining "significant overlap"
 //               if "intersection area / union area > nms_thresh",
 //               two boxes are thought of as significantly overlapped
 void nms(const int num_boxes, const real* const boxes,
-         int* const num_out, int* const keep_out,
+         int* const num_out, int* const keep_out, const int base_index,
          const real nms_thresh, const int max_num_out);
 
 

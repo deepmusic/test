@@ -23,13 +23,12 @@
     7. [0.1ms] roi -> top
 
   TODO
-    - GPU sort (improve 2-2, 2-3)
+    - GPU sort (improve 2-2, 2-3) - speedup
     - GPU nms post processing (remove 5)
 */
 
 #include "layer.h"
 #include <math.h>
-#include <stdio.h>
 
 // --------------------------------------------------------------------------
 // kernel code
@@ -46,6 +45,7 @@
 #ifdef GPU
 __device__
 #endif
+static
 int transform_box(real* const box,
                   const real dx, const real dy,
                   const real d_log_w, const real d_log_h,
@@ -135,21 +135,25 @@ void generate_anchors(real* const anchors,
   }
 }
 
-// sort a list of boxes in descending order of their scores
+// bitonic sort a list of boxes in descending order of their scores (GPU)
+//   list: num_boxes x 5 array,  (x1, y1, x2, y2, score) for each box
+//     in bitoninc sort, total space allocated for list should be
+//     a power of 2 >= num_boxes,
+//     and scores of virtually-padded boxes { num_boxes, ..., 2^n - 1 }
+//     should be set smaller than mininum score of actual boxes
 #ifdef GPU
 __global__
-void bitonic_sort_step(real* list, const int j, const int k,
-                       const int num_boxes)
+void bitonic_sort_step(real* list, const int idx_major, const int idx_minor)
 {
-  const unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
-  const unsigned int index_xor = index ^ j;
+  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const int index_xor = index ^ idx_minor;
   real temp[5];
 
-  /* The threads with the lowest ids sort the array. */
-  if (index < num_boxes && index_xor < num_boxes && index_xor > index) {
-    if (index & k) {
-      /* Sort ascending */
-      if (list[index * 5 + 4] < list[index_xor * 5 + 4]) {
+  // the threads with the lowest ids sort the array
+  if (index_xor > index) {
+    if (index & idx_major) {
+      // sort ascending
+      if (list[index * 5 + 4] > list[index_xor * 5 + 4]) {
         for (int i = 0; i < 5; ++i) {
           temp[i] = list[index * 5 + i];
         }
@@ -162,8 +166,8 @@ void bitonic_sort_step(real* list, const int j, const int k,
       }
     }
     else {
-      /* Sort descending */
-      if (list[index * 5 + 4] > list[index_xor * 5 + 4]) {
+      // sort descending
+      if (list[index * 5 + 4] < list[index_xor * 5 + 4]) {
         for (int i = 0; i < 5; ++i) {
           temp[i] = list[index * 5 + i];
         }
@@ -179,19 +183,28 @@ void bitonic_sort_step(real* list, const int j, const int k,
 }
 void bitonic_sort_box(real* const list, const int num_boxes)
 {
+  int num_power_of_2 = 1;
+  while (num_power_of_2 < num_boxes) num_power_of_2 *= 2;
+  const int num_threads = num_power_of_2;
   const int threads_per_block = 512;
-  const int num_blocks = DIV_THEN_CEIL(num_boxes,  threads_per_block);
+  const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
 
   // major step
-  for (int k = 2; k <= num_boxes; k *= 2) {
+  for (int idx_major = 2; idx_major <= num_threads; idx_major *= 2) {
     // minor step
-    for (int j = k / 2; j > 0; j /= 2) {
+    for (int idx_minor = idx_major / 2; idx_minor > 0; idx_minor /= 2) {
       bitonic_sort_step<<<num_blocks, threads_per_block>>>(
-          list, j, k, num_boxes);
+          list, idx_major, idx_minor);
     }
   }
 }
-#else
+#endif
+
+// quick-sort a list of boxes in descending order of their scores (CPU)
+//   list: num_boxes x 5 array,  (x1, y1, x2, y2, score) for each box
+//   if num_top <= end,  only top-k results are guaranteed to be sorted
+//   (for efficient computation)
+static
 void sort_box(real* const list, const int start, const int end,
               const int num_top)
 {
@@ -228,8 +241,6 @@ void sort_box(real* const list, const int start, const int end,
     }
   }
 
-  // if num_top <= end,  only top-k results are guaranteed to be sorted
-  // (for efficient computation)
   if (start < right - 1) {
     sort_box(list, start, right - 1, num_top);
   }
@@ -237,7 +248,6 @@ void sort_box(real* const list, const int start, const int end,
     sort_box(list, right + 1, end, num_top);
   }
 }
-#endif
 
 // generate all candidate boxes with their scores
 //   bottom: 1 x num_anchors x H x W tensor
@@ -291,6 +301,18 @@ void enumerate_proposals_gpu(const real* const bottom4d,
                         dx, dy, d_log_w, d_log_h,
                         img_W, img_H, min_box_W, min_box_H)
           * p_score[k * bottom_area];
+  }
+  else {
+    // in GPU mode, total space allocated for proposals should be
+    // a power of 2 >= actual number of proposals,
+    // thus, scores of virtually-padded boxes should be set smaller than
+    // mininum score of actual boxes
+    // (in RPN, 0 is the smallest possible score)
+    proposals[index * 5 + 0] = 0;
+    proposals[index * 5 + 1] = 0;
+    proposals[index * 5 + 2] = 0;
+    proposals[index * 5 + 3] = 0;
+    proposals[index * 5 + 4] = 0;
   }
 }
 #else
@@ -395,11 +417,14 @@ void retrieve_rois_cpu(const real* const proposals,
 //   4 temporary arrays
 //     proposals: all box proposals with their scores
 //       "num_boxes x 5" array,  (x1, y1, x2, y2, score) for each box
-//       TODO: always stored in main memory due to implementation issue
+//       in GPU mode, if proposals = NULL, use bitonic sort in GPU
+//       if proposals != NULL & allocated in main memory, quicksort in CPU
 //     keep: indices of proposals to be retrieved as RoIs
 //       "num_rois x 1" array,  keep[i]: index of i-th RoI in proposals
 //       TODO: always stored in main memory due to implementation issue
 //     proposals_dev: GPU memory space, required in GPU mode
+//       in GPU mode, total space allocated for proposals should be
+//       a power of 2 >= num_boxes
 //     keep_dev: GPU memory space, required in GPU mode
 void proposal_forward(const Tensor* const bottom4d,
                       const Tensor* const d_anchor4d,
@@ -439,7 +464,14 @@ void proposal_forward(const Tensor* const bottom4d,
     // NOTE: for bottom, only foreground scores are passed
     #ifdef GPU
     {
-      const int num_threads = num_anchors * bottom_area;
+      // in GPU mode, total space allocated for proposals is
+      // a power of 2 >= num_proposals (due to bitonic sort algorithm)
+      // thus, scores of virtually-padded boxes should be set smaller than
+      // mininum score of actual boxes
+      const int num_proposals = num_anchors * bottom_area;
+      int num_power_of_2 = 1;
+      while (num_power_of_2 < num_proposals) num_power_of_2 *= 2;
+      const int num_threads = num_power_of_2;
       const int threads_per_block = 512;
       const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
       enumerate_proposals_gpu<<<num_blocks, threads_per_block>>>(
@@ -448,9 +480,6 @@ void proposal_forward(const Tensor* const bottom4d,
           bottom_H,  bottom_W,  img_H,  img_W,  min_box_H,  min_box_W,
           option->feat_stride,
           proposals_dev);
-      //cudaMemcpyAsync(proposals, proposals_dev,
-      //                num_threads * 5 * sizeof(real),
-      //                cudaMemcpyDeviceToHost);
     }
     #else
     {
@@ -464,14 +493,30 @@ void proposal_forward(const Tensor* const bottom4d,
     #endif
 
     // choose candidates according to scores
+    #ifdef GPU
     {
       const int num_proposals = num_anchors * bottom_area;
-      #ifdef GPU
-      bitonic_sort_box(proposals_dev, num_proposals);
-      #else
-      sort_box(proposals, 0, num_proposals - 1, option->pre_nms_topn);
-      #endif
+      if (!proposals) {
+        // in GPU mode, if proposals = NULL, use bitonic sort in GPU
+        bitonic_sort_box(proposals_dev, num_proposals);
+      }
+      else {
+        // if proposals != NULL & allocated in main memory, quicksort in CPU
+        cudaMemcpyAsync(proposals, proposals_dev,
+                        num_proposals * 5 * sizeof(real),
+                        cudaMemcpyDeviceToHost);
+        sort_box(proposals, 0, num_proposals - 1, option->pre_nms_topn);
+        cudaMemcpyAsync(proposals_dev, proposals,
+                        num_proposals * 5 * sizeof(real),
+                        cudaMemcpyHostToDevice);
+      }
     }
+    #else
+    {
+      const int num_proposals = num_anchors * bottom_area;
+      sort_box(proposals, 0, num_proposals - 1, option->pre_nms_topn);
+    }
+    #endif
 
     // NMS & RoI retrieval
     {
@@ -479,7 +524,7 @@ void proposal_forward(const Tensor* const bottom4d,
       const int num_proposals
           = MIN(num_anchors * bottom_area,  option->pre_nms_topn);
       int num_rois = 0;
-      nms(num_proposals,  proposals,  &num_rois,  keep,
+      nms(num_proposals,  proposals,  &num_rois,  keep,  0,
           option->nms_thresh,  option->post_nms_topn);
 
       // RoI retrieval
@@ -492,9 +537,6 @@ void proposal_forward(const Tensor* const bottom4d,
 
         cudaMemcpyAsync(keep_dev, keep, num_rois * sizeof(int),
                         cudaMemcpyHostToDevice);
-        //cudaMemcpyAsync(proposals_dev, proposals,
-        //                num_proposals * 5 * sizeof(int),
-        //                cudaMemcpyHostToDevice);
 
         retrieve_rois_gpu<<<num_blocks, threads_per_block>>>(
             proposals_dev,  keep_dev,  p_top_item,  num_rois);
@@ -558,10 +600,15 @@ void proposal_shape(const Tensor* const bottom4d,
   }
 
   // temporary space size
+  //   in GPU mode, total space allocated for proposals should be
+  //   a power of 2 >= actual number of proposals
   {
     const int num_anchors 
         = option->num_concats * option->num_ratios * option->num_scales;
-    *proposals_size = num_anchors * max_area * 5;
+    const int num_proposals = num_anchors * max_area;
+    int num_power_of_2 = 1;
+    while (num_power_of_2 < num_proposals) num_power_of_2 *= 2;
+    *proposals_size = num_power_of_2 * 5;
     *keep_size = option->post_nms_topn;
   }
 }

@@ -1,4 +1,4 @@
-from struct import unpack
+from struct import pack, unpack
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.ndimage
@@ -11,6 +11,14 @@ def load_data(filename):
   data = np.fromfile(f, dtype=np.float32).reshape(shape)
   f.close()
   return data
+
+def save_data(filename, data):
+  f = open(filename, 'wb')
+  ndim = len(data.shape)
+  f.write(pack('i', ndim))
+  f.write(pack('i' * ndim, *data.shape))
+  data.tofile(f)
+  f.close()
 
 def load_image(filename):
   img = scipy.ndimage.imread(filename)
@@ -122,7 +130,7 @@ def plot_f(weight, bias, swap_bgr=False):
     fig.axes.get_yaxis().set_visible(False)
   plt.show()
 
-img, im_info = load_image('../data/voc/2007/VOC2007/JPEGImages/000004.jpg')
-a = load_data('../data/temp/conv_bottom0.bin')
+img, im_info = load_image('data/voc/2007/VOC2007/JPEGImages/000004.jpg')
+a = load_data('data/temp/conv_bottom0.bin')
 #b = layer_img(img, a[0])
 #plot_imgs(b)

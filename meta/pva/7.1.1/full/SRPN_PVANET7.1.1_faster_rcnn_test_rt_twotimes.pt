@@ -839,6 +839,7 @@ layer {
   top: "cls_score"
   inner_product_param {
     num_output: 21
+    logging: true
   }
 }
 layer {

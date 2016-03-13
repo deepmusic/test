@@ -128,18 +128,6 @@ void deconv_forward(const Tensor* const bottom3d,
   const int stride_h = option->stride_h;
   const int stride_w = option->stride_w;
 
-  #ifdef GPU
-  const real* * pp_bottom = (const real* *)malloc(num_groups * sizeof(real*));
-  const real* * pp_weight = (const real* *)malloc(num_groups * sizeof(real*));
-  real** pp_temp = (real**)malloc(num_groups * sizeof(real*));
-  const real* * pp_bottom_dev;
-  const real* * pp_weight_dev;
-  real** pp_temp_dev;
-  cudaMalloc(&pp_bottom_dev, num_groups * sizeof(real*));
-  cudaMalloc(&pp_weight_dev, num_groups * sizeof(real*));
-  cudaMalloc(&pp_temp_dev, num_groups * sizeof(real*));
-  #endif
-
   // do forward-pass for each item in the batch
   const real* p_bottom_item = bottom3d->data;
   real* p_top_item = top3d->data;
@@ -157,30 +145,23 @@ void deconv_forward(const Tensor* const bottom3d,
     top3d->shape[n][1] = top_H;
     top3d->shape[n][2] = top_W;
 
-    const int kernel_size = top_C * kernel_h * kernel_w;
-    const int bottom_area = bottom_H * bottom_W;
-
-    #ifdef GPU
-    {
-      // compute top[g] = dot(weight[g].transpose(), bottom[g])
-      //   weight[g]: C' x (C * kernel_h * kernel_w)
-      //   bottom[g]: C' x (H' * W')
-      //   top[g]: (C * kernel_h * kernel_w) x (H' * W')
-      for (int g = 0; g < num_groups; ++g) {
-        pp_bottom[g] = p_bottom_item + g * bottom_C * bottom_area;
-        pp_weight[g] = weight5d->data + g * bottom_C * kernel_size;
-        pp_temp[g] = temp_data + g * kernel_size * bottom_area;
-      }
-      cudaMemcpy(pp_bottom_dev, pp_bottom, num_groups * sizeof(real*),
-                 cudaMemcpyHostToDevice);
-      cudaMemcpy(pp_weight_dev, pp_weight, num_groups * sizeof(real*),
-                 cudaMemcpyHostToDevice);
-      cudaMemcpy(pp_temp_dev, pp_temp, num_groups * sizeof(real*),
-                 cudaMemcpyHostToDevice);
+    // compute top[g] = dot(weight[g].transpose(), bottom[g])
+    //   weight[g]: C' x (C * kernel_h * kernel_w)
+    //   bottom[g]: C' x (H' * W')
+    //   top[g]: (C * kernel_h * kernel_w) x (H' * W')
+    for (int g = 0; g < num_groups; ++g) {
+      const int kernel_size = top_C * kernel_h * kernel_w;
+      const int bottom_area = bottom_H * bottom_W;
+      const real* const p_bottom_g = p_bottom_item +
+                                     g * bottom_C * bottom_area;
+      const real* const p_weight_g = weight5d->data +
+                                     g * bottom_C * kernel_size;
+      real* const p_temp_g = temp_data + g * kernel_size * bottom_area;
 
       // compute Z = alpha * dot(X.transpose(), Y) + beta * Z
       //   X (= weight): p x m,  Y (= bottom): p x n,  Z (= top): m x n
       //   X, Y, Z: row-major order (e.g., Z[i][j] = Z[i * n + j])
+    #ifdef GPU
       // input arguments:
       //   cublas handle,
       //   do_transpose_Y (= false),  do_transpose_X (= true),
@@ -191,51 +172,34 @@ void deconv_forward(const Tensor* const bottom3d,
       //   &beta (= 0),
       //   &Z,  number of columns in Z (= n)
       const real one = 1.0f, zero = 0.0f;
-      cublasSgemmBatched(*((cublasHandle_t*)option->handle),
+      cublasSgemm(*((cublasHandle_t*)option->handle),
                   CUBLAS_OP_N,  CUBLAS_OP_T,
                   bottom_area,  kernel_size,  bottom_C,
                   &one,
-                  pp_bottom_dev,  bottom_area,
-                  pp_weight_dev,  kernel_size,
+                  p_bottom_g,  bottom_area,
+                  p_weight_g,  kernel_size,
                   &zero,
-                  pp_temp_dev,  bottom_area, num_groups);
-    }
+                  p_temp_g,  bottom_area);
     #else
-    {
-      // compute top[g] = dot(weight[g].transpose(), bottom[g])
-      //   weight[g]: C' x (C * kernel_h * kernel_w)
-      //   bottom[g]: C' x (H' * W')
-      //   top[g]: (C * kernel_h * kernel_w) x (H' * W')
-      for (int g = 0; g < num_groups; ++g) {
-        const real* const p_bottom_g = p_bottom_item +
-                                       g * bottom_C * bottom_area;
-        const real* const p_weight_g = weight5d->data +
-                                       g * bottom_C * kernel_size;
-        real* const p_temp_g = temp_data + g * kernel_size * bottom_area;
-
-        // compute Z = alpha * dot(X.transpose(), Y) + beta * Z
-        //   X (= weight): p x m,  Y (= bottom): p x n,  Z (= top): m x n
-        //   X, Y, Z: row-major order (e.g., Z[i][j] = Z[i * n + j])
-        // input arguments:
-        //   is_row_major_order (= true),
-        //   do_transpose_X (= true),  do_transpose_Y (= false),
-        //   m (= C * kernel_h * kernel_w),  n (= H' * W'),  p (= C'),
-        //   alpha (= 1),
-        //   &X,  number of columns in X (= m),
-        //   &Y,  number of columns in Y (= n),
-        //   beta (= 0),
-        //   &Z,  number of columns in Z (= n)
-        cblas_sgemm(CblasRowMajor,
-                    CblasTrans,  CblasNoTrans,
-                    kernel_size,  bottom_area,  bottom_C,
-                    1.0f,
-                    p_weight_g,  kernel_size,
-                    p_bottom_g,  bottom_area,
-                    0.0f,
-                    p_temp_g,  bottom_area);
-      }
-    }
+      // input arguments:
+      //   is_row_major_order (= true),
+      //   do_transpose_X (= true),  do_transpose_Y (= false),
+      //   m (= C * kernel_h * kernel_w),  n (= H' * W'),  p (= C'),
+      //   alpha (= 1),
+      //   &X,  number of columns in X (= m),
+      //   &Y,  number of columns in Y (= n),
+      //   beta (= 0),
+      //   &Z,  number of columns in Z (= n)
+      cblas_sgemm(CblasRowMajor,
+                  CblasTrans,  CblasNoTrans,
+                  kernel_size,  bottom_area,  bottom_C,
+                  1.0f,
+                  p_weight_g,  kernel_size,
+                  p_bottom_g,  bottom_area,
+                  0.0f,
+                  p_temp_g,  bottom_area);
     #endif
+    }
 
     // convert top shape
     //   (G * C * kernel_h * kernel_w) x (H' * W') -> (G * C) x (H * W)
@@ -307,15 +271,6 @@ void deconv_forward(const Tensor* const bottom3d,
       p_top_item += top_size;
     }
   } // endfor batch
-
-  #ifdef GPU
-  free(pp_bottom);
-  free(pp_weight);
-  free(pp_temp);
-  cudaFree(pp_bottom_dev);
-  cudaFree(pp_weight_dev);
-  cudaFree(pp_temp_dev);
-  #endif
 
   top3d->ndim = 3;
   top3d->num_items = bottom3d->num_items;

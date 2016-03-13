@@ -68,14 +68,15 @@ void nms_mask_gpu(const real* const boxes,
 
   // copy all i-th boxes to GPU cache
   //   i = i_start + { 0, ..., di_end - 1 }
-  __shared__ real boxes_i[NMS_BLOCK_SIZE * 4];
+  __shared__ real boxes_i[NMS_BLOCK_SIZE * 5];
   {
     const int di = threadIdx.x;
     if (di < di_end) {
-      boxes_i[di * 4 + 0] = boxes[(i_start + di) * 5 + 0];
-      boxes_i[di * 4 + 1] = boxes[(i_start + di) * 5 + 1];
-      boxes_i[di * 4 + 2] = boxes[(i_start + di) * 5 + 2];
-      boxes_i[di * 4 + 3] = boxes[(i_start + di) * 5 + 3];
+      boxes_i[di * 5 + 0] = boxes[(i_start + di) * 5 + 0];
+      boxes_i[di * 5 + 1] = boxes[(i_start + di) * 5 + 1];
+      boxes_i[di * 5 + 2] = boxes[(i_start + di) * 5 + 2];
+      boxes_i[di * 5 + 3] = boxes[(i_start + di) * 5 + 3];
+      boxes_i[di * 5 + 4] = boxes[(i_start + di) * 5 + 4];
     }
   }
   __syncthreads();
@@ -99,7 +100,7 @@ void nms_mask_gpu(const real* const boxes,
       const int di_start = (i_start == j_start) ? (dj + 1) : 0;
       for (int di = di_start; di < di_end; ++di) {
         // box i
-        const real* const box_i = boxes_i + di * 4;
+        const real* const box_i = boxes_i + di * 5;
 
         // if IoU(box j, box i) > threshold,  di-th bit = 1
         if (iou(box_j, box_i) > nms_thresh) {
@@ -189,13 +190,11 @@ void nms_mask_cpu(const real* const boxes,
 //   num_out: number of remaining boxes
 //   keep_out: "num_out x 1" array
 //             indices of remaining boxes
-//   base_index: a constant added to keep_out,  usually 0
-//               keep_out[i] = base_index + actual index in boxes
 //   nms_thresh: threshold for determining "significant overlap"
 //               if "intersection area / union area > nms_thresh",
 //               two boxes are thought of as significantly overlapped
 void nms(const int num_boxes, const real* const boxes,
-         int* const num_out, int* const keep_out, const int base_index,
+         int* const num_out, int* const keep_out,
          const real nms_thresh, const int max_num_out)
 {
   const int num_blocks = DIV_THEN_CEIL(num_boxes,  NMS_BLOCK_SIZE);
@@ -204,26 +203,19 @@ void nms(const int num_boxes, const real* const boxes,
 
   #ifdef GPU
   {
-    real* boxes_dev;
     uint64* mask_dev;
     const dim3 blocks(num_blocks, num_blocks);
-
-    // GPU memory allocation & copy box data
-    cudaMalloc(&boxes_dev, num_boxes * 5 * sizeof(real));
-    cudaMemcpyAsync(boxes_dev, boxes, num_boxes * 5 * sizeof(real),
-                    cudaMemcpyHostToDevice);
     cudaMalloc(&mask_dev, num_boxes * num_blocks * sizeof(uint64));
 
     // find all significantly-overlapped pairs of boxes
     nms_mask_gpu<<<blocks, NMS_BLOCK_SIZE>>>(
-        boxes_dev,  mask_dev,  num_boxes,  nms_thresh);
+        boxes,  mask_dev,  num_boxes,  nms_thresh);
 
     // copy mask data to main memory
     cudaMemcpyAsync(mask, mask_dev, sizeof(uint64) * num_boxes * num_blocks,
                     cudaMemcpyDeviceToHost);
 
     // GPU memory deallocation
-    cudaFree(boxes_dev);
     cudaFree(mask_dev);
   }
   #else
@@ -244,7 +236,7 @@ void nms(const int num_boxes, const real* const boxes,
       const int inblock = i % NMS_BLOCK_SIZE;
 
       if (!(remv[nblock] & (1ULL << inblock))) {
-        keep_out[num_to_keep++] = base_index + i;
+        keep_out[num_to_keep++] = i;
         uint64* p = mask + i * num_blocks;
         for (int j = nblock; j < num_blocks; ++j) {
           remv[j] |= p[j];
