@@ -67,6 +67,17 @@ real* load_data(const char* const filename,
 
 
 // --------------------------------------------------------------------------
+// load image & transform into network input
+//   load_image
+// --------------------------------------------------------------------------
+
+void load_image(const char* const filename,
+                Tensor* const input3d,
+                Tensor* const img_info1d);
+
+
+
+// --------------------------------------------------------------------------
 // convolution & deconvolution
 //   struct ConvOption
 //   conv_forward

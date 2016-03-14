@@ -1023,7 +1023,7 @@ void init_frcnn_7_1_1(void)
   }
 
   // calculate maximum size
-  pvanet.input.num_items = 1;
+  pvanet.input.num_items = 10;
   pvanet.input.ndim = 3;
   pvanet.input.shape[0][0] = 3;
   pvanet.input.shape[0][1] = 640;
@@ -1279,90 +1279,34 @@ void init_frcnn_7_1_1(void)
   }
 }
 
-void img2input(const unsigned char* const img,
-               Tensor* const input3d,
-               Tensor* const img_info1d,
-               const int height, const int width, const int stride)
+void prepare_input(const char* const filename[], const int num_images)
 {
-  const real gs_max_size = 1000.0f;
-  const real gs_base_size = 600.0f;
-  const real meanB = 102.9801f;
-  const real meanG = 115.9465f;
-  const real meanR = 122.7717f;
-  const int img_size_min = MIN(height,  width);
-  const int img_size_max = MAX(height,  width);
+  pvanet.input.data = input_data;
+  pvanet.input.ndim = 3;
+  pvanet.input.num_items = 0;
+  pvanet.input.start[0] = 0;
+  srpn.img_info.ndim = 1;
+  srpn.img_info.num_items = 0;
 
-  real img_scale = gs_base_size / img_size_min;
-  if (ROUND(img_scale * img_size_max) > gs_max_size) {
-    img_scale = gs_max_size / img_size_max;
+  for (int i = 0; i < num_images; ++i) {
+    load_image(filename[i], &pvanet.input, &srpn.img_info);
   }
 
-  const int gs_scale_base = 32;
-  const real img_scale_x = (real)((int)(width * img_scale / gs_scale_base) * gs_scale_base) / width;
-  const real img_scale_y = (real)((int)(height * img_scale / gs_scale_base) * gs_scale_base) / height;
+  #ifdef GPU
+  cudaMemcpyAsync(layer1_data, input_data,
+                  flatten_size(&pvanet.input) * sizeof(real),
+                  cudaMemcpyHostToDevice);
+  #else
+  memcpy(layer1_data, input_data,
+         flatten_size(&pvanet.input) * sizeof(real));
+  #endif
 
-  const int resized_height = ROUND(height * img_scale_y);
-  const int resized_width = ROUND(width * img_scale_x);
-  const int input_area = resized_height * resized_width;
+  printf("done\n");
 
-  const int n = img_info1d->num_items;
-  real* const p_img_info1d = img_info1d->data + n * 4;
-  p_img_info1d[0] = resized_height;
-  p_img_info1d[1] = resized_width;
-  p_img_info1d[2] = img_scale_x;
-  p_img_info1d[3] = img_scale_y;
+  // network reshape
+  shape_frcnn_7_1_1(0);
 
-  real* const p_inputB = input3d->data + (n * 3 + 0) * input_area;
-  real* const p_inputG = input3d->data + (n * 3 + 1) * input_area;
-  real* const p_inputR = input3d->data + (n * 3 + 2) * input_area;
-
-  for (int i = 0; i < resized_height; i++) {
-    float y = i / img_scale_y;
-    int y0 = (int)y;
-    int y1 = y0 + 1;
-    float ay = y - y0;
-    float by = 1 - ay;
-    for (int j = 0; j < resized_width; j++) {
-      float x = j / img_scale_x;		
-      int x0 = (int)x;			
-      int x1 = x0 + 1;
-      float ax = x - x0;
-      float bx = 1 - ax;
-      float B = 0, G = 0, R = 0;
-      if (ax > 0 && ay > 0) {
-        B += ax * ay * img[y1 * stride + x1 * 3 + 0];
-        G += ax * ay * img[y1 * stride + x1 * 3 + 1];
-        R += ax * ay * img[y1 * stride + x1 * 3 + 2];
-      }
-      if (ax > 0 && by > 0) {
-        B += ax * by * img[y0 * stride + x1 * 3 + 0];
-        G += ax * by * img[y0 * stride + x1 * 3 + 1];
-        R += ax * by * img[y0 * stride + x1 * 3 + 2];
-      }
-      if (bx > 0 && ay > 0) {
-        B += bx * ay * img[y1 * stride + x0 * 3 + 0];
-        G += bx * ay * img[y1 * stride + x0 * 3 + 1];
-        R += bx * ay * img[y1 * stride + x0 * 3 + 2];
-      }
-      if (bx > 0 && by > 0) {
-        B += bx * by * img[y0 * stride + x0 * 3 + 0];
-        G += bx * by * img[y0 * stride + x0 * 3 + 1];
-        R += bx * by * img[y0 * stride + x0 * 3 + 2];
-      }
-
-      p_inputB[i * resized_width + j] = B - meanB;
-      p_inputG[i * resized_width + j] = G - meanG;
-      p_inputR[i * resized_width + j] = R - meanR;
-    }
-  }
-
-  input3d->shape[n][0] = 3;
-  input3d->shape[n][1] = resized_height;
-  input3d->shape[n][2] = resized_width;
-  ++input3d->num_items;
-
-  img_info1d->shape[n][0] = 4;
-  ++img_info1d->num_items;
+  print_tensor_info("input data loaded", &pvanet.input);
 }
 
 int main(int argc, char* argv[])
@@ -1388,43 +1332,8 @@ int main(int argc, char* argv[])
   init_frcnn_7_1_1();
 
   // input data loading
-  {
-    int ndim;
-    int shape[g_max_ndim];
-    int input_size;
+  prepare_input(&argv[1], 2);
 
-    // input image
-    load_data("../data/temp/conv1_1_bottom0.bin",
-              &ndim, shape, input_data);
-    pvanet.input.num_items = shape[0];
-    pvanet.input.ndim = ndim - 1;
-    input_size = 0;
-    for (int n = 0; n < pvanet.input.num_items; ++n) {
-      int size_n = 1;
-      for (int i = 0; i < pvanet.input.ndim; ++i) {
-        pvanet.input.shape[n][i] = shape[i + 1];
-        size_n *= shape[i + 1];
-      }
-      pvanet.input.start[n] = input_size;
-      input_size += size_n;
-    }
-
-    // image info
-    load_data("../data/temp/proposal_bottom2.bin",
-              &ndim, shape, srpn.img_info.data);
-
-  #ifdef GPU
-    cudaMemcpyAsync(layer1_data, input_data, input_size * sizeof(real),
-                    cudaMemcpyHostToDevice);
-  #else
-    memcpy(layer1_data, input_data, input_size * sizeof(real));
-  #endif
-
-    print_tensor_info("input data loaded", &pvanet.input);
-  }
-
-  // network reshape
-  shape_frcnn_7_1_1(0);
 
   // forward-pass
   printf("forward-pass start\n");

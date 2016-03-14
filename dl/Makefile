@@ -3,7 +3,7 @@ CFLAGS := -O3 -Wall -std=c99
 LDFLAGS := -lcblas -lm
 NVCC := /usr/local/cuda/bin/nvcc
 NVCCFLAGS := -O3 -use_fast_math -Xcompiler -Wall -DGPU
-NVLDFLAGS := -lcuda -lcublas
+NVLDFLAGS := -lcuda -lcublas -lopencv_core -lopencv_highgui
 BUILD_DIR := build
 
 frcnn_gpu.bin: frcnn.gpu.o $(BUILD_DIR)/libdlgpu.a
@@ -14,11 +14,11 @@ frcnn_cpu.bin: frcnn.cpu.o $(BUILD_DIR)/libdlcpu.a
 test_cpu: conv.cpu.test.bin deconv.cpu.test.bin dropout.cpu.test.bin fc.cpu.test.bin pool.cpu.test.bin proposal.nms.cpu.test.bin relu.cpu.test.bin roipool.cpu.test.bin
 test_gpu: conv.gpu.test.bin deconv.gpu.test.bin dropout.gpu.test.bin fc.gpu.test.bin pool.gpu.test.bin proposal.nms.gpu.test.bin relu.gpu.test.bin roipool.gpu.test.bin
 
-$(BUILD_DIR)/libdlcpu.a: tensor.cpu.o nms.cpu.o softmax.cpu.o conv.cpu.o deconv.cpu.o fc.cpu.o dropout.cpu.o relu.cpu.o roipool.cpu.o pool.cpu.o proposal.cpu.o concat.cpu.o odout.cpu.o
+$(BUILD_DIR)/libdlcpu.a: tensor.cpu.o nms.cpu.o softmax.cpu.o conv.cpu.o deconv.cpu.o fc.cpu.o dropout.cpu.o relu.cpu.o roipool.cpu.o pool.cpu.o proposal.cpu.o concat.cpu.o odout.cpu.o image.gpu.o
 	mkdir -p $(BUILD_DIR)
 	ar rcs $@ $^
 	#rm $^
-$(BUILD_DIR)/libdlgpu.a: tensor.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o
+$(BUILD_DIR)/libdlgpu.a: tensor.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o image.gpu.o
 	mkdir -p $(BUILD_DIR)
 	ar rcs $@ $^
 	#rm $^
