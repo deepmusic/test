@@ -1429,9 +1429,6 @@ int main(int argc, char* argv[])
   // forward-pass
   printf("forward-pass start\n");
   forward_frcnn_7_1_1();
-  forward_frcnn_7_1_1();
-  forward_frcnn_7_1_1();
-  forward_frcnn_7_1_1();
   printf("forward-pass end\n");
 
   // retrieve output
