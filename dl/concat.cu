@@ -55,8 +55,18 @@ void concat_forward(const Tensor* const bottom3d[],
     top3d->shape[n][2] = W;
   } // endfor batch
 
+  free(p_bottom_data);
+
   top3d->ndim = 3;
   top3d->num_items = bottom3d[0]->num_items;
+  {
+    int total_size = 0;
+    for (int n = 0; n < top3d->num_items; ++n) {
+      top3d->start[n] = total_size;
+      total_size +=
+          top3d->shape[n][0] * top3d->shape[n][1] * top3d->shape[n][2];
+    }
+  }
 }
 
 
@@ -85,6 +95,14 @@ void concat_shape(const Tensor* const bottom3d[],
 
   top3d->ndim = 3;
   top3d->num_items = bottom3d[0]->num_items;
+  {
+    int total_size = 0;
+    for (int n = 0; n < top3d->num_items; ++n) {
+      top3d->start[n] = total_size;
+      total_size +=
+          top3d->shape[n][0] * top3d->shape[n][1] * top3d->shape[n][2];
+    }
+  }
 }
 
 

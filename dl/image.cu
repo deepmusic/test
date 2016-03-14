@@ -49,19 +49,19 @@ void img2input(const unsigned char* const img,
   real* const p_inputG = input3d->data + input3d->start[n] + 1 * input_area;
   real* const p_inputR = input3d->data + input3d->start[n] + 2 * input_area;
 
-  for (int i = 0; i < resized_height; i++) {
-    float y = i / img_scale_y;
-    int y0 = (int)y;
-    int y1 = y0 + 1;
-    float ay = y - y0;
-    float by = 1 - ay;
-    for (int j = 0; j < resized_width; j++) {
-      float x = j / img_scale_x;		
-      int x0 = (int)x;			
-      int x1 = x0 + 1;
-      float ax = x - x0;
-      float bx = 1 - ax;
-      float B = 0, G = 0, R = 0;
+  for (int i = 0; i < resized_height; ++i) {
+    const real y = i / img_scale_y;
+    const int y0 = (int)y;
+    const int y1 = y0 + 1;
+    const real ay = y - y0;
+    const real by = 1 - ay;
+    for (int j = 0; j < resized_width; ++j) {
+      const real x = j / img_scale_x;		
+      const int x0 = (int)x;			
+      const int x1 = x0 + 1;
+      const real ax = x - x0;
+      const real bx = 1 - ax;
+      real B = 0, G = 0, R = 0;
       if (ax > 0 && ay > 0) {
         B += ax * ay * img[y1 * stride + x1 * 3 + 0];
         G += ax * ay * img[y1 * stride + x1 * 3 + 1];

@@ -132,14 +132,25 @@ int malloc_tensor(Tensor* const tensor)
 
 void print_tensor_info(const char* name, const Tensor* const tensor)
 {
+  return;
   printf("%s: ", name);
   if (tensor->num_items > 1) {
-    printf("%d x ", tensor->num_items);
+    printf("batch size = %d\n", tensor->num_items);
+    for (int n = 0; n < tensor->num_items; ++n) {
+      printf("  ");
+      for (int i = 0; i < tensor->ndim - 1; ++i) {
+        printf("%d x ", tensor->shape[n][i]);
+      }
+      printf("%d, ", tensor->shape[n][tensor->ndim - 1]);
+      printf("start = %d\n", tensor->start[n]);
+    }
   }
-  for (int i = 0; i < tensor->ndim - 1; ++i) {
-    printf("%d x ", tensor->shape[0][i]);
+  else {
+    for (int i = 0; i < tensor->ndim - 1; ++i) {
+      printf("%d x ", tensor->shape[0][i]);
+    }
+    printf("%d\n", tensor->shape[0][tensor->ndim - 1]);
   }
-  printf("%d\n", tensor->shape[0][tensor->ndim - 1]);
 }
 
 void forward_frcnn_7_1_1(void)
@@ -154,6 +165,8 @@ void forward_frcnn_7_1_1(void)
                 &pvanet.weight1_1, &pvanet.bias1_1,
                 temp_data, const_data, &conv_option1);
     relu_forward_inplace(&pvanet.conv1_1, &relu_option);
+    print_tensor_info("input", &pvanet.input);
+    print_tensor_info("conv1_1", &pvanet.conv1_1);
 
     // 1_2
     pvanet.conv1_2.data = layer1_data;
@@ -162,6 +175,7 @@ void forward_frcnn_7_1_1(void)
                  &pvanet.weight1_2, &pvanet.bias1_2,
                  temp_data, const_data, &conv_option2);
     relu_forward_inplace(&pvanet.conv1_2, &relu_option);
+    print_tensor_info("conv1_2", &pvanet.conv1_2);
 
     // 2_1
     pvanet.conv2_1.data = layer2_data;
@@ -170,6 +184,7 @@ void forward_frcnn_7_1_1(void)
                  &pvanet.weight2_1, &pvanet.bias2_1,
                  temp_data, const_data, &conv_option1);
     relu_forward_inplace(&pvanet.conv2_1, &relu_option);
+    print_tensor_info("conv2_1", &pvanet.conv2_1);
 
     // 2_2
     pvanet.conv2_2.data = layer1_data;
@@ -178,6 +193,7 @@ void forward_frcnn_7_1_1(void)
                  &pvanet.weight2_2, &pvanet.bias2_2,
                  temp_data, const_data, &conv_option2);
     relu_forward_inplace(&pvanet.conv2_2, &relu_option);
+    print_tensor_info("conv2_2", &pvanet.conv2_2);
 
     // 3_1
     pvanet.conv3_1.data = layer2_data;
@@ -186,6 +202,7 @@ void forward_frcnn_7_1_1(void)
                  &pvanet.weight3_1, &pvanet.bias3_1,
                  temp_data, const_data, &conv_option1);
     relu_forward_inplace(&pvanet.conv3_1, &relu_option);
+    print_tensor_info("conv3_1", &pvanet.conv3_1);
 
     // 3_2
     pvanet.conv3_2.data = layer1_data;
@@ -194,6 +211,7 @@ void forward_frcnn_7_1_1(void)
                  &pvanet.weight3_2, &pvanet.bias3_2,
                  temp_data, const_data, &conv_option2);
     relu_forward_inplace(&pvanet.conv3_2, &relu_option);
+    print_tensor_info("conv3_2", &pvanet.conv3_2);
 
     // 3_3
     pvanet.conv3_3.data = layer2_data;
@@ -202,11 +220,13 @@ void forward_frcnn_7_1_1(void)
                  &pvanet.weight3_3, &pvanet.bias3_3,
                  temp_data, const_data, &conv_option2);
     relu_forward_inplace(&pvanet.conv3_3, &relu_option);
+    print_tensor_info("conv3_3", &pvanet.conv3_3);
 
     // downsample
     pvanet.downsample.data = backup1_data;
     pool_forward(&pvanet.conv3_3, &pvanet.downsample,
                  tempint_data, &pool_option);
+    print_tensor_info("downsample", &pvanet.downsample);
 
     // 4_1
     pvanet.conv4_1.data = layer1_data;
@@ -215,6 +235,7 @@ void forward_frcnn_7_1_1(void)
                  &pvanet.weight4_1, &pvanet.bias4_1,
                  temp_data, const_data, &conv_option1);
     relu_forward_inplace(&pvanet.conv4_1, &relu_option);
+    print_tensor_info("conv4_1", &pvanet.conv4_1);
 
     // 4_2
     pvanet.conv4_2.data = layer2_data;
@@ -223,6 +244,7 @@ void forward_frcnn_7_1_1(void)
                  &pvanet.weight4_2, &pvanet.bias4_2,
                  temp_data, const_data, &conv_option2);
     relu_forward_inplace(&pvanet.conv4_2, &relu_option);
+    print_tensor_info("conv4_2", &pvanet.conv4_2);
 
     // 4_3
     pvanet.conv4_3.data = backup2_data;
@@ -231,6 +253,7 @@ void forward_frcnn_7_1_1(void)
                  &pvanet.weight4_3, &pvanet.bias4_3,
                  temp_data, const_data, &conv_option2);
     relu_forward_inplace(&pvanet.conv4_3, &relu_option);
+    print_tensor_info("conv4_3", &pvanet.conv4_3);
 
     // 5_1
     pvanet.conv5_1.data = layer1_data;
@@ -239,6 +262,7 @@ void forward_frcnn_7_1_1(void)
                  &pvanet.weight5_1, &pvanet.bias5_1,
                  temp_data, const_data, &conv_option1);
     relu_forward_inplace(&pvanet.conv5_1, &relu_option);
+    print_tensor_info("conv5_1", &pvanet.conv5_1);
 
     // 5_2
     pvanet.conv5_2.data = layer2_data;
@@ -247,6 +271,7 @@ void forward_frcnn_7_1_1(void)
                  &pvanet.weight5_2, &pvanet.bias5_2,
                  temp_data, const_data, &conv_option2);
     relu_forward_inplace(&pvanet.conv5_2, &relu_option);
+    print_tensor_info("conv5_2", &pvanet.conv5_2);
 
     // 5_3
     pvanet.conv5_3.data = layer1_data;
@@ -255,16 +280,19 @@ void forward_frcnn_7_1_1(void)
                  &pvanet.weight5_3, &pvanet.bias5_3,
                  temp_data, const_data, &conv_option2);
     relu_forward_inplace(&pvanet.conv5_3, &relu_option);
+    print_tensor_info("conv5_3", &pvanet.conv5_3);
 
     // upsample
     pvanet.upsample.data = layer2_data;
     deconv_forward(&pvanet.conv5_3, &pvanet.upsample,
                    &pvanet.weight_up, &pvanet.bias_up,
                    temp_data, const_data, &deconv_option);
+    print_tensor_info("upsample", &pvanet.upsample);
 
     // concat
     pvanet.concat.data = layer1_data;
     concat_forward(concat_bottoms, &pvanet.concat, 3);
+    print_tensor_info("concat", &pvanet.concat);
 
     // convf
     pvanet.convf.data = backup1_data;
@@ -273,6 +301,7 @@ void forward_frcnn_7_1_1(void)
                  &pvanet.weightf, &pvanet.biasf,
                  temp_data, const_data, &conv1x1_option);
     relu_forward_inplace(&pvanet.convf, &relu_option);
+    print_tensor_info("convf", &pvanet.convf);
   }
 
   // SRPN
@@ -284,6 +313,7 @@ void forward_frcnn_7_1_1(void)
                  &srpn.weight_c1, &srpn.bias_c1,
                  temp_data, const_data, &conv1x1_option);
     relu_forward_inplace(&srpn.conv1, &relu_option);
+    print_tensor_info("rpn_conv1", &srpn.conv1);
 
     // conv3
     srpn.conv3.data = layer2_data;
@@ -292,6 +322,7 @@ void forward_frcnn_7_1_1(void)
                  &srpn.weight_c3, &srpn.bias_c3,
                  temp_data, const_data, &conv_option2);
     relu_forward_inplace(&srpn.conv3, &relu_option);
+    print_tensor_info("rpn_conv3", &srpn.conv3);
 
     // conv5
     srpn.conv5.data = layer3_data;
@@ -300,56 +331,68 @@ void forward_frcnn_7_1_1(void)
                  &srpn.weight_c5, &srpn.bias_c5,
                  temp_data, const_data, &conv5x5_option);
     relu_forward_inplace(&srpn.conv5, &relu_option);
+    print_tensor_info("rpn_conv5", &srpn.conv5);
 
     // score1
     conv1x1_option.out_channels = 50;
     conv_forward(&srpn.conv1, &srpn.score1,
                  &srpn.weight_s1, &srpn.bias_s1,
                  temp_data, const_data, &conv1x1_option);
+    print_tensor_info("rpn_score1", &srpn.score1);
 
     // score3
     conv1x1_option.out_channels = 50;
     conv_forward(&srpn.conv3, &srpn.score3,
                  &srpn.weight_s3, &srpn.bias_s3,
                  temp_data, const_data, &conv1x1_option);
+    print_tensor_info("rpn_score3", &srpn.score3);
 
     // score5
     conv1x1_option.out_channels = 50;
     conv_forward(&srpn.conv5, &srpn.score5,
                  &srpn.weight_s5, &srpn.bias_s5,
                  temp_data, const_data, &conv1x1_option);
+    print_tensor_info("rpn_score5", &srpn.score5);
 
     // bbox1
     conv1x1_option.out_channels = 100;
     conv_forward(&srpn.conv1, &srpn.bbox1,
                  &srpn.weight_b1, &srpn.bias_b1,
                  temp_data, const_data, &conv1x1_option);
+    print_tensor_info("rpn_bbox1", &srpn.bbox1);
 
     // bbox3
     conv1x1_option.out_channels = 100;
     conv_forward(&srpn.conv3, &srpn.bbox3,
                  &srpn.weight_b3, &srpn.bias_b3,
                  temp_data, const_data, &conv1x1_option);
+    print_tensor_info("rpn_bbox3", &srpn.bbox3);
 
     // bbox5
     conv1x1_option.out_channels = 100;
     conv_forward(&srpn.conv5, &srpn.bbox5,
                  &srpn.weight_b5, &srpn.bias_b5,
                  temp_data, const_data, &conv1x1_option);
+    print_tensor_info("rpn_bbox5", &srpn.bbox5);
 
     // score
     srpn.score.data = layer1_data;
     concat_forward(score_bottoms, &srpn.score, 3);
+    print_tensor_info("rpn_score", &srpn.score);
 
     // pred
     srpn.pred.ndim = 3;
     srpn.pred.num_items = srpn.score.num_items;
-    srpn.pred.shape[0][0] = 2;
-    srpn.pred.shape[0][1]
-        = srpn.score.shape[0][0] / 2 * srpn.score.shape[0][1];
-    srpn.pred.shape[0][2] = srpn.score.shape[0][2];
+    for (int n = 0; n < srpn.score.num_items; ++n) {
+      srpn.pred.shape[n][0] = 2;
+      srpn.pred.shape[n][1]
+          = srpn.score.shape[n][0] / 2 * srpn.score.shape[n][1];
+      srpn.pred.shape[n][2] = srpn.score.shape[n][2];
+      srpn.pred.start[n] = srpn.score.start[n];
+    }
     srpn.pred.data = srpn.score.data;
     softmax_inplace_forward(&srpn.pred, temp_data);
+    print_tensor_info("rpn_pred", &srpn.pred);
 
     // pred reshape
     srpn.pred.ndim = 4;
@@ -360,10 +403,12 @@ void forward_frcnn_7_1_1(void)
       srpn.pred.shape[n][2] = srpn.score.shape[n][1];
       srpn.pred.shape[n][3] = srpn.score.shape[n][2];
     }
+    print_tensor_info("rpn_pred_reshape", &srpn.pred);
 
     // bbox
     srpn.bbox.data = layer2_data;
     concat_forward(bbox_bottoms, &srpn.bbox, 3);
+    print_tensor_info("rpn_bbox", &srpn.bbox);
     // bbox reshape
     srpn.bbox.ndim = 4;
     for (int n = 0; n < srpn.bbox.num_items; ++n) {
@@ -375,6 +420,7 @@ void forward_frcnn_7_1_1(void)
       srpn.bbox.shape[n][2] = H;
       srpn.bbox.shape[n][3] = W;
     }
+    print_tensor_info("rpn_bbox_reshape", &srpn.bbox);
 
     // proposal
     proposal_forward(&srpn.pred, &srpn.bbox, &srpn.img_info,
@@ -382,6 +428,8 @@ void forward_frcnn_7_1_1(void)
                      proposal_temp, proposal_tempint,
                      temp_data, tempint_data,
                      &proposal_option);
+    print_tensor_info("img_info", &srpn.img_info);
+    print_tensor_info("roi", &srpn.roi);
   }
 
   // R-CNN
@@ -390,6 +438,7 @@ void forward_frcnn_7_1_1(void)
     rcnn.roipool.data = layer1_data;
     roipool_forward(&pvanet.convf, &srpn.roi, &rcnn.roipool,
                     tempint_data, &roipool_option);
+    print_tensor_info("roipool", &rcnn.roipool);
 
     // roipool reshape
     {
@@ -406,7 +455,9 @@ void forward_frcnn_7_1_1(void)
       rcnn.roipool_flat.shape[0][1] = rcnn.roipool.shape[0][1]
                                       * rcnn.roipool.shape[0][2]
                                       * rcnn.roipool.shape[0][3];
+      rcnn.roipool_flat.start[0] = 0;
     }
+    print_tensor_info("roipool_flat", &rcnn.roipool_flat);
 
     // fc6
     rcnn.roipool_flat.data = rcnn.roipool.data;
@@ -416,6 +467,7 @@ void forward_frcnn_7_1_1(void)
     fc_forward(&rcnn.roipool_flat, &rcnn.fc6_1,
                &rcnn.weight6_1, &rcnn.bias6_2,
                const_data, &fc_option);
+    print_tensor_info("fc6_1", &rcnn.fc6_1);
 /*
     rcnn.fc6_2.data = layer1_data;
     fc_option.out_channels = 4096;
@@ -425,6 +477,7 @@ void forward_frcnn_7_1_1(void)
 */
     relu_forward_inplace(&rcnn.fc6_1, &relu_option);
     dropout_forward_inplace(&rcnn.fc6_1, NULL, &dropout_option);
+    print_tensor_info("fc6_2", &rcnn.fc6_2);
 
     // fc7
     rcnn.fc7_1.data = backup2_data;
@@ -432,6 +485,7 @@ void forward_frcnn_7_1_1(void)
     fc_option.bias = 1;
     fc_forward(&rcnn.fc6_1, &rcnn.fc7_1, &rcnn.weight7_1, &rcnn.bias7_2,
                const_data, &fc_option);
+    print_tensor_info("fc7_1", &rcnn.fc7_1);
 /*
     rcnn.fc7_2.data = layer1_data;
     fc_option.out_channels = 4096;
@@ -441,19 +495,27 @@ void forward_frcnn_7_1_1(void)
 */
     relu_forward_inplace(&rcnn.fc7_1, &relu_option);
     dropout_forward_inplace(&rcnn.fc7_1, NULL, &dropout_option);
+    print_tensor_info("fc7_2", &rcnn.fc7_2);
 
     // bbox
     rcnn.bbox.data = layer2_data;
     fc_option.out_channels = 84;
     fc_forward(&rcnn.fc7_1, &rcnn.bbox, &rcnn.weight_b, &rcnn.bias_b,
                const_data, &fc_option);
+    print_tensor_info("bbox", &rcnn.bbox);
     // bbox reshape
     rcnn.bbox.ndim = 3;
     rcnn.bbox.num_items = rcnn.roipool.num_items;
-    for (int n = 0; n < rcnn.roipool.num_items; ++n) {
-      rcnn.bbox.shape[n][0] = rcnn.roipool.shape[n][0];
-      rcnn.bbox.shape[n][1] = 21;
-      rcnn.bbox.shape[n][2] = 4;
+    {
+      int total_size = 0;
+      for (int n = 0; n < rcnn.roipool.num_items; ++n) {
+        const int item_size = rcnn.roipool.shape[n][0] * 21 * 4;
+        rcnn.bbox.shape[n][0] = rcnn.roipool.shape[n][0];
+        rcnn.bbox.shape[n][1] = 21;
+        rcnn.bbox.shape[n][2] = 4;
+        rcnn.bbox.start[n] = total_size;
+        total_size += item_size;
+      }
     }
 
     // score
@@ -461,25 +523,34 @@ void forward_frcnn_7_1_1(void)
     fc_option.out_channels = 21;
     fc_forward(&rcnn.fc7_1, &rcnn.score, &rcnn.weight_s, &rcnn.bias_s,
                const_data, &fc_option);
+    print_tensor_info("score", &rcnn.score);
 
     // pred
-    rcnn.pred.ndim = 3;
-    rcnn.pred.num_items = rcnn.roipool_flat.shape[0][0];
-    for (int n = 0; n < rcnn.pred.num_items; ++n) {
-      rcnn.pred.shape[n][0] = 21;
-      rcnn.pred.shape[n][1] = 1;
-      rcnn.pred.shape[n][2] = 1;
-    }
+    rcnn.pred.ndim = 4;
+    rcnn.pred.num_items = 1;
+    rcnn.pred.shape[0][0] = rcnn.roipool_flat.shape[0][0];
+    rcnn.pred.shape[0][1] = 21;
+    rcnn.pred.shape[0][2] = 1;
+    rcnn.pred.shape[0][3] = 1;
+    rcnn.pred.start[0] = 0;
     rcnn.pred.data = rcnn.score.data;
     softmax_inplace_forward(&rcnn.pred, temp_data);
+    print_tensor_info("pred", &rcnn.pred);
 
     // pred reshape
     rcnn.pred.ndim = 2;
     rcnn.pred.num_items = rcnn.roipool.num_items;
-    for (int n = 0; n < rcnn.pred.num_items; ++n) {
-      rcnn.pred.shape[n][0] = rcnn.roipool.shape[n][0];
-      rcnn.pred.shape[n][1] = 21;
+    {
+      int total_size = 0;
+      for (int n = 0; n < rcnn.roipool.num_items; ++n) {
+        const int item_size = rcnn.roipool.shape[n][0] * 21;
+        rcnn.pred.shape[n][0] = rcnn.roipool.shape[n][0];
+        rcnn.pred.shape[n][1] = 21;
+        rcnn.pred.start[n] = total_size;
+        total_size += item_size;
+      }
     }
+    print_tensor_info("pred", &rcnn.pred);
 
     rcnn.out.data = backup2_data;
     odout_forward(&rcnn.pred, &rcnn.bbox, &srpn.roi, &srpn.img_info,
@@ -487,6 +558,7 @@ void forward_frcnn_7_1_1(void)
                   proposal_temp, proposal_tempint,
                   temp_data, tempint_data,
                   &odout_option);
+    print_tensor_info("out", &rcnn.out);
   }
 }
 
@@ -771,10 +843,12 @@ void shape_frcnn_7_1_1(const int print_network_info)
     // pred
     srpn.pred.ndim = 3;
     srpn.pred.num_items = srpn.score.num_items;
-    srpn.pred.shape[0][0] = 2;
-    srpn.pred.shape[0][1]
-        = srpn.score.shape[0][0] / 2 * srpn.score.shape[0][1];
-    srpn.pred.shape[0][2] = srpn.score.shape[0][2];
+    for (int n = 0; n < srpn.score.num_items; ++n) {
+      srpn.pred.shape[n][0] = 2;
+      srpn.pred.shape[n][1] = srpn.score.shape[n][0] / 2;
+      srpn.pred.shape[n][2] = srpn.score.shape[n][1];
+      srpn.pred.shape[n][3] = srpn.score.shape[n][2];
+    }
 
     // pred reshape
     srpn.pred.ndim = 4;
@@ -806,6 +880,7 @@ void shape_frcnn_7_1_1(const int print_network_info)
     srpn.img_info.num_items = srpn.bbox.num_items;
     for (int n = 0; n < srpn.img_info.num_items; ++n) {
       srpn.img_info.shape[n][0] = 4;
+      srpn.img_info.start[n] = n * 4;
     }
 
     // proposal
@@ -1023,11 +1098,13 @@ void init_frcnn_7_1_1(void)
   }
 
   // calculate maximum size
-  pvanet.input.num_items = 10;
+  pvanet.input.num_items = 5;
   pvanet.input.ndim = 3;
-  pvanet.input.shape[0][0] = 3;
-  pvanet.input.shape[0][1] = 640;
-  pvanet.input.shape[0][2] = 1024;
+  for (int n = 0; n < pvanet.input.num_items; ++n) {
+    pvanet.input.shape[n][0] = 3;
+    pvanet.input.shape[n][1] = 640;
+    pvanet.input.shape[n][2] = 1024;
+  }
   shape_frcnn_7_1_1(1);
 
   // memory allocation
@@ -1036,6 +1113,12 @@ void init_frcnn_7_1_1(void)
     long int space_cpu = 0;
     // allocated size in GPU memory (GPU mode) or main memory (CPU mode)
     long int space = 0;
+
+    printf("Max layer size = %d\n", max_layer_size);
+    printf("Max param size = %d\n", max_param_size);
+    printf("Max temp size = %d\n", max_temp_size);
+    printf("Max tempint size = %d\n", max_tempint_size);
+    printf("Max const size = %d\n", max_const_size);
 
     // space for data loading
     {
@@ -1143,7 +1226,6 @@ void init_frcnn_7_1_1(void)
       space += malloc_tensor(&srpn.bbox1);
       space += malloc_tensor(&srpn.bbox3);
       space += malloc_tensor(&srpn.bbox5);
-      space += malloc_tensor(&srpn.img_info);
       space += malloc_tensor(&srpn.roi);
 
       // for convenience, img_info.data is always allocated in main memory
@@ -1279,6 +1361,57 @@ void init_frcnn_7_1_1(void)
   }
 }
 
+void frcnn_memset(void)
+{
+  memset(input_data, 0, flatten_size(&pvanet.input) * sizeof(real));
+  memset(output_data, 0, max_layer_size * sizeof(real));
+  memset(true_data, 0, max_layer_size * sizeof(real));
+  memset(param_data, 0, max_param_size * sizeof(real));
+
+  #ifdef GPU
+  cudaMemset(layer1_data, 0, max_layer_size * sizeof(real));
+  cudaMemset(layer2_data, 0, max_layer_size * sizeof(real));
+  cudaMemset(layer3_data, 0, max_layer_size * sizeof(real));
+  cudaMemset(temp_data, 0, max_temp_size * sizeof(real));
+  cudaMemset(const_data, 0, max_const_size * sizeof(real));
+  cudaMemset(tempint_data, 0, max_tempint_size * sizeof(int));
+  cudaMemset(backup1_data, 0, max_layer_size * sizeof(real));
+  cudaMemset(backup2_data, 0, max_layer_size * sizeof(real));
+  #else
+  memset(layer1_data, 0, max_layer_size * sizeof(real));
+  memset(layer2_data, 0, max_layer_size * sizeof(real));
+  memset(layer3_data, 0, max_layer_size * sizeof(real));
+  memset(temp_data, 0, max_temp_size * sizeof(real));
+  memset(const_data, 0, max_const_size * sizeof(real));
+  memset(tempint_data, 0, max_tempint_size * sizeof(int));
+  memset(backup1_data, 0, max_layer_size * sizeof(real));
+  memset(backup2_data, 0, max_layer_size * sizeof(real));
+  #endif
+
+  memset(proposal_temp, 0, max_temp_size * sizeof(real));
+  memset(proposal_tempint, 0, max_tempint_size * sizeof(int));
+
+  #ifdef GPU
+  cudaMemset(srpn.score1.data, 0, flatten_size(&srpn.score1) * sizeof(real));
+  cudaMemset(srpn.score3.data, 0, flatten_size(&srpn.score3) * sizeof(real));
+  cudaMemset(srpn.score5.data, 0, flatten_size(&srpn.score5) * sizeof(real));
+  cudaMemset(srpn.bbox1.data, 0, flatten_size(&srpn.bbox1) * sizeof(real));
+  cudaMemset(srpn.bbox3.data, 0, flatten_size(&srpn.bbox3) * sizeof(real));
+  cudaMemset(srpn.bbox5.data, 0, flatten_size(&srpn.bbox5) * sizeof(real));
+  cudaMemset(srpn.roi.data, 0, flatten_size(&srpn.roi) * sizeof(real));
+  #else
+  memset(srpn.score1.data, 0, flatten_size(&srpn.score1) * sizeof(real));
+  memset(srpn.score3.data, 0, flatten_size(&srpn.score3) * sizeof(real));
+  memset(srpn.score5.data, 0, flatten_size(&srpn.score5) * sizeof(real));
+  memset(srpn.bbox1.data, 0, flatten_size(&srpn.bbox1) * sizeof(real));
+  memset(srpn.bbox3.data, 0, flatten_size(&srpn.bbox3) * sizeof(real));
+  memset(srpn.bbox5.data, 0, flatten_size(&srpn.bbox5) * sizeof(real));
+  memset(srpn.roi.data, 0, flatten_size(&srpn.roi) * sizeof(real));
+  #endif
+
+  memset(srpn.img_info.data, 0, flatten_size(&srpn.img_info) * sizeof(real));
+}
+
 void prepare_input(const char* const filename[], const int num_images)
 {
   pvanet.input.data = input_data;
@@ -1300,8 +1433,6 @@ void prepare_input(const char* const filename[], const int num_images)
   memcpy(layer1_data, input_data,
          flatten_size(&pvanet.input) * sizeof(real));
   #endif
-
-  printf("done\n");
 
   // network reshape
   shape_frcnn_7_1_1(0);
@@ -1332,10 +1463,35 @@ int main(int argc, char* argv[])
   init_frcnn_7_1_1();
 
   // input data loading
-  prepare_input(&argv[1], 2);
-
+  prepare_input((const char * const *)&argv[1], argc - 1);
 
   // forward-pass
+  printf("forward-pass start\n");
+  forward_frcnn_7_1_1();
+  printf("forward-pass end\n");
+  //frcnn_memset();
+  //prepare_input((const char * const *)&argv[1], argc - 1);
+  #ifdef GPU
+  cudaMemcpyAsync(layer1_data, input_data,
+                  flatten_size(&pvanet.input) * sizeof(real),
+                  cudaMemcpyHostToDevice);
+  #else
+  memcpy(layer1_data, input_data,
+         flatten_size(&pvanet.input) * sizeof(real));
+  #endif
+  printf("forward-pass start\n");
+  forward_frcnn_7_1_1();
+  printf("forward-pass end\n");
+  //frcnn_memset();
+  //prepare_input((const char * const *)&argv[1], argc - 1);
+  #ifdef GPU
+  cudaMemcpyAsync(layer1_data, input_data,
+                  flatten_size(&pvanet.input) * sizeof(real),
+                  cudaMemcpyHostToDevice);
+  #else
+  memcpy(layer1_data, input_data,
+         flatten_size(&pvanet.input) * sizeof(real));
+  #endif
   printf("forward-pass start\n");
   forward_frcnn_7_1_1();
   printf("forward-pass end\n");
@@ -1462,6 +1618,8 @@ int main(int argc, char* argv[])
 
     if (proposal_temp) free(proposal_temp);
     if (proposal_tempint) free(proposal_tempint);
+
+    if (srpn.img_info.data) free(srpn.img_info.data);
   }
   #ifdef GPU
   {
@@ -1535,7 +1693,6 @@ int main(int argc, char* argv[])
     cudaFree(srpn.bbox1.data);
     cudaFree(srpn.bbox3.data);
     cudaFree(srpn.bbox5.data);
-    cudaFree(srpn.img_info.data);
     cudaFree(srpn.roi.data);
 
     cudaFree(rcnn.weight6_1.data);
@@ -1616,7 +1773,6 @@ int main(int argc, char* argv[])
     free(srpn.bbox1.data);
     free(srpn.bbox3.data);
     free(srpn.bbox5.data);
-    free(srpn.img_info.data);
     free(srpn.roi.data);
 
     free(rcnn.weight6_1.data);

@@ -1,0 +1,2 @@
+./frcnn_gpu.bin ../data/voc/2007/VOC2007/JPEGImages/000004.jpg ../data/voc/2007/VOC2007/JPEGImages/000003.jpg ../data/voc/2007/VOC2007/JPEGImages/000002.jpg ../data/voc/2007/VOC2007/JPEGImages/000001.jpg
+#../data/voc/2007/VOC2007/JPEGImages/000004.jpg ../data/voc/2007/VOC2007/JPEGImages/000005.jpg ../data/voc/2007/VOC2007/JPEGImages/000004.jpg ../data/voc/2007/VOC2007/JPEGImages/000005.jpg ../data/voc/2007/VOC2007/JPEGImages/000004.jpg ../data/voc/2007/VOC2007/JPEGImages/000005.jpg ../data/voc/2007/VOC2007/JPEGImages/000001.jpg ../data/voc/2007/VOC2007/JPEGImages/000004.jpg

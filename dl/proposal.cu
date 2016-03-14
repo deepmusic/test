@@ -551,6 +551,7 @@ void proposal_forward(const Tensor* const bottom4d,
       // set top shape: num_rois x 4,  (x1, y1, x2, y2) for each RoI
       top2d->shape[n][0] = num_rois;
       top2d->shape[n][1] = 4;
+      top2d->start[n] = top2d->shape[n][0] * top2d->shape[n][1];
     }
 
     // locate next item
@@ -597,6 +598,7 @@ void proposal_shape(const Tensor* const bottom4d,
     //   exact row size will be determined after forward-pass
     top2d->shape[n][0] = option->post_nms_topn;
     top2d->shape[n][1] = 4;
+    top2d->start[n] = top2d->shape[n][0] * top2d->shape[n][1];
   }
 
   // temporary space size

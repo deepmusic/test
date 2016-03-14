@@ -416,6 +416,14 @@ void odout_forward(const Tensor* const bottom2d,
 
   top2d->ndim = 2;
   top2d->num_items = bottom2d->num_items;
+  {
+    int total_size = 0;
+    for (int n = 0; n < bottom2d->num_items; ++n) {
+      const int top_size = top2d->shape[n][0] * top2d->shape[n][1];
+      top2d->start[n] = total_size;
+      total_size += top_size;
+    }
+  }
 }
 
 void odout_shape(const Tensor* const bottom2d,
@@ -439,6 +447,7 @@ void odout_shape(const Tensor* const bottom2d,
     //   exact number of outputs will be determined after forward-pass
     top2d->shape[n][0] = num_rois;
     top2d->shape[n][1] = 6;
+    top2d->start[n] = num_rois * 6;
   }
 
   // temporary space size
