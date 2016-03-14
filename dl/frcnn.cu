@@ -411,24 +411,26 @@ void forward_frcnn_7_1_1(void)
     // fc6
     rcnn.roipool_flat.data = rcnn.roipool.data;
     rcnn.fc6_1.data = layer2_data;
-    fc_option.out_channels = 512;
-    fc_option.bias = 0;
+    fc_option.out_channels = 4096;
+    fc_option.bias = 1;
     fc_forward(&rcnn.roipool_flat, &rcnn.fc6_1,
-               &rcnn.weight6_1, &rcnn.bias6_1,
+               &rcnn.weight6_1, &rcnn.bias6_2,
                const_data, &fc_option);
+/*
     rcnn.fc6_2.data = layer1_data;
     fc_option.out_channels = 4096;
     fc_option.bias = 1;
     fc_forward(&rcnn.fc6_1, &rcnn.fc6_2, &rcnn.weight6_2, &rcnn.bias6_2,
                const_data, &fc_option);
-    relu_forward_inplace(&rcnn.fc6_2, &relu_option);
-    dropout_forward_inplace(&rcnn.fc6_2, NULL, &dropout_option);
+*/
+    relu_forward_inplace(&rcnn.fc6_1, &relu_option);
+    dropout_forward_inplace(&rcnn.fc6_1, NULL, &dropout_option);
 
     // fc7
-    rcnn.fc7_1.data = layer2_data;
+    rcnn.fc7_1.data = backup2_data;
     fc_option.out_channels = 4096;
     fc_option.bias = 1;
-    fc_forward(&rcnn.fc6_2, &rcnn.fc7_1, &rcnn.weight7_1, &rcnn.bias7_2,
+    fc_forward(&rcnn.fc6_1, &rcnn.fc7_1, &rcnn.weight7_1, &rcnn.bias7_2,
                const_data, &fc_option);
 /*
     rcnn.fc7_2.data = layer1_data;
@@ -441,7 +443,7 @@ void forward_frcnn_7_1_1(void)
     dropout_forward_inplace(&rcnn.fc7_1, NULL, &dropout_option);
 
     // bbox
-    rcnn.bbox.data = layer1_data;
+    rcnn.bbox.data = layer2_data;
     fc_option.out_channels = 84;
     fc_forward(&rcnn.fc7_1, &rcnn.bbox, &rcnn.weight_b, &rcnn.bias_b,
                const_data, &fc_option);
@@ -858,15 +860,15 @@ void shape_frcnn_7_1_1(const int print_network_info)
     }
 
     // fc6_1
-    fc_option.out_channels = 512;
-    fc_option.bias = 0;
+    fc_option.out_channels = 4096;
+    fc_option.bias = 1;
     fc_shape(&rcnn.roipool_flat, &rcnn.fc6_1,
-             &rcnn.weight6_1, &rcnn.bias6_1,
+             &rcnn.weight6_1, &rcnn.bias6_2,
              &const_size, &fc_option);
     max_layer_size = MAX(max_layer_size,  flatten_size(&rcnn.fc6_1));
     max_param_size = MAX(max_param_size,  flatten_size(&rcnn.weight6_1));
     max_const_size = MAX(max_const_size,  const_size);
-
+/*
     // fc6_2
     fc_option.out_channels = 4096;
     fc_option.bias = 1;
@@ -875,11 +877,11 @@ void shape_frcnn_7_1_1(const int print_network_info)
     max_layer_size = MAX(max_layer_size,  flatten_size(&rcnn.fc6_2));
     max_param_size = MAX(max_param_size,  flatten_size(&rcnn.weight6_2));
     max_const_size = MAX(max_const_size,  const_size);
-
+*/
     // fc7_1
     fc_option.out_channels = 4096;
     fc_option.bias = 1;
-    fc_shape(&rcnn.fc6_2, &rcnn.fc7_1, &rcnn.weight7_1, &rcnn.bias7_2,
+    fc_shape(&rcnn.fc6_1, &rcnn.fc7_1, &rcnn.weight7_1, &rcnn.bias7_2,
              &const_size, &fc_option);
     max_layer_size = MAX(max_layer_size,  flatten_size(&rcnn.fc7_1));
     max_param_size = MAX(max_param_size,  flatten_size(&rcnn.weight7_1));
@@ -1153,7 +1155,7 @@ void init_frcnn_7_1_1(void)
     // RCNN parameters
     {
       space += malloc_tensor(&rcnn.weight6_1);
-      space += malloc_tensor(&rcnn.weight6_2);
+      //space += malloc_tensor(&rcnn.weight6_2);
       space += malloc_tensor(&rcnn.bias6_2);
       space += malloc_tensor(&rcnn.weight7_1);
       //space += malloc_tensor(&rcnn.weight7_2);
@@ -1264,8 +1266,8 @@ void init_frcnn_7_1_1(void)
 
   // RCNN parameter loading
   {
-    load_tensor("../data/temp/fc6_1_param0.bin", &rcnn.weight6_1);
-    load_tensor("../data/temp/fc6_2_param0.bin", &rcnn.weight6_2);
+    load_tensor("../data/temp/fc6_param0.bin", &rcnn.weight6_1);
+    //load_tensor("../data/temp/fc6_2_param0.bin", &rcnn.weight6_2);
     load_tensor("../data/temp/fc6_param1.bin", &rcnn.bias6_2);
     load_tensor("../data/temp/fc7_param0.bin", &rcnn.weight7_1);
     //load_tensor("../data/temp/fc7_2_param0.bin", &rcnn.weight7_2);
@@ -1427,6 +1429,9 @@ int main(int argc, char* argv[])
   // forward-pass
   printf("forward-pass start\n");
   forward_frcnn_7_1_1();
+  forward_frcnn_7_1_1();
+  forward_frcnn_7_1_1();
+  forward_frcnn_7_1_1();
   printf("forward-pass end\n");
 
   // retrieve output
@@ -1449,6 +1454,7 @@ int main(int argc, char* argv[])
   }
 
   // load true output
+  #ifdef PASS
   {
     const int output1_size = flatten_size(&rcnn.pred);
     int ndim;
@@ -1458,6 +1464,7 @@ int main(int argc, char* argv[])
     load_data("../data/temp/bbox_pred_top0.bin",
               &ndim, shape, true_data + output1_size);
   }
+  #endif
 
   // verify results
   #ifdef PASS
@@ -1626,7 +1633,7 @@ int main(int argc, char* argv[])
     cudaFree(srpn.roi.data);
 
     cudaFree(rcnn.weight6_1.data);
-    cudaFree(rcnn.weight6_2.data);
+    //cudaFree(rcnn.weight6_2.data);
     cudaFree(rcnn.bias6_2.data);
     cudaFree(rcnn.weight7_1.data);
     //cudaFree(rcnn.weight7_2.data);
@@ -1707,7 +1714,7 @@ int main(int argc, char* argv[])
     free(srpn.roi.data);
 
     free(rcnn.weight6_1.data);
-    free(rcnn.weight6_2.data);
+    //free(rcnn.weight6_2.data);
     free(rcnn.bias6_2.data);
     free(rcnn.weight7_1.data);
     //free(rcnn.weight7_2.data);

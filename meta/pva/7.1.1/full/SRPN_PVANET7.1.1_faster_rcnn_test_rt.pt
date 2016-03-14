@@ -41,7 +41,7 @@ input_shape {
 input: "im_info"
 input_shape {
   dim: 1
-  dim: 3
+  dim: 4
 }
 
 #ConvNet
