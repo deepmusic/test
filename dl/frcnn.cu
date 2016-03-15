@@ -93,66 +93,6 @@ real anchor_ratios[5] = { 0.5f, 0.666f, 1.0f, 1.5f, 2.0f };
 real* proposal_temp = NULL;
 int* proposal_tempint = NULL;
 
-void load_tensor(const char* filename, Tensor* const tensor)
-{
-  int ndim;
-  int shape[g_max_ndim];
-
-  {
-  #ifdef GPU
-    int data_size = 1;
-    load_data(filename, &ndim, shape, param_data);
-    for (int i = 0; i < ndim; ++i) {
-      data_size *= shape[i];
-    }
-    if (data_size != flatten_size(tensor)) {
-      printf("[ERROR] Size mismatch: %s (%d) != tensor (%d)\n",
-             filename, data_size, flatten_size(tensor));
-    }
-    cudaMemcpyAsync(tensor->data, param_data, data_size * sizeof(real),
-                    cudaMemcpyHostToDevice);
-  #else
-    load_data(filename, &ndim, shape, tensor->data);
-  #endif
-  }
-}
-
-int malloc_tensor(Tensor* const tensor)
-{
-  const int data_size = flatten_size(tensor);
-
-  #ifdef GPU
-  cudaMalloc(&tensor->data, data_size * sizeof(real));
-  #else
-  tensor->data = (real*)malloc(data_size * sizeof(real));
-  #endif
-
-  return data_size * sizeof(real);
-}
-
-void print_tensor_info(const char* name, const Tensor* const tensor)
-{
-  return;
-  printf("%s: ", name);
-  if (tensor->num_items > 1) {
-    printf("batch size = %d\n", tensor->num_items);
-    for (int n = 0; n < tensor->num_items; ++n) {
-      printf("  ");
-      for (int i = 0; i < tensor->ndim - 1; ++i) {
-        printf("%d x ", tensor->shape[n][i]);
-      }
-      printf("%d, ", tensor->shape[n][tensor->ndim - 1]);
-      printf("start = %d\n", tensor->start[n]);
-    }
-  }
-  else {
-    for (int i = 0; i < tensor->ndim - 1; ++i) {
-      printf("%d x ", tensor->shape[0][i]);
-    }
-    printf("%d\n", tensor->shape[0][tensor->ndim - 1]);
-  }
-}
-
 void forward_frcnn_7_1_1(void)
 {
   // PVANET
@@ -462,28 +402,28 @@ void forward_frcnn_7_1_1(void)
     // fc6
     rcnn.roipool_flat.data = rcnn.roipool.data;
     rcnn.fc6_1.data = layer2_data;
-    fc_option.out_channels = 4096;
-    fc_option.bias = 1;
+    fc_option.out_channels = 512;
+    fc_option.bias = 0;
     fc_forward(&rcnn.roipool_flat, &rcnn.fc6_1,
-               &rcnn.weight6_1, &rcnn.bias6_2,
+               &rcnn.weight6_1, &rcnn.bias6_1,
                const_data, &fc_option);
     print_tensor_info("fc6_1", &rcnn.fc6_1);
-/*
+
     rcnn.fc6_2.data = layer1_data;
     fc_option.out_channels = 4096;
     fc_option.bias = 1;
     fc_forward(&rcnn.fc6_1, &rcnn.fc6_2, &rcnn.weight6_2, &rcnn.bias6_2,
                const_data, &fc_option);
-*/
-    relu_forward_inplace(&rcnn.fc6_1, &relu_option);
-    dropout_forward_inplace(&rcnn.fc6_1, NULL, &dropout_option);
+
+    relu_forward_inplace(&rcnn.fc6_2, &relu_option);
+    dropout_forward_inplace(&rcnn.fc6_2, NULL, &dropout_option);
     print_tensor_info("fc6_2", &rcnn.fc6_2);
 
     // fc7
     rcnn.fc7_1.data = backup2_data;
     fc_option.out_channels = 4096;
     fc_option.bias = 1;
-    fc_forward(&rcnn.fc6_1, &rcnn.fc7_1, &rcnn.weight7_1, &rcnn.bias7_2,
+    fc_forward(&rcnn.fc6_2, &rcnn.fc7_1, &rcnn.weight7_1, &rcnn.bias7_2,
                const_data, &fc_option);
     print_tensor_info("fc7_1", &rcnn.fc7_1);
 /*
@@ -935,15 +875,15 @@ void shape_frcnn_7_1_1(const int print_network_info)
     }
 
     // fc6_1
-    fc_option.out_channels = 4096;
-    fc_option.bias = 1;
+    fc_option.out_channels = 512;
+    fc_option.bias = 0;
     fc_shape(&rcnn.roipool_flat, &rcnn.fc6_1,
-             &rcnn.weight6_1, &rcnn.bias6_2,
+             &rcnn.weight6_1, &rcnn.bias6_1,
              &const_size, &fc_option);
     max_layer_size = MAX(max_layer_size,  flatten_size(&rcnn.fc6_1));
     max_param_size = MAX(max_param_size,  flatten_size(&rcnn.weight6_1));
     max_const_size = MAX(max_const_size,  const_size);
-/*
+
     // fc6_2
     fc_option.out_channels = 4096;
     fc_option.bias = 1;
@@ -952,11 +892,11 @@ void shape_frcnn_7_1_1(const int print_network_info)
     max_layer_size = MAX(max_layer_size,  flatten_size(&rcnn.fc6_2));
     max_param_size = MAX(max_param_size,  flatten_size(&rcnn.weight6_2));
     max_const_size = MAX(max_const_size,  const_size);
-*/
+
     // fc7_1
     fc_option.out_channels = 4096;
     fc_option.bias = 1;
-    fc_shape(&rcnn.fc6_1, &rcnn.fc7_1, &rcnn.weight7_1, &rcnn.bias7_2,
+    fc_shape(&rcnn.fc6_2, &rcnn.fc7_1, &rcnn.weight7_1, &rcnn.bias7_2,
              &const_size, &fc_option);
     max_layer_size = MAX(max_layer_size,  flatten_size(&rcnn.fc7_1));
     max_param_size = MAX(max_param_size,  flatten_size(&rcnn.weight7_1));
@@ -1025,7 +965,7 @@ void shape_frcnn_7_1_1(const int print_network_info)
   }
 }
 
-void init_frcnn_7_1_1(void)
+void construct_frcnn_7_1_1(void)
 {
   // set fixed options
   {
@@ -1098,12 +1038,13 @@ void init_frcnn_7_1_1(void)
   }
 
   // calculate maximum size
-  pvanet.input.num_items = 5;
+  pvanet.input.num_items = 4;
   pvanet.input.ndim = 3;
   for (int n = 0; n < pvanet.input.num_items; ++n) {
     pvanet.input.shape[n][0] = 3;
     pvanet.input.shape[n][1] = 640;
     pvanet.input.shape[n][2] = 1024;
+    pvanet.input.start[n] = n * 3 * 640 * 1024;
   }
   shape_frcnn_7_1_1(1);
 
@@ -1237,7 +1178,7 @@ void init_frcnn_7_1_1(void)
     // RCNN parameters
     {
       space += malloc_tensor(&rcnn.weight6_1);
-      //space += malloc_tensor(&rcnn.weight6_2);
+      space += malloc_tensor(&rcnn.weight6_2);
       space += malloc_tensor(&rcnn.bias6_2);
       space += malloc_tensor(&rcnn.weight7_1);
       //space += malloc_tensor(&rcnn.weight7_2);
@@ -1293,72 +1234,88 @@ void init_frcnn_7_1_1(void)
 
   // PVANET parameter loading
   {
-    load_tensor("../data/temp/conv1_1_param0.bin", &pvanet.weight1_1);
-    load_tensor("../data/temp/conv1_1_param1.bin", &pvanet.bias1_1);
-    load_tensor("../data/temp/conv1_2_param0.bin", &pvanet.weight1_2);
-    load_tensor("../data/temp/conv1_2_param1.bin", &pvanet.bias1_2);
-    load_tensor("../data/temp/conv2_1_param0.bin", &pvanet.weight2_1);
-    load_tensor("../data/temp/conv2_1_param1.bin", &pvanet.bias2_1);
-    load_tensor("../data/temp/conv2_2_param0.bin", &pvanet.weight2_2);
-    load_tensor("../data/temp/conv2_2_param1.bin", &pvanet.bias2_2);
-    load_tensor("../data/temp/conv3_1_param0.bin", &pvanet.weight3_1);
-    load_tensor("../data/temp/conv3_1_param1.bin", &pvanet.bias3_1);
-    load_tensor("../data/temp/conv3_2_param0.bin", &pvanet.weight3_2);
-    load_tensor("../data/temp/conv3_2_param1.bin", &pvanet.bias3_2);
-    load_tensor("../data/temp/conv3_3_param0.bin", &pvanet.weight3_3);
-    load_tensor("../data/temp/conv3_3_param1.bin", &pvanet.bias3_3);
-    load_tensor("../data/temp/conv4_1_param0.bin", &pvanet.weight4_1);
-    load_tensor("../data/temp/conv4_1_param1.bin", &pvanet.bias4_1);
-    load_tensor("../data/temp/conv4_2_param0.bin", &pvanet.weight4_2);
-    load_tensor("../data/temp/conv4_2_param1.bin", &pvanet.bias4_2);
-    load_tensor("../data/temp/conv4_3_param0.bin", &pvanet.weight4_3);
-    load_tensor("../data/temp/conv4_3_param1.bin", &pvanet.bias4_3);
-    load_tensor("../data/temp/conv5_1_param0.bin", &pvanet.weight5_1);
-    load_tensor("../data/temp/conv5_1_param1.bin", &pvanet.bias5_1);
-    load_tensor("../data/temp/conv5_2_param0.bin", &pvanet.weight5_2);
-    load_tensor("../data/temp/conv5_2_param1.bin", &pvanet.bias5_2);
-    load_tensor("../data/temp/conv5_3_param0.bin", &pvanet.weight5_3);
-    load_tensor("../data/temp/conv5_3_param1.bin", &pvanet.bias5_3);
-    load_tensor("../data/temp/upsample_param0.bin", &pvanet.weight_up);
-    load_tensor("../data/temp/convf_param0.bin", &pvanet.weightf);
-    load_tensor("../data/temp/convf_param1.bin", &pvanet.biasf);
+    load_tensor("../data/temp/conv1_1_param0.bin", &pvanet.weight1_1, param_data);
+    load_tensor("../data/temp/conv1_1_param1.bin", &pvanet.bias1_1, param_data);
+    load_tensor("../data/temp/conv1_2_param0.bin", &pvanet.weight1_2, param_data);
+    load_tensor("../data/temp/conv1_2_param1.bin", &pvanet.bias1_2, param_data);
+    load_tensor("../data/temp/conv2_1_param0.bin", &pvanet.weight2_1, param_data);
+    load_tensor("../data/temp/conv2_1_param1.bin", &pvanet.bias2_1, param_data);
+    load_tensor("../data/temp/conv2_2_param0.bin", &pvanet.weight2_2, param_data);
+    load_tensor("../data/temp/conv2_2_param1.bin", &pvanet.bias2_2, param_data);
+    load_tensor("../data/temp/conv3_1_param0.bin", &pvanet.weight3_1, param_data);
+    load_tensor("../data/temp/conv3_1_param1.bin", &pvanet.bias3_1, param_data);
+    load_tensor("../data/temp/conv3_2_param0.bin", &pvanet.weight3_2, param_data);
+    load_tensor("../data/temp/conv3_2_param1.bin", &pvanet.bias3_2, param_data);
+    load_tensor("../data/temp/conv3_3_param0.bin", &pvanet.weight3_3, param_data);
+    load_tensor("../data/temp/conv3_3_param1.bin", &pvanet.bias3_3, param_data);
+    load_tensor("../data/temp/conv4_1_param0.bin", &pvanet.weight4_1, param_data);
+    load_tensor("../data/temp/conv4_1_param1.bin", &pvanet.bias4_1, param_data);
+    load_tensor("../data/temp/conv4_2_param0.bin", &pvanet.weight4_2, param_data);
+    load_tensor("../data/temp/conv4_2_param1.bin", &pvanet.bias4_2, param_data);
+    load_tensor("../data/temp/conv4_3_param0.bin", &pvanet.weight4_3, param_data);
+    load_tensor("../data/temp/conv4_3_param1.bin", &pvanet.bias4_3, param_data);
+    load_tensor("../data/temp/conv5_1_param0.bin", &pvanet.weight5_1, param_data);
+    load_tensor("../data/temp/conv5_1_param1.bin", &pvanet.bias5_1, param_data);
+    load_tensor("../data/temp/conv5_2_param0.bin", &pvanet.weight5_2, param_data);
+    load_tensor("../data/temp/conv5_2_param1.bin", &pvanet.bias5_2, param_data);
+    load_tensor("../data/temp/conv5_3_param0.bin", &pvanet.weight5_3, param_data);
+    load_tensor("../data/temp/conv5_3_param1.bin", &pvanet.bias5_3, param_data);
+    load_tensor("../data/temp/upsample_param0.bin", &pvanet.weight_up, param_data);
+    load_tensor("../data/temp/convf_param0.bin", &pvanet.weightf, param_data);
+    load_tensor("../data/temp/convf_param1.bin", &pvanet.biasf, param_data);
   }
 
   // SRPN parameter loading
   {
-    load_tensor("../data/temp/rpn_conv1_param0.bin", &srpn.weight_c1);
-    load_tensor("../data/temp/rpn_conv1_param1.bin", &srpn.bias_c1);
-    load_tensor("../data/temp/rpn_conv3_param0.bin", &srpn.weight_c3);
-    load_tensor("../data/temp/rpn_conv3_param1.bin", &srpn.bias_c3);
-    load_tensor("../data/temp/rpn_conv5_param0.bin", &srpn.weight_c5);
-    load_tensor("../data/temp/rpn_conv5_param1.bin", &srpn.bias_c5);
-    load_tensor("../data/temp/rpn_cls_score1_param0.bin", &srpn.weight_s1);
-    load_tensor("../data/temp/rpn_cls_score1_param1.bin", &srpn.bias_s1);
-    load_tensor("../data/temp/rpn_cls_score3_param0.bin", &srpn.weight_s3);
-    load_tensor("../data/temp/rpn_cls_score3_param1.bin", &srpn.bias_s3);
-    load_tensor("../data/temp/rpn_cls_score5_param0.bin", &srpn.weight_s5);
-    load_tensor("../data/temp/rpn_cls_score5_param1.bin", &srpn.bias_s5);
-    load_tensor("../data/temp/rpn_bbox_pred1_param0.bin", &srpn.weight_b1);
-    load_tensor("../data/temp/rpn_bbox_pred1_param1.bin", &srpn.bias_b1);
-    load_tensor("../data/temp/rpn_bbox_pred3_param0.bin", &srpn.weight_b3);
-    load_tensor("../data/temp/rpn_bbox_pred3_param1.bin", &srpn.bias_b3);
-    load_tensor("../data/temp/rpn_bbox_pred5_param0.bin", &srpn.weight_b5);
-    load_tensor("../data/temp/rpn_bbox_pred5_param1.bin", &srpn.bias_b5);
+    load_tensor("../data/temp/rpn_conv1_param0.bin", &srpn.weight_c1, param_data);
+    load_tensor("../data/temp/rpn_conv1_param1.bin", &srpn.bias_c1, param_data);
+    load_tensor("../data/temp/rpn_conv3_param0.bin", &srpn.weight_c3, param_data);
+    load_tensor("../data/temp/rpn_conv3_param1.bin", &srpn.bias_c3, param_data);
+    load_tensor("../data/temp/rpn_conv5_param0.bin", &srpn.weight_c5, param_data);
+    load_tensor("../data/temp/rpn_conv5_param1.bin", &srpn.bias_c5, param_data);
+    load_tensor("../data/temp/rpn_cls_score1_param0.bin", &srpn.weight_s1, param_data);
+    load_tensor("../data/temp/rpn_cls_score1_param1.bin", &srpn.bias_s1, param_data);
+    load_tensor("../data/temp/rpn_cls_score3_param0.bin", &srpn.weight_s3, param_data);
+    load_tensor("../data/temp/rpn_cls_score3_param1.bin", &srpn.bias_s3, param_data);
+    load_tensor("../data/temp/rpn_cls_score5_param0.bin", &srpn.weight_s5, param_data);
+    load_tensor("../data/temp/rpn_cls_score5_param1.bin", &srpn.bias_s5, param_data);
+    load_tensor("../data/temp/rpn_bbox_pred1_param0.bin", &srpn.weight_b1, param_data);
+    load_tensor("../data/temp/rpn_bbox_pred1_param1.bin", &srpn.bias_b1, param_data);
+    load_tensor("../data/temp/rpn_bbox_pred3_param0.bin", &srpn.weight_b3, param_data);
+    load_tensor("../data/temp/rpn_bbox_pred3_param1.bin", &srpn.bias_b3, param_data);
+    load_tensor("../data/temp/rpn_bbox_pred5_param0.bin", &srpn.weight_b5, param_data);
+    load_tensor("../data/temp/rpn_bbox_pred5_param1.bin", &srpn.bias_b5, param_data);
   }
 
   // RCNN parameter loading
   {
-    load_tensor("../data/temp/fc6_param0.bin", &rcnn.weight6_1);
-    //load_tensor("../data/temp/fc6_2_param0.bin", &rcnn.weight6_2);
-    load_tensor("../data/temp/fc6_param1.bin", &rcnn.bias6_2);
-    load_tensor("../data/temp/fc7_param0.bin", &rcnn.weight7_1);
-    //load_tensor("../data/temp/fc7_2_param0.bin", &rcnn.weight7_2);
-    load_tensor("../data/temp/fc7_param1.bin", &rcnn.bias7_2);
-    load_tensor("../data/temp/cls_score_param0.bin", &rcnn.weight_s);
-    load_tensor("../data/temp/cls_score_param1.bin", &rcnn.bias_s);
-    load_tensor("../data/temp/bbox_pred_param0.bin", &rcnn.weight_b);
-    load_tensor("../data/temp/bbox_pred_param1.bin", &rcnn.bias_b);
+    load_tensor("../data/temp/fc6_1_param0.bin", &rcnn.weight6_1, param_data);
+    load_tensor("../data/temp/fc6_2_param0.bin", &rcnn.weight6_2, param_data);
+    load_tensor("../data/temp/fc6_param1.bin", &rcnn.bias6_2, param_data);
+    load_tensor("../data/temp/fc7_param0.bin", &rcnn.weight7_1, param_data);
+    //load_tensor("../data/temp/fc7_2_param0.bin", &rcnn.weight7_2, param_data);
+    load_tensor("../data/temp/fc7_param1.bin", &rcnn.bias7_2, param_data);
+    load_tensor("../data/temp/cls_score_param0.bin", &rcnn.weight_s, param_data);
+    load_tensor("../data/temp/cls_score_param1.bin", &rcnn.bias_s, param_data);
+    load_tensor("../data/temp/bbox_pred_param0.bin", &rcnn.weight_b, param_data);
+    load_tensor("../data/temp/bbox_pred_param1.bin", &rcnn.bias_b, param_data);
   }
+
+  // acquire CuBLAS handle
+  #ifdef GPU
+  {
+    conv_option1.handle = (cublasHandle_t*)malloc(sizeof(cublasHandle_t));
+    if (cublasCreate((cublasHandle_t*)conv_option1.handle)
+          != CUBLAS_STATUS_SUCCESS) {
+      printf("cublas creation failed\n");
+    }
+    conv_option2.handle = conv_option1.handle;
+    conv1x1_option.handle = conv_option1.handle;
+    conv5x5_option.handle = conv_option1.handle;
+    deconv_option.handle = conv_option1.handle;
+    fc_option.handle = conv_option1.handle;
+  }
+  #endif
 }
 
 void frcnn_memset(void)
@@ -1412,6 +1369,202 @@ void frcnn_memset(void)
   memset(srpn.img_info.data, 0, flatten_size(&srpn.img_info) * sizeof(real));
 }
 
+void destruct_frcnn_7_1_1(void)
+{
+  // space always allocated in CPU memory
+  {
+    if (true_data) free(true_data);
+    if (input_data) free(input_data);
+    if (output_data) free(output_data);
+    if (param_data) free(param_data);
+
+    if (proposal_temp) free(proposal_temp);
+    if (proposal_tempint) free(proposal_tempint);
+
+    if (srpn.img_info.data) free(srpn.img_info.data);
+  }
+
+  #ifdef GPU
+  // space allocated in GPU memory
+  {
+    if (layer1_data) cudaFree(layer1_data);
+    if (layer2_data) cudaFree(layer2_data);
+    if (layer3_data) cudaFree(layer3_data);
+    if (backup1_data) cudaFree(backup1_data);
+    if (backup2_data) cudaFree(backup2_data);
+    if (temp_data) cudaFree(temp_data);
+    if (tempint_data) cudaFree(tempint_data);
+    if (const_data) cudaFree(const_data);
+    if (anchors) cudaFree(anchors);
+
+    // PVANET parameters
+    cudaFree(pvanet.weight1_1.data);
+    cudaFree(pvanet.bias1_1.data);
+    cudaFree(pvanet.weight1_2.data);
+    cudaFree(pvanet.bias1_2.data);
+    cudaFree(pvanet.weight2_1.data);
+    cudaFree(pvanet.bias2_1.data);
+    cudaFree(pvanet.weight2_2.data);
+    cudaFree(pvanet.bias2_2.data);
+    cudaFree(pvanet.weight3_1.data);
+    cudaFree(pvanet.bias3_1.data);
+    cudaFree(pvanet.weight3_2.data);
+    cudaFree(pvanet.bias3_2.data);
+    cudaFree(pvanet.weight3_3.data);
+    cudaFree(pvanet.bias3_3.data);
+    cudaFree(pvanet.weight4_1.data);
+    cudaFree(pvanet.bias4_1.data);
+    cudaFree(pvanet.weight4_2.data);
+    cudaFree(pvanet.bias4_2.data);
+    cudaFree(pvanet.weight4_3.data);
+    cudaFree(pvanet.bias4_3.data);
+    cudaFree(pvanet.weight5_1.data);
+    cudaFree(pvanet.bias5_1.data);
+    cudaFree(pvanet.weight5_2.data);
+    cudaFree(pvanet.bias5_2.data);
+    cudaFree(pvanet.weight5_3.data);
+    cudaFree(pvanet.bias5_3.data);
+    cudaFree(pvanet.weight_up.data);
+    cudaFree(pvanet.weightf.data);
+    cudaFree(pvanet.biasf.data);
+
+    // SRPN parameters
+    cudaFree(srpn.weight_c1.data);
+    cudaFree(srpn.bias_c1.data);
+    cudaFree(srpn.weight_c3.data);
+    cudaFree(srpn.bias_c3.data);
+    cudaFree(srpn.weight_c5.data);
+    cudaFree(srpn.bias_c5.data);
+    cudaFree(srpn.weight_s1.data);
+    cudaFree(srpn.bias_s1.data);
+    cudaFree(srpn.weight_s3.data);
+    cudaFree(srpn.bias_s3.data);
+    cudaFree(srpn.weight_s5.data);
+    cudaFree(srpn.bias_s5.data);
+    cudaFree(srpn.weight_b1.data);
+    cudaFree(srpn.bias_b1.data);
+    cudaFree(srpn.weight_b3.data);
+    cudaFree(srpn.bias_b3.data);
+    cudaFree(srpn.weight_b5.data);
+    cudaFree(srpn.bias_b5.data);
+
+    // SRPN layers
+    cudaFree(srpn.score1.data);
+    cudaFree(srpn.score3.data);
+    cudaFree(srpn.score5.data);
+    cudaFree(srpn.bbox1.data);
+    cudaFree(srpn.bbox3.data);
+    cudaFree(srpn.bbox5.data);
+    cudaFree(srpn.roi.data);
+
+    // RCNN parameters
+    cudaFree(rcnn.weight6_1.data);
+    cudaFree(rcnn.weight6_2.data);
+    cudaFree(rcnn.bias6_2.data);
+    cudaFree(rcnn.weight7_1.data);
+    //cudaFree(rcnn.weight7_2.data);
+    cudaFree(rcnn.bias7_2.data);
+    cudaFree(rcnn.weight_s.data);
+    cudaFree(rcnn.bias_s.data);
+    cudaFree(rcnn.weight_b.data);
+    cudaFree(rcnn.bias_b.data);
+
+    // release CuBLAS handle
+    if (cublasDestroy(*((cublasHandle_t*)conv_option1.handle))
+        != CUBLAS_STATUS_SUCCESS) {
+      printf("cublas destruction failed\n");
+    }
+    free(conv_option1.handle);
+  }
+
+  #else
+  // space allocated in CPU memory
+  {
+    if (layer1_data) free(layer1_data);
+    if (layer2_data) free(layer2_data);
+    if (layer3_data) free(layer3_data);
+    if (backup1_data) free(backup1_data);
+    if (backup2_data) free(backup2_data);
+    if (temp_data) free(temp_data);
+    if (tempint_data) free(tempint_data);
+    if (const_data) free(const_data);
+    if (anchors) free(anchors);
+
+    // PVANET parameters
+    free(pvanet.weight1_1.data);
+    free(pvanet.bias1_1.data);
+    free(pvanet.weight1_2.data);
+    free(pvanet.bias1_2.data);
+    free(pvanet.weight2_1.data);
+    free(pvanet.bias2_1.data);
+    free(pvanet.weight2_2.data);
+    free(pvanet.bias2_2.data);
+    free(pvanet.weight3_1.data);
+    free(pvanet.bias3_1.data);
+    free(pvanet.weight3_2.data);
+    free(pvanet.bias3_2.data);
+    free(pvanet.weight3_3.data);
+    free(pvanet.bias3_3.data);
+    free(pvanet.weight4_1.data);
+    free(pvanet.bias4_1.data);
+    free(pvanet.weight4_2.data);
+    free(pvanet.bias4_2.data);
+    free(pvanet.weight4_3.data);
+    free(pvanet.bias4_3.data);
+    free(pvanet.weight5_1.data);
+    free(pvanet.bias5_1.data);
+    free(pvanet.weight5_2.data);
+    free(pvanet.bias5_2.data);
+    free(pvanet.weight5_3.data);
+    free(pvanet.bias5_3.data);
+    free(pvanet.weight_up.data);
+    free(pvanet.weightf.data);
+    free(pvanet.biasf.data);
+
+    // SRPN parameters
+    free(srpn.weight_c1.data);
+    free(srpn.bias_c1.data);
+    free(srpn.weight_c3.data);
+    free(srpn.bias_c3.data);
+    free(srpn.weight_c5.data);
+    free(srpn.bias_c5.data);
+    free(srpn.weight_s1.data);
+    free(srpn.bias_s1.data);
+    free(srpn.weight_s3.data);
+    free(srpn.bias_s3.data);
+    free(srpn.weight_s5.data);
+    free(srpn.bias_s5.data);
+    free(srpn.weight_b1.data);
+    free(srpn.bias_b1.data);
+    free(srpn.weight_b3.data);
+    free(srpn.bias_b3.data);
+    free(srpn.weight_b5.data);
+    free(srpn.bias_b5.data);
+
+    // SRPN layers
+    free(srpn.score1.data);
+    free(srpn.score3.data);
+    free(srpn.score5.data);
+    free(srpn.bbox1.data);
+    free(srpn.bbox3.data);
+    free(srpn.bbox5.data);
+    free(srpn.roi.data);
+
+    // RCNN parameters
+    free(rcnn.weight6_1.data);
+    free(rcnn.weight6_2.data);
+    free(rcnn.bias6_2.data);
+    free(rcnn.weight7_1.data);
+    //free(rcnn.weight7_2.data);
+    free(rcnn.bias7_2.data);
+    free(rcnn.weight_s.data);
+    free(rcnn.bias_s.data);
+    free(rcnn.weight_b.data);
+    free(rcnn.bias_b.data);
+  }
+  #endif
+}
+
 void prepare_input(const char* const filename[], const int num_images)
 {
   pvanet.input.data = input_data;
@@ -1447,20 +1600,11 @@ int main(int argc, char* argv[])
   {
     printf("set device\n");
     cudaSetDevice(0);
-    conv_option1.handle = (cublasHandle_t*)malloc(sizeof(cublasHandle_t));
-    if (cublasCreate((cublasHandle_t*)conv_option1.handle)
-          != CUBLAS_STATUS_SUCCESS) {
-      printf("cublas creation failed\n");
-    }
-    conv_option2.handle = conv_option1.handle;
-    conv1x1_option.handle = conv_option1.handle;
-    conv5x5_option.handle = conv_option1.handle;
-    fc_option.handle = conv_option1.handle;
   }
   #endif
 
-  // PVANET initialization
-  init_frcnn_7_1_1();
+  // PVANET construction
+  construct_frcnn_7_1_1();
 
   // input data loading
   prepare_input((const char * const *)&argv[1], argc - 1);
@@ -1469,324 +1613,36 @@ int main(int argc, char* argv[])
   printf("forward-pass start\n");
   forward_frcnn_7_1_1();
   printf("forward-pass end\n");
-  //frcnn_memset();
-  //prepare_input((const char * const *)&argv[1], argc - 1);
-  #ifdef GPU
-  cudaMemcpyAsync(layer1_data, input_data,
-                  flatten_size(&pvanet.input) * sizeof(real),
-                  cudaMemcpyHostToDevice);
-  #else
-  memcpy(layer1_data, input_data,
-         flatten_size(&pvanet.input) * sizeof(real));
-  #endif
-  printf("forward-pass start\n");
-  forward_frcnn_7_1_1();
-  printf("forward-pass end\n");
-  //frcnn_memset();
-  //prepare_input((const char * const *)&argv[1], argc - 1);
-  #ifdef GPU
-  cudaMemcpyAsync(layer1_data, input_data,
-                  flatten_size(&pvanet.input) * sizeof(real),
-                  cudaMemcpyHostToDevice);
-  #else
-  memcpy(layer1_data, input_data,
-         flatten_size(&pvanet.input) * sizeof(real));
-  #endif
-  printf("forward-pass start\n");
-  forward_frcnn_7_1_1();
-  printf("forward-pass end\n");
 
   // retrieve output
   {
-    const int output1_size = flatten_size(&rcnn.pred);
-    const int output2_size = flatten_size(&rcnn.bbox);
+    const int output_size = flatten_size(&rcnn.out);
 
   #ifdef GPU
-    cudaMemcpyAsync(output_data, rcnn.pred.data,
-                    output1_size * sizeof(real),
-                    cudaMemcpyDeviceToHost);
-    cudaMemcpyAsync(output_data + output1_size, rcnn.bbox.data,
-                    output2_size * sizeof(real),
+    cudaMemcpyAsync(output_data, rcnn.out.data,
+                    output_size * sizeof(real),
                     cudaMemcpyDeviceToHost);
   #else
-    memcpy(output_data, rcnn.pred.data, output1_size * sizeof(real));
-    memcpy(output_data + output1_size, rcnn.bbox.data,
-           output2_size * sizeof(real));
+    memcpy(output_data, rcnn.out.data, output_size * sizeof(real));
   #endif
   }
 
-  // load true output
-  #ifdef PASS
+  // print output
   {
-    const int output1_size = flatten_size(&rcnn.pred);
-    int ndim;
-    int shape[g_max_ndim];
-    load_data("../data/temp/cls_score_top0.bin",
-              &ndim, shape, true_data);
-    load_data("../data/temp/bbox_pred_top0.bin",
-              &ndim, shape, true_data + output1_size);
-  }
-  #endif
-
-  // verify results
-  #ifdef PASS
-  {
-    const int output1_size = flatten_size(&rcnn.pred);
-    const real* const p_pred = output_data;
-    const real* const p_bbox = output_data + output1_size;
-    const real* const p_true_pred = true_data;
-    const real* const p_true_bbox = true_data + output1_size;
-    int i = 0, j = 0, i_true = 0, j_true = 0;
-    for (int n = 0; n < rcnn.pred.num_items; ++n) {
-      for (int r = 0; r < rcnn.pred.shape[n][0]; ++r) {
-        real maxpred = p_pred[i];
-        int maxclass = 0;
-        for (int c = 0; c < rcnn.pred.shape[n][1]; ++c) {
-          if (p_pred[i] > maxpred) {
-            maxclass = c;
-            maxpred = p_pred[i];
-          }
-          ++i;
-        }
-
-        if (maxclass > 0 && maxpred >= 0.8f) {
-          const int x1 = (int)ROUND(p_bbox[j + maxclass * 4 + 0]);
-          const int x2 = (int)ROUND(p_bbox[j + maxclass * 4 + 1]);
-          const int y1 = (int)ROUND(p_bbox[j + maxclass * 4 + 2]);
-          const int y2 = (int)ROUND(p_bbox[j + maxclass * 4 + 3]);
-          printf("[Image %d] Box (%d, %d, %d, %d): class %d, score = %.2f  ",
-                 n, x1, x2, y1, y2, maxclass, maxpred);
-        }
-        j += 21 * 4;
-
-        maxpred = p_true_pred[i_true];
-        maxclass = 0;
-        for (int c = 0; c < rcnn.pred.shape[n][1]; ++c) {
-          if (p_true_pred[i_true] > maxpred) {
-            maxclass = c;
-            maxpred = p_true_pred[i_true];
-          }
-          ++i_true;
-        }
-
-        if (maxpred >= 0.8f) {
-          const int x1 = (int)ROUND(p_true_bbox[j_true + maxclass * 4 + 0]);
-          const int x2 = (int)ROUND(p_true_bbox[j_true + maxclass * 4 + 1]);
-          const int y1 = (int)ROUND(p_true_bbox[j_true + maxclass * 4 + 2]);
-          const int y2 = (int)ROUND(p_true_bbox[j_true + maxclass * 4 + 3]);
-          printf("True Box (%d, %d, %d, %d): class %d, score = %.2f\n",
-                 x1, x2, y1, y2, maxclass, maxpred);
-        }
-        j_true += 21 * 4;
-      } // endfor r
-    } // endfor n
-  }
-  #endif
-
-  // verify results
-  #ifdef PASS
-  {
-    const int output_size = flatten_size(&rcnn.roipool);
-
-    int ndim;
-    int shape[g_max_ndim];
-    load_data("../data/temp/roi_pool_conv5_top0.bin",
-              &ndim, shape, true_data);
-
-    for (int i = 0; i < output_size; ++i) {
-      real diff = ABS(true_data[i] - output_data[i]);
-      diff /= 1e-10f + MIN(ABS(true_data[i]),  ABS(output_data[i]));
-      #ifdef GPU
-      if (diff > 1e-5f) {
-        printf("%d: %.6f %.6f\n", i, true_data[i], output_data[i]);
+    for (int n = 0; n < rcnn.out.num_items; ++n) {
+      const real* const p_out_item = output_data + rcnn.out.start[n];
+      printf("Image %s:\n", argv[1 + n]);
+      for (int i = 0; i < rcnn.out.shape[n][0]; ++i) {
+        printf("  Box %d (class %d, score %f): %f %f %f %f\n",
+               i, (int)p_out_item[i * 6 + 0], p_out_item[i * 6 + 5],
+               p_out_item[i * 6 + 1], p_out_item[i * 6 + 2],
+               p_out_item[i * 6 + 3], p_out_item[i * 6 + 4]);
       }
-      #else
-      if (diff > 1e-3f) {
-        printf("%d: %.6f %.6f\n", i, true_data[i], output_data[i]);
-      }
-      #endif
     }
   }
-  #endif
 
-  // memory deallocation
-  {
-    if (true_data) free(true_data);
-    if (input_data) free(input_data);
-    if (output_data) free(output_data);
-    if (param_data) free(param_data);
-
-    if (proposal_temp) free(proposal_temp);
-    if (proposal_tempint) free(proposal_tempint);
-
-    if (srpn.img_info.data) free(srpn.img_info.data);
-  }
-  #ifdef GPU
-  {
-    if (layer1_data) cudaFree(layer1_data);
-    if (layer2_data) cudaFree(layer2_data);
-    if (layer3_data) cudaFree(layer3_data);
-    if (backup1_data) cudaFree(backup1_data);
-    if (backup2_data) cudaFree(backup2_data);
-    if (temp_data) cudaFree(temp_data);
-    if (tempint_data) cudaFree(tempint_data);
-    if (const_data) cudaFree(const_data);
-    if (anchors) cudaFree(anchors);
-
-    if (cublasDestroy(*((cublasHandle_t*)conv_option1.handle))
-        != CUBLAS_STATUS_SUCCESS) {
-      printf("cublas destruction failed\n");
-    }
-
-    cudaFree(pvanet.weight1_1.data);
-    cudaFree(pvanet.bias1_1.data);
-    cudaFree(pvanet.weight1_2.data);
-    cudaFree(pvanet.bias1_2.data);
-    cudaFree(pvanet.weight2_1.data);
-    cudaFree(pvanet.bias2_1.data);
-    cudaFree(pvanet.weight2_2.data);
-    cudaFree(pvanet.bias2_2.data);
-    cudaFree(pvanet.weight3_1.data);
-    cudaFree(pvanet.bias3_1.data);
-    cudaFree(pvanet.weight3_2.data);
-    cudaFree(pvanet.bias3_2.data);
-    cudaFree(pvanet.weight3_3.data);
-    cudaFree(pvanet.bias3_3.data);
-    cudaFree(pvanet.weight4_1.data);
-    cudaFree(pvanet.bias4_1.data);
-    cudaFree(pvanet.weight4_2.data);
-    cudaFree(pvanet.bias4_2.data);
-    cudaFree(pvanet.weight4_3.data);
-    cudaFree(pvanet.bias4_3.data);
-    cudaFree(pvanet.weight5_1.data);
-    cudaFree(pvanet.bias5_1.data);
-    cudaFree(pvanet.weight5_2.data);
-    cudaFree(pvanet.bias5_2.data);
-    cudaFree(pvanet.weight5_3.data);
-    cudaFree(pvanet.bias5_3.data);
-    cudaFree(pvanet.weight_up.data);
-    cudaFree(pvanet.weightf.data);
-    cudaFree(pvanet.biasf.data);
-
-    cudaFree(srpn.weight_c1.data);
-    cudaFree(srpn.bias_c1.data);
-    cudaFree(srpn.weight_c3.data);
-    cudaFree(srpn.bias_c3.data);
-    cudaFree(srpn.weight_c5.data);
-    cudaFree(srpn.bias_c5.data);
-    cudaFree(srpn.weight_s1.data);
-    cudaFree(srpn.bias_s1.data);
-    cudaFree(srpn.weight_s3.data);
-    cudaFree(srpn.bias_s3.data);
-    cudaFree(srpn.weight_s5.data);
-    cudaFree(srpn.bias_s5.data);
-    cudaFree(srpn.weight_b1.data);
-    cudaFree(srpn.bias_b1.data);
-    cudaFree(srpn.weight_b3.data);
-    cudaFree(srpn.bias_b3.data);
-    cudaFree(srpn.weight_b5.data);
-    cudaFree(srpn.bias_b5.data);
-    
-    cudaFree(srpn.score1.data);
-    cudaFree(srpn.score3.data);
-    cudaFree(srpn.score5.data);
-    cudaFree(srpn.bbox1.data);
-    cudaFree(srpn.bbox3.data);
-    cudaFree(srpn.bbox5.data);
-    cudaFree(srpn.roi.data);
-
-    cudaFree(rcnn.weight6_1.data);
-    //cudaFree(rcnn.weight6_2.data);
-    cudaFree(rcnn.bias6_2.data);
-    cudaFree(rcnn.weight7_1.data);
-    //cudaFree(rcnn.weight7_2.data);
-    cudaFree(rcnn.bias7_2.data);
-    cudaFree(rcnn.weight_s.data);
-    cudaFree(rcnn.bias_s.data);
-    cudaFree(rcnn.weight_b.data);
-    cudaFree(rcnn.bias_b.data);
-  }
-  #else
-  {
-    if (layer1_data) free(layer1_data);
-    if (layer2_data) free(layer2_data);
-    if (layer3_data) free(layer3_data);
-    if (backup1_data) free(backup1_data);
-    if (backup2_data) free(backup2_data);
-    if (temp_data) free(temp_data);
-    if (tempint_data) free(tempint_data);
-    if (const_data) free(const_data);
-    if (anchors) free(anchors);
-
-    free(pvanet.weight1_1.data);
-    free(pvanet.bias1_1.data);
-    free(pvanet.weight1_2.data);
-    free(pvanet.bias1_2.data);
-    free(pvanet.weight2_1.data);
-    free(pvanet.bias2_1.data);
-    free(pvanet.weight2_2.data);
-    free(pvanet.bias2_2.data);
-    free(pvanet.weight3_1.data);
-    free(pvanet.bias3_1.data);
-    free(pvanet.weight3_2.data);
-    free(pvanet.bias3_2.data);
-    free(pvanet.weight3_3.data);
-    free(pvanet.bias3_3.data);
-    free(pvanet.weight4_1.data);
-    free(pvanet.bias4_1.data);
-    free(pvanet.weight4_2.data);
-    free(pvanet.bias4_2.data);
-    free(pvanet.weight4_3.data);
-    free(pvanet.bias4_3.data);
-    free(pvanet.weight5_1.data);
-    free(pvanet.bias5_1.data);
-    free(pvanet.weight5_2.data);
-    free(pvanet.bias5_2.data);
-    free(pvanet.weight5_3.data);
-    free(pvanet.bias5_3.data);
-    free(pvanet.weight_up.data);
-    free(pvanet.weightf.data);
-    free(pvanet.biasf.data);
-
-    free(srpn.weight_c1.data);
-    free(srpn.bias_c1.data);
-    free(srpn.weight_c3.data);
-    free(srpn.bias_c3.data);
-    free(srpn.weight_c5.data);
-    free(srpn.bias_c5.data);
-    free(srpn.weight_s1.data);
-    free(srpn.bias_s1.data);
-    free(srpn.weight_s3.data);
-    free(srpn.bias_s3.data);
-    free(srpn.weight_s5.data);
-    free(srpn.bias_s5.data);
-    free(srpn.weight_b1.data);
-    free(srpn.bias_b1.data);
-    free(srpn.weight_b3.data);
-    free(srpn.bias_b3.data);
-    free(srpn.weight_b5.data);
-    free(srpn.bias_b5.data);
-
-    free(srpn.score1.data);
-    free(srpn.score3.data);
-    free(srpn.score5.data);
-    free(srpn.bbox1.data);
-    free(srpn.bbox3.data);
-    free(srpn.bbox5.data);
-    free(srpn.roi.data);
-
-    free(rcnn.weight6_1.data);
-    //free(rcnn.weight6_2.data);
-    free(rcnn.bias6_2.data);
-    free(rcnn.weight7_1.data);
-    //free(rcnn.weight7_2.data);
-    free(rcnn.bias7_2.data);
-    free(rcnn.weight_s.data);
-    free(rcnn.bias_s.data);
-    free(rcnn.weight_b.data);
-    free(rcnn.bias_b.data);
-  }
-  #endif
+  // end
+  destruct_frcnn_7_1_1();
 
   return 0;
 }

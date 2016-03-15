@@ -37,7 +37,10 @@
 // tensor data structure & some functions
 //   struct Tensor
 //   flatten_size
+//   print_tensor_info
+//   malloc_tensor
 //   load_data
+//   load_tensor
 // --------------------------------------------------------------------------
 
 typedef float real;
@@ -56,13 +59,29 @@ typedef struct Tensor_
 // total number of elements in a tensor
 int flatten_size(const Tensor* const tensor);
 
-// load binary data from file
-//   if "data" is NULL, allocate memory & load data & return pointer
-//   otherwise, load data to "data"
+// print shapes for all batch items in tensor
+void print_tensor_info(const char* name,
+                       const Tensor* const tensor);
+
+// allocate memory for tensor
+//   allocate GPU memory in GPU mode, or CPU memory in CPU mode
+//   return memory size in bytes
+int malloc_tensor(Tensor* const tensor);
+
+// load binary data from file & store to CPU memory
+//   data: pointer to CPU memory for storing data
+//         if NULL, allocate new memory & load data & return pointer
 real* load_data(const char* const filename,
                 int* const ndim,
                 int* const shape,
                 real* data);
+
+// load binary data from file & copy to memory where tensor occupies
+//   temp_data: pointer to CPU memory for loading data temporarily
+//              not used (i.e., can be NULL) if tensor occupies CPU memory
+void load_tensor(const char* const filename,
+                 Tensor* const tensor,
+                 real* const temp_data);
 
 
 

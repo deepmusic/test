@@ -198,81 +198,70 @@ void filter_output_gpu(const real* const bottom2d,
                        const int min_size,
                        const real score_thresh, const real nms_thresh)
 {
+  // enumerate all RCNN box outputs ("num_rois * num_classes" outputs)
   {
-  // input image height & width
-  const real img_H = img_info1d[0];
-  const real img_W = img_info1d[1];
-  // minimum box width & height
-  const real min_box_W = min_size * img_info1d[2];
-  const real min_box_H = min_size * img_info1d[3];
+    // input image height & width
+    const real img_H = img_info1d[0];
+    const real img_W = img_info1d[1];
+    // minimum box width & height
+    const real min_box_W = min_size * img_info1d[2];
+    const real min_box_H = min_size * img_info1d[3];
 
-  const int num_threads = num_rois * num_classes;
-  const int threads_per_block = 256;
-  const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
-  enumerate_output_gpu<<<num_blocks, threads_per_block>>>(
-      bottom2d,  d_anchor3d,  roi2d,  num_rois,  num_classes,
-      img_H,  img_W,  min_box_H,  min_box_W,
-      proposals_dev);
+    const int num_threads = num_rois * num_classes;
+    const int threads_per_block = 256;
+    const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
+    enumerate_output_gpu<<<num_blocks, threads_per_block>>>(
+        bottom2d,  d_anchor3d,  roi2d,  num_rois,  num_classes,
+        img_H,  img_W,  min_box_H,  min_box_W,
+        proposals_dev);
 
-  cudaMemcpyAsync(proposals, proposals_dev,
-                  num_threads * 5 * sizeof(real),
-                  cudaMemcpyDeviceToHost);
+    cudaMemcpyAsync(proposals, proposals_dev,
+                    num_threads * 5 * sizeof(real),
+                    cudaMemcpyDeviceToHost);
   }
 
+  // for each class, choose outputs according to scores & overlap
   {
-  int num_out = 0;
-  for (int c = 1; c < num_classes; ++c) {
-    const int base = c * num_rois;
-    real* const p_proposals = proposals + base * 5;
-    int* const p_keep = keep + num_out;
+    int num_out = 0;
+    for (int c = 1; c < num_classes; ++c) {
+      const int base = c * num_rois;
+      real* const p_proposals = proposals + base * 5;
+      int* const p_keep = keep + num_out;
 
-    const int num_pre_nms
-        = filter_box(p_proposals, num_rois, score_thresh);
+      // filter-out boxes whose scores less than threshold
+      const int num_pre_nms
+          = filter_box(p_proposals, num_rois, score_thresh);
 
-    if (num_pre_nms > 1) {
-      int num_post_nms = 0;
-
-      // sort
-      sort_box(p_proposals, 0, num_pre_nms - 1);
-
-      // nms
-      nms(num_pre_nms,  p_proposals,  &num_post_nms,  p_keep,  base,
-          nms_thresh,  num_pre_nms);
-
-      num_out += num_post_nms;
+      // sort & NMS
+      if (num_pre_nms > 1) {
+        int num_post_nms = 0;
+        sort_box(p_proposals, 0, num_pre_nms - 1);
+        nms(num_pre_nms,  p_proposals,  &num_post_nms,  p_keep,  base,
+            nms_thresh,  num_pre_nms);
+        num_out += num_post_nms;
+      }
+      else {
+        p_keep[0] = base;
+        num_out += num_pre_nms;
+      }
     }
-    else {
-      p_keep[0] = base;
-      num_out += num_pre_nms;
-    }
-  }
-  *num_output = num_out;
+    *num_output = num_out;
 
-  cudaMemcpyAsync(proposals_dev, proposals,
-                  num_rois * num_classes * 5 * sizeof(real),
-                  cudaMemcpyHostToDevice);
-  cudaMemcpyAsync(keep_dev, keep,
-                  (*num_output) * sizeof(int),
-                  cudaMemcpyHostToDevice);
+    cudaMemcpyAsync(proposals_dev, proposals,
+                    num_rois * num_classes * 5 * sizeof(real),
+                    cudaMemcpyHostToDevice);
+    cudaMemcpyAsync(keep_dev, keep,
+                    (*num_output) * sizeof(int),
+                    cudaMemcpyHostToDevice);
   }
 
   // retrieve final outputs & resize box to raw image size
   {
-  const int threads_per_block = 16;
-  const int num_blocks = DIV_THEN_CEIL(*num_output,  threads_per_block);
-  retrieve_output_gpu<<<num_blocks, threads_per_block>>>(
-      proposals_dev,  keep_dev,  top2d,  *num_output,  num_rois,
-      img_info1d[2], img_info1d[3]);
-  }
-
-  {
-  cudaMemcpyAsync(proposals, top2d,
-                  (*num_output) * 6 * sizeof(real),
-                  cudaMemcpyDeviceToHost);
-  for (int i = 0; i < *num_output; ++i) {
-    printf("box %d [class %d, score %f): %f %f %f %f\n",
-           i, (int)proposals[i * 6 + 0], proposals[i * 6 + 5], proposals[i * 6 + 1], proposals[i * 6 + 2], proposals[i * 6 + 3], proposals[i * 6 + 4]);
-  }
+    const int threads_per_block = 16;
+    const int num_blocks = DIV_THEN_CEIL(*num_output,  threads_per_block);
+    retrieve_output_gpu<<<num_blocks, threads_per_block>>>(
+        proposals_dev,  keep_dev,  top2d,  *num_output,  num_rois,
+        img_info1d[2], img_info1d[3]);
   }
 }
 #else
@@ -295,9 +284,10 @@ void filter_output_cpu(const real* const bottom2d,
   const real min_box_W = min_size * img_info1d[2];
   const real min_box_H = min_size * img_info1d[3];
 
+  // do for each object class (skip background class)
   real* p_top2d = top2d;
   for (int c = 1; c < num_classes; ++c) {
-    // generate object bounding boxes
+    // enumerate all RCNN box outputs ("num_rois" outputs for each class)
     for (int r = 0; r < num_rois; ++r) {
       const int index = r * num_classes + c;
       const real dx = d_anchor3d[index * 4 + 0];
@@ -317,40 +307,37 @@ void filter_output_cpu(const real* const bottom2d,
             * bottom2d[index];
     }
 
-    const int num_pre_nms = filter_box(proposals, num_rois, score_thresh);
-    int num_post_nms = 0;
+    // choose outputs according to scores & overlap
+    {
+      // filter-out boxes whose scores less than threshold
+      const int num_pre_nms = filter_box(proposals, num_rois, score_thresh);
+      int num_post_nms = 0;
 
-    if (num_pre_nms > 1) {
-      // sort
-      sort_box(proposals, 0, num_pre_nms - 1);
+      // sort & NMS
+      if (num_pre_nms > 1) {
+        sort_box(proposals, 0, num_pre_nms - 1);
+        nms(num_pre_nms,  proposals,  &num_post_nms,  keep,  0,
+            nms_thresh,  num_pre_nms);
+      }
+      else {
+        num_post_nms = num_pre_nms;
+        keep[0] = 0;
+      }
 
-      // nms
-      nms(num_pre_nms,  proposals,  &num_post_nms,  keep,  0,
-          nms_thresh,  num_pre_nms);
+      // retrieve final outputs & resize box to raw image size
+      for (int r = 0; r < num_post_nms; ++r) {
+        p_top2d[r * 6 + 0] = c;
+        p_top2d[r * 6 + 1] = proposals[keep[r] * 5 + 0] / img_info1d[2];
+        p_top2d[r * 6 + 2] = proposals[keep[r] * 5 + 1] / img_info1d[3];
+        p_top2d[r * 6 + 3] = proposals[keep[r] * 5 + 2] / img_info1d[2];
+        p_top2d[r * 6 + 4] = proposals[keep[r] * 5 + 3] / img_info1d[3];
+        p_top2d[r * 6 + 5] = proposals[keep[r] * 5 + 4];
+      }
+
+      *num_output += num_post_nms;
+      p_top2d += num_post_nms * 6;
     }
-    else {
-      num_post_nms = num_pre_nms;
-      keep[0] = 0;
-    }
-
-    // retrieve final outputs & resize box to raw image size
-    for (int r = 0; r < num_post_nms; ++r) {
-      p_top2d[r * 6 + 0] = c;
-      p_top2d[r * 6 + 1] = proposals[keep[r] * 5 + 0] / img_info1d[2];
-      p_top2d[r * 6 + 2] = proposals[keep[r] * 5 + 1] / img_info1d[3];
-      p_top2d[r * 6 + 3] = proposals[keep[r] * 5 + 2] / img_info1d[2];
-      p_top2d[r * 6 + 4] = proposals[keep[r] * 5 + 3] / img_info1d[3];
-      p_top2d[r * 6 + 5] = proposals[keep[r] * 5 + 4];
-    }
-
-    *num_output += num_post_nms;
-    p_top2d += num_post_nms * 6;
-  }
-
-  for (int i = 0; i < *num_output; ++i) {
-    printf("box %d [class %d, score %f): %f %f %f %f\n",
-           i, (int)top2d[i * 6 + 0], top2d[i * 6 + 5], top2d[i * 6 + 1], top2d[i * 6 + 2], top2d[i * 6 + 3], top2d[i * 6 + 4]);
-  }
+  } // endfor class
 }
 #endif
 
