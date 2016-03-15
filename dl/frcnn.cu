@@ -1593,27 +1593,8 @@ void prepare_input(const char* const filename[], const int num_images)
   print_tensor_info("input data loaded", &pvanet.input);
 }
 
-int main(int argc, char* argv[])
+void get_output(const int image_start_index, FILE* fp)
 {
-  // CUDA initialization
-  #ifdef GPU
-  {
-    printf("set device\n");
-    cudaSetDevice(0);
-  }
-  #endif
-
-  // PVANET construction
-  construct_frcnn_7_1_1();
-
-  // input data loading
-  prepare_input((const char * const *)&argv[1], argc - 1);
-
-  // forward-pass
-  printf("forward-pass start\n");
-  forward_frcnn_7_1_1();
-  printf("forward-pass end\n");
-
   // retrieve output
   {
     const int output_size = flatten_size(&rcnn.out);
@@ -1630,16 +1611,82 @@ int main(int argc, char* argv[])
   // print output
   {
     for (int n = 0; n < rcnn.out.num_items; ++n) {
+      const int image_index = image_start_index + n;
       const real* const p_out_item = output_data + rcnn.out.start[n];
-      printf("Image %s:\n", argv[1 + n]);
       for (int i = 0; i < rcnn.out.shape[n][0]; ++i) {
-        printf("  Box %d (class %d, score %f): %f %f %f %f\n",
-               i, (int)p_out_item[i * 6 + 0], p_out_item[i * 6 + 5],
+        const int class_index = (int)p_out_item[i * 6 + 0];
+        printf("Image %d / Box %d: class %d, score %f, p1 = (%.2f, %.2f), p2 = (%.2f, %.2f)\n",
+               image_index, i, class_index, p_out_item[i * 6 + 5],
                p_out_item[i * 6 + 1], p_out_item[i * 6 + 2],
                p_out_item[i * 6 + 3], p_out_item[i * 6 + 4]);
+
+        fwrite(&image_index, sizeof(int), 1, fp);
+        fwrite(&class_index, sizeof(int), 1, fp);
+        fwrite(&p_out_item[i * 6 + 1], sizeof(real), 5, fp);
       }
     }
   }
+}
+
+int main(int argc, char* argv[])
+{
+  // CUDA initialization
+  #ifdef GPU
+  {
+    printf("set device\n");
+    cudaSetDevice(0);
+  }
+  #endif
+
+  // PVANET construction
+  construct_frcnn_7_1_1();
+
+  // load a text file containing image filenames to be tested
+  {
+    char line1[1024], line2[1024], line3[1024], line4[1024];
+    char* line[] = { line1, line2, line3, line4 };
+    int total_count = 0, count = 0;
+    FILE* fp_list = fopen(argv[1], "r");
+    FILE* fp_out = fopen(argv[2], "wb");
+
+    if (!fp_list) {
+      printf("File not found: %s\n", argv[1]);
+    }
+    if (!fp_out) {
+      printf("File write error: %s\n", argv[2]);
+    }
+
+    while (fgets(line[count], 1024, fp_list)) {
+      const int len = strlen(line[count]);
+      line[count][len - 1] = 0;
+      ++count;
+      if (count == 4) {
+        // input data loading
+        prepare_input((const char * const *)&line, count);
+
+        // forward-pass
+        forward_frcnn_7_1_1();
+
+        // retrieve output & save to file
+        get_output(total_count, fp_out);
+
+        total_count += count;
+        count = 0;
+      }
+    }
+
+    if (count > 0) {
+      prepare_input((const char * const *)&line, count);
+      printf("forward-pass start\n");
+      forward_frcnn_7_1_1();
+      printf("forward-pass end\n");
+      get_output(total_count, fp_out);
+    }
+
+    fclose(fp_list);
+    fclose(fp_out);
+  }
+
 
   // end
   destruct_frcnn_7_1_1();

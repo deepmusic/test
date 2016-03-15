@@ -44,7 +44,6 @@ void img2input(const unsigned char* const img,
   p_img_info1d[2] = img_scale_x;
   p_img_info1d[3] = img_scale_y;
 
-  printf("start index = %d\n", input3d->start[n]);
   real* const p_inputB = input3d->data + input3d->start[n] + 0 * input_area;
   real* const p_inputG = input3d->data + input3d->start[n] + 1 * input_area;
   real* const p_inputR = input3d->data + input3d->start[n] + 2 * input_area;
@@ -90,7 +89,7 @@ void img2input(const unsigned char* const img,
   }
 
   const int input_size = 3 * resized_height * resized_width;
-  printf("image size = %d x %d x 3 = %d\n", resized_height, resized_width, input_size);
+  //printf("image size = %d x %d x 3 = %d\n", resized_height, resized_width, input_size);
   input3d->shape[n][0] = 3;
   input3d->shape[n][1] = resized_height;
   input3d->shape[n][2] = resized_width;
@@ -113,7 +112,7 @@ void load_image(const char* const filename,
   const int height = image.rows;
   const int width = image.cols;
   const int stride = image.step.p[0];
-  printf("Image %s: %d x %d, stride=%d\n", filename, height, width, stride);
+  //printf("Image %s: %d x %d, stride=%d\n", filename, height, width, stride);
 
   img2input(image.data, input3d, img_info1d, height, width, stride);
 }
