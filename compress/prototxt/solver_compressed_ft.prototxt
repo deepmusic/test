@@ -1,7 +1,7 @@
 net: "prototxt/trainval_compressed.prototxt"
 test_iter: 100
 test_interval: 1000
-base_lr: 0.000001
+base_lr: 0.00000001
 lr_policy: "step"
 gamma: 0.9773
 stepsize: 500
@@ -13,4 +13,4 @@ snapshot: 10000
 snapshot_prefix: "caffemodel/compressed_ft"
 solver_mode: GPU
 # mini-batch size = batch_size (in trainval) * iter_size (in solver)
-iter_size: 10
+iter_size: 1
