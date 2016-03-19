@@ -96,33 +96,6 @@ def MakeTrainingDataset(cfgs, layer, true_net, compressed_net):
 
     return (Y_true, Y_dirty)
 
-def CompressFCLayerSub(W, rank):
-    start_time = datetime.datetime.now()
-
-    if W.shape[0] == W.shape[1]:
-        U, S, V = np.linalg.svd(W)
-        S_sqrt = np.diag(np.sqrt(S[:rank]))
-        P = np.dot(U[:, :rank], S_sqrt)
-        QT = np.tensordot(S_sqrt, V[:, :rank], (1, 1))
-        energy = (S[:rank] ** 2).sum() / (S ** 2).sum()
-
-    else:
-        if W.shape[0] > W.shape[1]:
-            W = W.transpose().copy()
-        WWT = np.tensordot(W, W, (1, 1))
-        D, U = np.linalg.eigh(WWT)
-        U = U[:, -rank:]
-        S_inv = np.diag(1.0 / np.sqrt(D[-rank:]))
-        VT = np.dot(np.tensordot(S_inv, U, (1, 1)), W)
-        S_sqrt = np.diag(np.sqrt(np.sqrt(D[-rank:])))
-        P = np.dot(U, S_sqrt)
-        QT = np.dot(S_sqrt, VT)
-        energy = D[-rank:].sum() / D.sum()
-
-    elapsed_time = (datetime.datetime.now() - start_time).total_seconds()
-    print 'Truncated SVD Accumulative Energy = %.4f' % energy
-    return (P, QT)
-
 def ConvCompressionError(Y_true, Y_dirty, M, b):
     Y = Y_true.copy()
     Y[Y < 0] = 0
@@ -223,6 +196,33 @@ def CompressConvLayer(Y_true, Y_dirty, W_true, b_true, rank):
         W2 = W2.reshape((P.shape[0], P.shape[1], 1, 1))
 
     return (W1, b1, W2, b2)
+
+def CompressFCLayerSub(W, rank):
+    start_time = datetime.datetime.now()
+
+    if W.shape[0] == W.shape[1]:
+        U, S, V = np.linalg.svd(W)
+        S_sqrt = np.diag(np.sqrt(S[:rank]))
+        P = np.dot(U[:, :rank], S_sqrt)
+        QT = np.tensordot(S_sqrt, V[:, :rank], (1, 1))
+        energy = (S[:rank] ** 2).sum() / (S ** 2).sum()
+
+    else:
+        if W.shape[0] > W.shape[1]:
+            W = W.transpose().copy()
+        WWT = np.tensordot(W, W, (1, 1))
+        D, U = np.linalg.eigh(WWT)
+        U = U[:, -rank:]
+        S_inv = np.diag(1.0 / np.sqrt(D[-rank:]))
+        VT = np.dot(np.tensordot(S_inv, U, (1, 1)), W)
+        S_sqrt = np.diag(np.sqrt(np.sqrt(D[-rank:])))
+        P = np.dot(U, S_sqrt)
+        QT = np.dot(S_sqrt, VT)
+        energy = D[-rank:].sum() / D.sum()
+
+    elapsed_time = (datetime.datetime.now() - start_time).total_seconds()
+    print 'Truncated SVD Accumulative Energy = %.4f' % energy
+    return (P, QT)
 
 def CompressFCLayer(W_true, b_true, rank):
     P, QT = CompressFCLayerSub(W_true, rank)
