@@ -16,7 +16,7 @@ layer {
   }
   data_param {
     source: "imagenet/ilsvrc12_train_lmdb"
-    batch_size: 5
+    batch_size: 10
     backend: LMDB
   }
 }
@@ -37,7 +37,7 @@ layer {
   }
   data_param {
     source: "imagenet/ilsvrc12_val_lmdb"
-    batch_size: 5
+    batch_size: 10
     backend: LMDB
   }
 }
@@ -74,7 +74,7 @@ layer {
   bottom: "conv1_1"
   top: "conv1_2_kh"
   convolution_param {
-    num_output: 64
+    num_output: 20
     pad_h: 1
     pad_w: 0
     kernel_h: 3
@@ -95,7 +95,7 @@ layer {
   bottom: "conv1_2_kh"
   top: "conv1_2_kw_a"
   convolution_param {
-    num_output: 11
+    num_output: 20
     pad_h: 0
     pad_w: 1
     kernel_h: 1
@@ -154,7 +154,7 @@ layer {
   bottom: "pool1"
   top: "conv2_1_kh"
   convolution_param {
-    num_output: 128
+    num_output: 44
     pad_h: 1
     pad_w: 0
     kernel_h: 3
@@ -175,7 +175,7 @@ layer {
   bottom: "conv2_1_kh"
   top: "conv2_1_kw_a"
   convolution_param {
-    num_output: 25
+    num_output: 44
     pad_h: 0
     pad_w: 1
     kernel_h: 1
@@ -222,7 +222,7 @@ layer {
   bottom: "conv2_1_kw_b"
   top: "conv2_2_kh"
   convolution_param {
-    num_output: 128
+    num_output: 49
     pad_h: 1
     pad_w: 0
     kernel_h: 3
@@ -243,7 +243,7 @@ layer {
   bottom: "conv2_2_kh"
   top: "conv2_2_kw_a"
   convolution_param {
-    num_output: 28
+    num_output: 49
     pad_h: 0
     pad_w: 1
     kernel_h: 1
@@ -302,7 +302,7 @@ layer {
   bottom: "pool2"
   top: "conv3_1_kh"
   convolution_param {
-    num_output: 256
+    num_output: 91
     pad_h: 1
     pad_w: 0
     kernel_h: 3
@@ -323,7 +323,7 @@ layer {
   bottom: "conv3_1_kh"
   top: "conv3_1_kw_a"
   convolution_param {
-    num_output: 52
+    num_output: 91
     pad_h: 0
     pad_w: 1
     kernel_h: 1
@@ -370,7 +370,7 @@ layer {
   bottom: "conv3_1_kw_b"
   top: "conv3_2_kh"
   convolution_param {
-    num_output: 256
+    num_output: 81
     pad_h: 1
     pad_w: 0
     kernel_h: 3
@@ -391,7 +391,7 @@ layer {
   bottom: "conv3_2_kh"
   top: "conv3_2_kw_a"
   convolution_param {
-    num_output: 46
+    num_output: 81
     pad_h: 0
     pad_w: 1
     kernel_h: 1
@@ -438,7 +438,7 @@ layer {
   bottom: "conv3_2_kw_b"
   top: "conv3_3_kh"
   convolution_param {
-    num_output: 256
+    num_output: 98
     pad_h: 1
     pad_w: 0
     kernel_h: 3
@@ -459,7 +459,7 @@ layer {
   bottom: "conv3_3_kh"
   top: "conv3_3_kw_a"
   convolution_param {
-    num_output: 56
+    num_output: 98
     pad_h: 0
     pad_w: 1
     kernel_h: 1
@@ -518,7 +518,7 @@ layer {
   bottom: "pool3"
   top: "conv4_1_kh"
   convolution_param {
-    num_output: 512
+    num_output: 182
     pad_h: 1
     pad_w: 0
     kernel_h: 3
@@ -539,7 +539,7 @@ layer {
   bottom: "conv4_1_kh"
   top: "conv4_1_kw_a"
   convolution_param {
-    num_output: 104
+    num_output: 182
     pad_h: 0
     pad_w: 1
     kernel_h: 1
@@ -586,7 +586,7 @@ layer {
   bottom: "conv4_1_kw_b"
   top: "conv4_2_kh"
   convolution_param {
-    num_output: 512
+    num_output: 161
     pad_h: 1
     pad_w: 0
     kernel_h: 3
@@ -607,7 +607,7 @@ layer {
   bottom: "conv4_2_kh"
   top: "conv4_2_kw_a"
   convolution_param {
-    num_output: 92
+    num_output: 161
     pad_h: 0
     pad_w: 1
     kernel_h: 1
@@ -654,7 +654,7 @@ layer {
   bottom: "conv4_2_kw_b"
   top: "conv4_3_kh"
   convolution_param {
-    num_output: 512
+    num_output: 175
     pad_h: 1
     pad_w: 0
     kernel_h: 3
@@ -675,7 +675,7 @@ layer {
   bottom: "conv4_3_kh"
   top: "conv4_3_kw_a"
   convolution_param {
-    num_output: 100
+    num_output: 175
     pad_h: 0
     pad_w: 1
     kernel_h: 1
@@ -734,7 +734,7 @@ layer {
   bottom: "pool4"
   top: "conv5_1_kh"
   convolution_param {
-    num_output: 512
+    num_output: 406
     pad_h: 1
     pad_w: 0
     kernel_h: 3
@@ -755,7 +755,7 @@ layer {
   bottom: "conv5_1_kh"
   top: "conv5_1_kw_a"
   convolution_param {
-    num_output: 232
+    num_output: 406
     pad_h: 0
     pad_w: 1
     kernel_h: 1
@@ -802,7 +802,7 @@ layer {
   bottom: "conv5_1_kw_b"
   top: "conv5_2_kh"
   convolution_param {
-    num_output: 512
+    num_output: 392
     pad_h: 1
     pad_w: 0
     kernel_h: 3
@@ -823,7 +823,7 @@ layer {
   bottom: "conv5_2_kh"
   top: "conv5_2_kw_a"
   convolution_param {
-    num_output: 224
+    num_output: 392
     pad_h: 0
     pad_w: 1
     kernel_h: 1
@@ -871,7 +871,7 @@ layer {
   bottom: "conv5_2_kw_b"
   top: "conv5_3_kh"
   convolution_param {
-    num_output: 512
+    num_output: 375
     pad_h: 1
     pad_w: 0
     kernel_h: 3
@@ -892,7 +892,7 @@ layer {
   bottom: "conv5_3_kh"
   top: "conv5_3_kw_a"
   convolution_param {
-    num_output: 214
+    num_output: 375
     pad_h: 0
     pad_w: 1
     kernel_h: 1
@@ -946,10 +946,27 @@ layer {
 }
 
 layer {
-  name: "fc6"
+  name: "fc6_a"
   type: "InnerProduct"
   bottom: "pool5"
-  top: "fc6"
+  top: "fc6_a"
+  inner_product_param {
+    num_output: 512
+  }
+  param {
+    lr_mult: 1.0
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2.0
+    decay_mult: 0
+  }
+}
+layer {
+  name: "fc6_b"
+  type: "InnerProduct"
+  bottom: "fc6_a"
+  top: "fc6_b"
   inner_product_param {
     num_output: 4096
   }
@@ -965,24 +982,41 @@ layer {
 layer {
   name: "relu6"
   type: "ReLU"
-  bottom: "fc6"
-  top: "fc6"
+  bottom: "fc6_b"
+  top: "relu6"
 }
 layer {
   name: "drop6"
   type: "Dropout"
-  bottom: "fc6"
-  top: "fc6"
+  bottom: "relu6"
+  top: "relu6"
   dropout_param {
     dropout_ratio: 0.5
   }
 }
 
 layer {
-  name: "fc7"
+  name: "fc7_a"
   type: "InnerProduct"
-  bottom: "fc6"
-  top: "fc7"
+  bottom: "relu6"
+  top: "fc7_a"
+  inner_product_param {
+    num_output: 128
+  }
+  param {
+    lr_mult: 1.0
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2.0
+    decay_mult: 0
+  }
+}
+layer {
+  name: "fc7_b"
+  type: "InnerProduct"
+  bottom: "fc7_a"
+  top: "fc7_b"
   inner_product_param {
     num_output: 4096
   }
@@ -998,14 +1032,14 @@ layer {
 layer {
   name: "relu7"
   type: "ReLU"
-  bottom: "fc7"
-  top: "fc7"
+  bottom: "fc7_b"
+  top: "relu7"
 }
 layer {
   name: "drop7"
   type: "Dropout"
-  bottom: "fc7"
-  top: "fc7"
+  bottom: "relu7"
+  top: "relu7"
   dropout_param {
     dropout_ratio: 0.5
   }
@@ -1014,7 +1048,7 @@ layer {
 layer {
   name: "fc8"
   type: "InnerProduct"
-  bottom: "fc7"
+  bottom: "relu7"
   top: "fc8"
   inner_product_param {
     num_output: 1000

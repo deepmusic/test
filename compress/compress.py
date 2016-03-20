@@ -3,9 +3,10 @@
 #   1. Global hyper-parameters
 #   2. Training data collector modules
 #   3. Convolutional layer compression modules
-#   4. Fully-connected layer compression modoules
-#   5. Outer loop of the algorithm
-#   6. Main module
+#   4. Convolutional kernel compression modules (for 3-layer compression)
+#   5. Fully-connected layer compression modoules
+#   6. Outer loop of the algorithm
+#   7. Main module
 #############################################################################
 
 import numpy as np
@@ -104,23 +105,33 @@ def ParseOutputLayer(y_4d, subset=None):
 #             the outputs are not compressed yet, but 'dirty'
 #             due to compression errors accumulated from previous layers
 def MakeTrainingDataSub(image_name, size, mean_bgr, \
-                        layer, true_net, compressed_net):
+                        layer, true_net, compressed_net, **kwargs):
     sample = PreprocessImage(image_name, size, mean_bgr)
 
+    # If the target layer has different names in two networks,
+    # append appropriate postfix to each network
+    true_layer = layer
+    if kwargs.has_key('true_layer_postfix'):
+        true_layer += kwargs['true_layer_postfix']
+    compressed_layer = layer
+    if kwargs.has_key('compressed_layer_postfix'):
+        compressed_layer += kwargs['compressed_layer_postfix']
+
     # Do forward-passing until obtaining the outputs of the given layer
-    Forward(true_net, sample, layer)
-    Forward(compressed_net, sample, layer)
+    Forward(true_net, sample, true_layer)
+    Forward(compressed_net, sample, compressed_layer)
 
     # Randomly sample y_true in the original net,
     # and then sample y_dirty from the same positions in the compressed net
-    y_true, subset = ParseOutputLayer(true_net.blobs[layer].data)
-    y_dirty = ParseOutputLayer(compressed_net.blobs[layer].data, subset)
+    y_true, subset = ParseOutputLayer(true_net.blobs[true_layer].data)
+    y_dirty = ParseOutputLayer(compressed_net.blobs[compressed_layer].data, \
+                               subset)
 
     return (y_true, y_dirty)
 
 
 # Outer module for collecting training data
-def MakeTrainingDataset(cfgs, layer, true_net, compressed_net):
+def MakeTrainingDataset(cfgs, layer, true_net, compressed_net, **kwargs):
     # Load the list of training images
     image_names = [line.strip().split(' ')[0] \
                    for line in open(cfgs['data'], 'r').readlines()]
@@ -135,7 +146,8 @@ def MakeTrainingDataset(cfgs, layer, true_net, compressed_net):
     # Get training data from the first image in the list,
     # and then determine the dimension of training data points
     y_true, y_dirty = MakeTrainingDataSub(image_names[0], size, mean_bgr, \
-                                          layer, true_net, compressed_net)
+                                          layer, true_net, compressed_net, \
+                                          **kwargs)
     Y_true = np.zeros((len(image_names), y_true.shape[0], y_true.shape[1]), \
                       dtype=np.float32)
     Y_dirty = np.zeros((len(image_names), y_true.shape[0], y_true.shape[1]), \
@@ -168,7 +180,7 @@ def MakeTrainingDataset(cfgs, layer, true_net, compressed_net):
 
 
 #############################################################################
-#   3. Convolutional layer compression modules
+# 3. Convolutional layer compression modules
 #############################################################################
 
 # Measure compression error and accuracy
@@ -319,7 +331,54 @@ def CompressConvLayer(Y_true, Y_dirty, W_true, b_true, rank):
 
 
 #############################################################################
-# 4. Fully-connected layer compression modoules
+# 4. Convolutional kernel compression modules
+#############################################################################
+
+# Core module for convolutional kernel compression
+#   Decompose convolutional kernel:  kh x kw  ->  kh x 1  and  1 x kw
+#   Thus,  C' x C x kh x kw  ->  Rk x C x kh x 1  and  C' x Rk x 1 x kw
+#   This can be used for 3-layer compression:
+#     Rk x C x kh x 1,  R x Rk x 1 x kw,  C' x R x 1 x 1
+def CompressConvKernelCore(W, rank, H=None, G=None):
+    start_time = datetime.datetime.now()
+
+    if H is None:
+        H = np.random.normal(size=(W.shape[1]*W.shape[2], rank))
+
+    W_G = W.swapaxes(2, 3).swapaxes(1, 2) \
+           .reshape((W.shape[0]*W.shape[3], W.shape[1]*W.shape[2]))
+    W_H = W.swapaxes(0, 1).swapaxes(1, 2) \
+           .reshape((W.shape[1]*W.shape[2], W.shape[0]*W.shape[3]))
+    G = np.dot(W_G, np.dot(H, np.linalg.inv(np.tensordot(H, H, (0, 0)))))
+    H = np.dot(W_H, np.dot(G, np.linalg.inv(np.tensordot(G, G, (0, 0)))))
+
+    # Print compression error and running time
+    err = ((W_G - np.tensordot(G, H, (1, 1))) ** 2).sum()
+    elapsed_time = (datetime.datetime.now() - start_time).total_seconds()
+    print 'Kernel approximation error = %.4f, Elapsed time = %.2f' \
+          % (err, elapsed_time)
+
+    return (H, G)
+
+# Outer module for convolutional kernel compression
+def CompressConvKernel(W_true, b_true, rank):
+    H, G = CompressConvKernelCore(W_true, rank)
+    for i in range(1, 30):
+        H, G = CompressConvKernelCore(W_true, rank, H, G)
+
+    W1 = H.reshape((1, W_true.shape[1], W_true.shape[2], rank)) \
+          .swapaxes(0, 3).astype(np.float32, copy=True)
+    b1 = np.zeros((rank,), dtype=np.float32)
+    W2 = G.reshape((W_true.shape[0], W_true.shape[3], 1, rank)) \
+          .swapaxes(1, 3).astype(np.float32, copy=True)
+    b2 = b_true.copy()
+
+    return (W1, b1, W2, b2)
+
+
+
+#############################################################################
+# 5. Fully-connected layer compression modoules
 #############################################################################
 
 # Core module for FC layer compression (= Truncaated SVD)
@@ -373,10 +432,10 @@ def CompressFCLayer(W_true, b_true, rank):
 
 
 #############################################################################
-# 5. Outer loop of the algorithm
+# 6. Outer loop of the algorithm
 #############################################################################
 
-def Run(cfgs):
+def Compression(cfgs):
     # Load original and compressed networks
     # Please prepare the following three files
     #   ./prototxt/true.prototxt: original network prototxt
@@ -418,9 +477,62 @@ def Run(cfgs):
     compressed_net.save('./caffemodel/compressed.caffemodel')
 
 
+# 3-layer compression for a convolutional layer C' x C x kh x kw:
+#   Rk x C x kh x 1,  R x Rk x 1 x kw,  C' x R x 1 x 1
+#   In our experiments, we set Rk = R
+def Compression3D(cfgs):
+    # Please prepare the following three files
+    #   ./prototxt/compressed_3d.prototxt: compressed network prototxt
+    true_net = caffe.Net('./prototxt/true.prototxt', \
+                         './caffemodel/true.caffemodel', \
+                         caffe.TEST)
+    compressed_net = caffe.Net('./prototxt/compressed_3d.prototxt', \
+                               './caffemodel/true.caffemodel', \
+                               caffe.TEST)
+
+    # Compress layer-by-layer, earlier layer first
+    for i in range(len(cfgs['layers'])):
+        layer, rank = cfgs['layers'][i]
+        print '########### 3D-Compressing %s to rank %d ###########' \
+              % (layer, rank)
+
+        # Original network parameters
+        W_true = true_net.params[layer][0].data
+        b_true = true_net.params[layer][1].data
+
+        # Compression
+        if 'conv' in layer:
+            # C' x C x kh x kw  ->  R x C x kh x 1  and  C' x R x 1 x kw
+            W1, b1, W2, b2 = CompressConvKernel(W_true, b_true, rank)
+            compressed_net.params[layer + '_kh'][0].data[:] = W1
+            compressed_net.params[layer + '_kh'][1].data[:] = b1
+            compressed_net.params[layer + '_kw'][0].data[:] = W2
+            compressed_net.params[layer + '_kw'][1].data[:] = b2
+
+            # C' x R x 1 x kw  ->  R x R x 1 x kw  and  C' x R x 1 x 1
+            Y_true, Y_dirty = \
+                MakeTrainingDataset(cfgs, layer, true_net, compressed_net, \
+                                    compressed_layer_postfix='_kw')
+            W1, b1, W2, b2 = \
+                CompressConvLayer(Y_true, Y_dirty, W2, b2, rank)
+            compressed_net.params[layer + '_kw_a'][0].data[:] = W1
+            compressed_net.params[layer + '_kw_a'][1].data[:] = b1
+            compressed_net.params[layer + '_kw_b'][0].data[:] = W2
+            compressed_net.params[layer + '_kw_b'][1].data[:] = b2
+        elif 'fc' in layer:
+            W1, b1, W2, b2 = CompressFCLayer(W_true, b_true, rank)
+            compressed_net.params[layer + '_a'][0].data[:] = W1
+            compressed_net.params[layer + '_a'][1].data[:] = b1
+            compressed_net.params[layer + '_b'][0].data[:] = W2
+            compressed_net.params[layer + '_b'][1].data[:] = b2
+
+    # Save the compressed network as: ./caffemodel/compressed_3d.caffemodel
+    compressed_net.save('./caffemodel/compressed_3d.caffemodel')
+
+
 
 #############################################################################
-# 6. Main module
+# 7. Main module
 #############################################################################
 
 import caffe
@@ -442,10 +554,20 @@ model_ = {
         'input_size': (224, 224), \
         'mean_bgr': [103.939, 116.779, 123.68], \
     }, \
+    'vggnet3d': {
+        'layers': [('conv1_2', 20), ('conv2_1', 44), ('conv2_2', 49), \
+                   ('conv3_1', 91), ('conv3_2', 81), ('conv3_3', 98), \
+                   ('conv4_1', 182), ('conv4_2', 161), ('conv4_3', 175), \
+                   ('conv5_1', 406), ('conv5_2', 392), ('conv5_3', 375), \
+                   ('fc6', 512), ('fc7', 128)], \
+        'data': './imagenet/train.txt', \
+        'input_size': (224, 224), \
+        'mean_bgr': [103.939, 116.779, 123.68], \
+    }, \
 }
 
 if __name__ == "__main__":
     caffe.set_mode_gpu()
     caffe.set_device(0)
 
-    Run(model_['vggnet'])
+    Compression3D(model_['vggnet3d'])
