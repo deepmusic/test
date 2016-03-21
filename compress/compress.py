@@ -570,4 +570,4 @@ if __name__ == "__main__":
     caffe.set_mode_gpu()
     caffe.set_device(0)
 
-    Compression3D(model_['vggnet3d'])
+    Compression(model_['vggnet'])
