@@ -354,7 +354,7 @@ layer {
   name: "drop6"
   type: "Dropout"
   bottom: "fc6"
-  top: "conv6"
+  top: "fc6"
   dropout_param {
     dropout_ratio: 0.5
   }
