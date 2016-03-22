@@ -2,6 +2,7 @@ from datasets.factory import get_imdb
 from struct import unpack
 from os.path import join
 import numpy as np
+import sys
 
 def load_detections(filename, all_boxes):
   f = open(filename, 'rb')
@@ -36,3 +37,6 @@ def eval(filename, **kwargs):
     for i in xrange(len(imdb.image_index)):
       all_boxes[j][i] = np.array(all_boxes[j][i], dtype=np.float32)
   imdb.evaluate_detections(all_boxes, outdir)
+
+if __name__ == '__main__':
+  eval(sys.argv[1])
