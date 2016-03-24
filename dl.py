@@ -131,6 +131,6 @@ def plot_f(weight, bias, swap_bgr=False):
   plt.show()
 
 img, im_info = load_image('data/voc/2007/VOC2007/JPEGImages/000004.jpg')
-a = load_data('data/temp/conv_bottom0.bin')
+#a = load_data('data/temp/conv_bottom0.bin')
 #b = layer_img(img, a[0])
 #plot_imgs(b)
