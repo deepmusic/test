@@ -446,6 +446,7 @@ void proposal_forward(const Tensor* const bottom4d,
   const real* p_d_anchor_item = d_anchor4d->data;
   const real* p_img_info = img_info1d->data;
   real* p_top_item = top2d->data;
+  int total_top_size = 0;
   for (int n = 0; n < bottom4d->num_items; ++n) {
     // bottom shape: 2 x num_anchors x H x W
     const int bottom_H = bottom4d->shape[n][2];
@@ -551,7 +552,8 @@ void proposal_forward(const Tensor* const bottom4d,
       // set top shape: num_rois x 4,  (x1, y1, x2, y2) for each RoI
       top2d->shape[n][0] = num_rois;
       top2d->shape[n][1] = 4;
-      top2d->start[n] = top2d->shape[n][0] * top2d->shape[n][1];
+      top2d->start[n] = total_top_size;
+      total_top_size += num_rois * 4;
     }
 
     // locate next item

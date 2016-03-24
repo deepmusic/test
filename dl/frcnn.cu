@@ -366,6 +366,7 @@ void forward_frcnn_7_1_1(void)
     proposal_forward(&srpn.pred, &srpn.bbox, &srpn.img_info,
                      &srpn.roi, anchors,
                      proposal_temp, proposal_tempint,
+                     //NULL, proposal_tempint,
                      temp_data, tempint_data,
                      &proposal_option);
     print_tensor_info("img_info", &srpn.img_info);
@@ -421,26 +422,26 @@ void forward_frcnn_7_1_1(void)
 
     // fc7
     rcnn.fc7_1.data = backup2_data;
-    fc_option.out_channels = 4096;
-    fc_option.bias = 1;
-    fc_forward(&rcnn.fc6_2, &rcnn.fc7_1, &rcnn.weight7_1, &rcnn.bias7_2,
+    fc_option.out_channels = 128;
+    fc_option.bias = 0;
+    fc_forward(&rcnn.fc6_2, &rcnn.fc7_1, &rcnn.weight7_1, &rcnn.bias7_1,
                const_data, &fc_option);
     print_tensor_info("fc7_1", &rcnn.fc7_1);
-/*
+
     rcnn.fc7_2.data = layer1_data;
     fc_option.out_channels = 4096;
     fc_option.bias = 1;
     fc_forward(&rcnn.fc7_1, &rcnn.fc7_2, &rcnn.weight7_2, &rcnn.bias7_2,
                const_data, &fc_option);
-*/
-    relu_forward_inplace(&rcnn.fc7_1, &relu_option);
-    dropout_forward_inplace(&rcnn.fc7_1, NULL, &dropout_option);
+
+    relu_forward_inplace(&rcnn.fc7_2, &relu_option);
+    dropout_forward_inplace(&rcnn.fc7_2, NULL, &dropout_option);
     print_tensor_info("fc7_2", &rcnn.fc7_2);
 
     // bbox
     rcnn.bbox.data = layer2_data;
     fc_option.out_channels = 84;
-    fc_forward(&rcnn.fc7_1, &rcnn.bbox, &rcnn.weight_b, &rcnn.bias_b,
+    fc_forward(&rcnn.fc7_2, &rcnn.bbox, &rcnn.weight_b, &rcnn.bias_b,
                const_data, &fc_option);
     print_tensor_info("bbox", &rcnn.bbox);
     // bbox reshape
@@ -461,7 +462,7 @@ void forward_frcnn_7_1_1(void)
     // score
     rcnn.score.data = backup1_data;
     fc_option.out_channels = 21;
-    fc_forward(&rcnn.fc7_1, &rcnn.score, &rcnn.weight_s, &rcnn.bias_s,
+    fc_forward(&rcnn.fc7_2, &rcnn.score, &rcnn.weight_s, &rcnn.bias_s,
                const_data, &fc_option);
     print_tensor_info("score", &rcnn.score);
 
@@ -894,14 +895,14 @@ void shape_frcnn_7_1_1(const int print_network_info)
     max_const_size = MAX(max_const_size,  const_size);
 
     // fc7_1
-    fc_option.out_channels = 4096;
-    fc_option.bias = 1;
-    fc_shape(&rcnn.fc6_2, &rcnn.fc7_1, &rcnn.weight7_1, &rcnn.bias7_2,
+    fc_option.out_channels = 128;
+    fc_option.bias = 0;
+    fc_shape(&rcnn.fc6_2, &rcnn.fc7_1, &rcnn.weight7_1, &rcnn.bias7_1,
              &const_size, &fc_option);
     max_layer_size = MAX(max_layer_size,  flatten_size(&rcnn.fc7_1));
     max_param_size = MAX(max_param_size,  flatten_size(&rcnn.weight7_1));
     max_const_size = MAX(max_const_size,  const_size);
-/*
+
     // fc7_2
     fc_option.out_channels = 4096;
     fc_option.bias = 1;
@@ -910,10 +911,10 @@ void shape_frcnn_7_1_1(const int print_network_info)
     max_layer_size = MAX(max_layer_size,  flatten_size(&rcnn.fc7_2));
     max_param_size = MAX(max_param_size,  flatten_size(&rcnn.weight7_2));
     max_const_size = MAX(max_const_size,  const_size);
-*/
+
     // bbox
     fc_option.out_channels = 84;
-    fc_shape(&rcnn.fc7_1, &rcnn.bbox, &rcnn.weight_b, &rcnn.bias_b,
+    fc_shape(&rcnn.fc7_2, &rcnn.bbox, &rcnn.weight_b, &rcnn.bias_b,
              &const_size, &fc_option);
     max_layer_size = MAX(max_layer_size,  flatten_size(&rcnn.bbox));
     max_param_size = MAX(max_param_size,  flatten_size(&rcnn.weight_b));
@@ -929,7 +930,7 @@ void shape_frcnn_7_1_1(const int print_network_info)
 
     // score
     fc_option.out_channels = 21;
-    fc_shape(&rcnn.fc7_1, &rcnn.score, &rcnn.weight_s, &rcnn.bias_s,
+    fc_shape(&rcnn.fc7_2, &rcnn.score, &rcnn.weight_s, &rcnn.bias_s,
              &const_size, &fc_option);
     max_layer_size = MAX(max_layer_size,  flatten_size(&rcnn.score));
     max_param_size = MAX(max_param_size,  flatten_size(&rcnn.weight_s));
@@ -1181,7 +1182,7 @@ void construct_frcnn_7_1_1(void)
       space += malloc_tensor(&rcnn.weight6_2);
       space += malloc_tensor(&rcnn.bias6_2);
       space += malloc_tensor(&rcnn.weight7_1);
-      //space += malloc_tensor(&rcnn.weight7_2);
+      space += malloc_tensor(&rcnn.weight7_2);
       space += malloc_tensor(&rcnn.bias7_2);
       space += malloc_tensor(&rcnn.weight_s);
       space += malloc_tensor(&rcnn.bias_s);
@@ -1292,8 +1293,8 @@ void construct_frcnn_7_1_1(void)
     load_tensor("../data/temp/fc6_1_param0.bin", &rcnn.weight6_1, param_data);
     load_tensor("../data/temp/fc6_2_param0.bin", &rcnn.weight6_2, param_data);
     load_tensor("../data/temp/fc6_param1.bin", &rcnn.bias6_2, param_data);
-    load_tensor("../data/temp/fc7_param0.bin", &rcnn.weight7_1, param_data);
-    //load_tensor("../data/temp/fc7_2_param0.bin", &rcnn.weight7_2, param_data);
+    load_tensor("../data/temp/fc7_1_param0.bin", &rcnn.weight7_1, param_data);
+    load_tensor("../data/temp/fc7_2_param0.bin", &rcnn.weight7_2, param_data);
     load_tensor("../data/temp/fc7_param1.bin", &rcnn.bias7_2, param_data);
     load_tensor("../data/temp/cls_score_param0.bin", &rcnn.weight_s, param_data);
     load_tensor("../data/temp/cls_score_param1.bin", &rcnn.bias_s, param_data);
@@ -1462,7 +1463,7 @@ void destruct_frcnn_7_1_1(void)
     cudaFree(rcnn.weight6_2.data);
     cudaFree(rcnn.bias6_2.data);
     cudaFree(rcnn.weight7_1.data);
-    //cudaFree(rcnn.weight7_2.data);
+    cudaFree(rcnn.weight7_2.data);
     cudaFree(rcnn.bias7_2.data);
     cudaFree(rcnn.weight_s.data);
     cudaFree(rcnn.bias_s.data);
@@ -1555,7 +1556,7 @@ void destruct_frcnn_7_1_1(void)
     free(rcnn.weight6_2.data);
     free(rcnn.bias6_2.data);
     free(rcnn.weight7_1.data);
-    //free(rcnn.weight7_2.data);
+    free(rcnn.weight7_2.data);
     free(rcnn.bias7_2.data);
     free(rcnn.weight_s.data);
     free(rcnn.bias_s.data);
