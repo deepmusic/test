@@ -97,10 +97,15 @@ void load_image(const char* const filename,
 
 
 // --------------------------------------------------------------------------
-// layer options
+// convolution & deconvolution
+//   struct ConvOption
+//   conv_forward
+//   conv_shape
+//   deconv_forward
+//   deconv_shape
 // --------------------------------------------------------------------------
 
-typedef struct LayerOption_
+typedef struct ConvOption_
 {
   int num_groups;
   int out_channels;
@@ -109,40 +114,7 @@ typedef struct LayerOption_
   int stride_h, stride_w;
   int bias;
   void* handle;
-
-  int pooled_height;
-  int pooled_width;
-  real spatial_scale;
-
-  real negative_slope;
-
-  real* scales;
-  real* ratios;
-  int num_scales;
-  int num_ratios;
-  int num_concats;
-  int base_size;
-  int feat_stride;
-  int min_size;
-  int pre_nms_topn;
-  int post_nms_topn;
-  real nms_thresh;
-  real score_thresh;
-
-  int scaled;
-  int test;
-  real threshold;
-} LayerOption;
-
-
-
-// --------------------------------------------------------------------------
-// convolution & deconvolution
-//   conv_forward
-//   conv_shape
-//   deconv_forward
-//   deconv_shape
-// --------------------------------------------------------------------------
+} ConvOption;
 
 // convolution: bottom -> top
 //   G: number of groups
@@ -158,7 +130,7 @@ void conv_forward(const Tensor* const bottom3d,
                   const Tensor* const bias1d,
                   real* const temp_data,
                   const real* const const_data,
-                  const LayerOption* const option);
+                  const ConvOption* const option);
 
 void conv_shape(const Tensor* const bottom3d,
                 Tensor* const top3d,
@@ -166,7 +138,7 @@ void conv_shape(const Tensor* const bottom3d,
                 Tensor* const bias1d,
                 int* const temp_size,
                 int* const const_size,
-                const LayerOption* const option);
+                const ConvOption* const option);
 
 // deconvolution: bottom -> top
 //   G: number of groups
@@ -182,7 +154,7 @@ void deconv_forward(const Tensor* const bottom3d,
                     const Tensor* const bias1d,
                     real* const temp_data,
                     const real* const const_data,
-                    const LayerOption* const option);
+                    const ConvOption* const option);
 
 void deconv_shape(const Tensor* const bottom3d,
                   Tensor* const top3d,
@@ -190,15 +162,23 @@ void deconv_shape(const Tensor* const bottom3d,
                   Tensor* const bias1d,
                   int* const temp_size,
                   int* const const_size,
-                  const LayerOption* const option);
+                  const ConvOption* const option);
 
 
 
 // --------------------------------------------------------------------------
 // fully-connected
+//   struct FCOption
 //   fc_forward
 //   fc_shape
 // --------------------------------------------------------------------------
+
+typedef struct FCOption_
+{
+  int out_channels;
+  int bias;
+  void* handle;
+} FCOption;
 
 // fully-connected: bottom -> top
 //   bottom: N x D (N items of D-dim array)
@@ -211,22 +191,30 @@ void fc_forward(const Tensor* const bottom2d,
                 const Tensor* const weight2d,
                 const Tensor* const bias1d,
                 const real* const const_data,
-                const LayerOption* const option);
+                const FCOption* const option);
 
 void fc_shape(const Tensor* const bottom2d,
               Tensor* const top2d,
               Tensor* const weight2d,
               Tensor* const bias1d,
               int* const const_size,
-              const LayerOption* const option);
+              const FCOption* const option);
 
 
 
 // --------------------------------------------------------------------------
 // pooling
+//   struct PoolOption
 //   pool_forward
 //   pool_shape
 // --------------------------------------------------------------------------
+
+typedef struct PoolOption_
+{
+  int kernel_h, kernel_w;
+  int pad_h, pad_w;
+  int stride_h, stride_w;
+} PoolOption;
 
 // max-pooling: bottom -> top
 //   bottom: C x H x W
@@ -235,21 +223,28 @@ void fc_shape(const Tensor* const bottom2d,
 void pool_forward(const Tensor* const bottom3d,
                   Tensor* const top3d,
                   int* const argmax_data,
-                  const LayerOption* const option);
+                  const PoolOption* const option);
 
 void pool_shape(const Tensor* const bottom3d,
                 Tensor* const top3d,
                 int* const argmax_size,
-                const LayerOption* const option);
+                const PoolOption* const option);
 
 
 
 // --------------------------------------------------------------------------
 // RoI pooling
-//   struct LayerOption
+//   struct ROIPoolOption
 //   roipool_forward
 //   roipool_shape
 // --------------------------------------------------------------------------
+
+typedef struct ROIPoolOption_
+{
+  int pooled_height;
+  int pooled_width;
+  real spatial_scale;
+} ROIPoolOption;
 
 // RoI pooling: bottom -> top
 //   bottom: C x H x W
@@ -260,23 +255,28 @@ void roipool_forward(const Tensor* const bottom3d,
                      const Tensor* const roi2d,
                      Tensor* const top4d,
                      int* const argmax_data,
-                     const LayerOption* option);
+                     const ROIPoolOption* option);
 
 void roipool_shape(const Tensor* const bottom3d,
                    const Tensor* const roi2d,
                    Tensor* const top4d,
                    int* const argmax_size,
-                   const LayerOption* option);
+                   const ROIPoolOption* option);
 
 
 
 // --------------------------------------------------------------------------
 // ReLU transform
-//   struct LayerOption
+//   struct ReluOption
 //   relu_forward
 //   relu_forward_inplace
 //   relu_shape
 // --------------------------------------------------------------------------
+
+typedef struct ReluOption_
+{
+  real negative_slope;
+} ReluOption;
 
 // (soft-)ReLU transform: bottom -> top
 //   data size: total number of nodes (N * C * H * W or something)
@@ -284,14 +284,14 @@ void roipool_shape(const Tensor* const bottom3d,
 //                             > 0, perform soft ReLU
 void relu_forward(const Tensor* const bottom,
                   Tensor* const top,
-                  const LayerOption* const option);
+                  const ReluOption* const option);
 
 // in-place (soft-)ReLU transform: bottom -> bottom
 //   data size: total number of nodes (N * C * H * W or something)
 //   if option->negative_slope = 0, perform ReLU
 //                             > 0, perform soft ReLU
 void relu_forward_inplace(Tensor* const bottom,
-                          const LayerOption* const option);
+                          const ReluOption* const option);
 
 void relu_shape(const Tensor* const bottom,
                 Tensor* const top);
@@ -300,11 +300,26 @@ void relu_shape(const Tensor* const bottom,
 
 // --------------------------------------------------------------------------
 // top-n proposal generation
-//   struct LayerOption
+//   struct ProposalOption
 //   proposal_forward
 //   proposal_shape
 //   generate_anchors
 // --------------------------------------------------------------------------
+
+typedef struct ProposalOption_
+{
+  real* scales;
+  real* ratios;
+  int num_scales;
+  int num_ratios;
+  int num_concats;
+  int base_size;
+  int feat_stride;
+  int min_size;
+  int pre_nms_topn;
+  int post_nms_topn;
+  real nms_thresh;
+} ProposalOption;
 
 // proposal: bottom -> top
 //   bottom: 2 x num_anchors x H x W tensor
@@ -340,13 +355,13 @@ void proposal_forward(const Tensor* const bottom4d,
                       int* const keep,
                       real* const proposals_dev,
                       int* const keep_dev,
-                      const LayerOption* const option);
+                      const ProposalOption* const option);
 
 void proposal_shape(const Tensor* const bottom4d,
                     Tensor* const top2d,
                     int* const proposals_size,
                     int* const keep_size,
-                    const LayerOption* const option);
+                    const ProposalOption* const option);
 
 // given a base box, enumerate transformed boxes of varying sizes and ratios
 //   option->base_size: base box's width & height (i.e., base box is square)
@@ -360,17 +375,24 @@ void proposal_shape(const Tensor* const bottom4d,
 //     num_boxes = total number of transformations
 //         = option->num_scales * option->num_ratios * option->num_concats
 void generate_anchors(real* const anchors,
-                      const LayerOption* const option);
+                      const ProposalOption* const option);
 
 
 
 // --------------------------------------------------------------------------
 // dropout
-//   struct LayerOption
+//   struct DropoutOption
 //   dropout_forward
 //   dropout_forward_inplace
 //   dropout_shape
 // --------------------------------------------------------------------------
+
+typedef struct DropoutOption_
+{
+  int scaled;
+  int test;
+  real threshold;
+} DropoutOption;
 
 // dropout transform: bottom -> top
 //   if option->scaled = 1, perform scaled dropout
@@ -383,12 +405,12 @@ void generate_anchors(real* const anchors,
 void dropout_forward(const Tensor* const bottom,
                      unsigned int* const mask,
                      Tensor* const top,
-                     const LayerOption* const option);
+                     const DropoutOption* const option);
 
 // in-place dropout transform: bottom -> bottom
 void dropout_forward_inplace(Tensor* const bottom,
                              unsigned int* const mask,
-                             const LayerOption* const option);
+                             const DropoutOption* const option);
 
 void dropout_shape(const Tensor* const bottom,
                    Tensor* const top);
@@ -402,16 +424,16 @@ void dropout_shape(const Tensor* const bottom,
 // --------------------------------------------------------------------------
 
 // concat: bottom[0], bottom[1], ..., bottom[M-1] -> top
-//   M = option->num_concats
+//   M = num_bottoms
 //   bottom[m]: C_m x H x W  (C_m may different from each other)
 //   top: sum(C_m) x H x W  (channel-wise concatenation)
 void concat_forward(const Tensor* const bottom3d[],
                     Tensor* const top3d,
-                    const LayerOption* const option);
+                    const int num_bottoms);
 
 void concat_shape(const Tensor* const bottom3d[],
                   Tensor* const top3d,
-                  const LayerOption* const option);
+                  const int num_bottoms);
 
 
 
@@ -443,10 +465,16 @@ void softmax_shape(const Tensor* const bottom3d,
 
 // --------------------------------------------------------------------------
 // object detection output
-//   struct LayerOption
+//   struct ODOutOption
 //   odout_forward
 //   odout_shape
 // --------------------------------------------------------------------------
+typedef struct ODOutOption_
+{
+  int min_size;
+  real score_thresh;
+  real nms_thresh;
+} ODOutOption;
 
 void odout_forward(const Tensor* const bottom2d,
                    const Tensor* const d_anchor3d,
@@ -457,13 +485,13 @@ void odout_forward(const Tensor* const bottom2d,
                    int* const keep,
                    real* const proposals_dev,
                    int* const keep_dev,
-                   const LayerOption* const option);
+                   const ODOutOption* const option);
 
 void odout_shape(const Tensor* const bottom2d,
                  Tensor* const top2d,
                  int* const proposals_size,
                  int* const keep_size,
-                 const LayerOption* const option);
+                 const ODOutOption* const option);
 
 
 

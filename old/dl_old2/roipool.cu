@@ -156,7 +156,7 @@ void roipool_forward(const Tensor* const bottom3d,
                      const Tensor* const roi2d,
                      Tensor* const top4d,
                      int* const argmax_data,
-                     const LayerOption* option)
+                     const ROIPoolOption* option)
 {
   // top height & width
   const int top_H = option->pooled_height; // H'
@@ -233,7 +233,7 @@ void roipool_shape(const Tensor* const bottom3d,
                    const Tensor* const roi2d,
                    Tensor* const top4d,
                    int* const argmax_size,
-                   const LayerOption* option)
+                   const ROIPoolOption* option)
 {
   // top height & width
   const int top_H = option->pooled_height; // H'
@@ -285,7 +285,7 @@ int main(int argc, char* argv[])
   real *X_data = NULL, *Y_data = NULL, *Y_true_data = NULL;
   real *roi_data = NULL;
   int* p_argmax_data = NULL;
-  LayerOption option;
+  ROIPoolOption option;
   int argmax_size;
 
   // set option

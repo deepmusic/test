@@ -350,7 +350,7 @@ void odout_forward(const Tensor* const bottom2d,
                    int* const keep,
                    real* const proposals_dev,
                    int* const keep_dev,
-                   const LayerOption* const option)
+                   const ODOutOption* const option)
 {
   // do forward-pass for each item in the batch
   const real* p_bottom_item = bottom2d->data;
@@ -417,7 +417,7 @@ void odout_shape(const Tensor* const bottom2d,
                  Tensor* const top2d,
                  int* const proposals_size,
                  int* const keep_size,
-                 const LayerOption* const option)
+                 const ODOutOption* const option)
 {
   int total_num_rois = 0;
 

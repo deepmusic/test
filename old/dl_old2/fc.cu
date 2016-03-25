@@ -16,7 +16,7 @@ void fc_forward(const Tensor* const bottom2d,
                 const Tensor* const weight2d,
                 const Tensor* const bias1d,
                 const real* const const_data,
-                const LayerOption* const option)
+                const FCOption* const option)
 {
   // weight shape: D' x D
   const int top_D = weight2d->shape[0][0];  // D'
@@ -128,7 +128,7 @@ void fc_shape(const Tensor* const bottom2d,
               Tensor* const weight2d,
               Tensor* const bias1d,
               int* const const_size,
-              const LayerOption* const option)
+              const FCOption* const option)
 {
   // bottom shape: N x D
   const int N = bottom2d->shape[0][0];
@@ -156,7 +156,7 @@ void fc_shape(const Tensor* const bottom2d,
     bias1d->shape[0][0] = top_D;
     bias1d->start[0] = 0;
   }
-  else if (bias1d) {
+  else {
     bias1d->num_items = 0;
     bias1d->ndim = 0;
     bias1d->shape[0][0] = 0;
@@ -183,7 +183,7 @@ int main(int argc, char* argv[])
   real *X_data = NULL, *Y_data = NULL, *Y_true_data = NULL;
   real *W_data = NULL, *b_data = NULL;
   real *const_data = NULL, *p_const_data = NULL;
-  LayerOption option;
+  FCOption option;
   int const_size;
 
   // set option

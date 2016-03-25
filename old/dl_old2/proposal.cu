@@ -100,7 +100,7 @@ int transform_box(real* const box,
 //         = option->num_scales * option->num_ratios * option->num_concats
 #define MAX_NUM_RATIO_SCALE 10
 void generate_anchors(real* const anchors,
-                      const LayerOption* const option)
+                      const ProposalOption* const option)
 {
   // base box's width & height & center location
   const real base_area = option->base_size * option->base_size;
@@ -435,7 +435,7 @@ void proposal_forward(const Tensor* const bottom4d,
                       int* const keep,
                       real* const proposals_dev,
                       int* const keep_dev,
-                      const LayerOption* const option)
+                      const ProposalOption* const option)
 {
   // number of anchors  (= number of concats * scales * ratios)
   const int num_anchors
@@ -582,7 +582,7 @@ void proposal_shape(const Tensor* const bottom4d,
                     Tensor* const top2d,
                     int* const proposals_size,
                     int* const keep_size,
-                    const LayerOption* const option)
+                    const ProposalOption* const option)
 {
   int max_area = 0;
 
@@ -638,7 +638,7 @@ int main(int argc, char* argv[])
   real *proposals = NULL, *proposals_dev = NULL;
   int *keep = NULL, *keep_dev = NULL;
   int num_anchors;
-  LayerOption option;
+  ProposalOption option;
 
   // set option
   {

@@ -195,7 +195,7 @@ void dropout_test_inplace_cpu(real* const bottom,
 void dropout_forward(const Tensor* const bottom,
                      unsigned int* const mask,
                      Tensor* const top,
-                     const LayerOption* const option)
+                     const DropoutOption* const option)
 {
   const int data_size = flatten_size(bottom);
 
@@ -280,7 +280,7 @@ void dropout_forward(const Tensor* const bottom,
 // in-place dropout transform: bottom -> bottom
 void dropout_forward_inplace(Tensor* const bottom,
                              unsigned int* const mask,
-                             const LayerOption* const option)
+                             const DropoutOption* const option)
 {
   const int data_size = flatten_size(bottom);
 
@@ -380,7 +380,7 @@ int main(int argc, char* argv[])
   Tensor X, Y;
   real *X_data = NULL, *Y_data = NULL;
   unsigned int *mask_data = NULL;
-  LayerOption option;
+  DropoutOption option;
 
   // set option
   {

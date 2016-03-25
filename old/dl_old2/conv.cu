@@ -134,7 +134,7 @@ void conv_forward(const Tensor* const bottom3d,
                   const Tensor* const bias1d,
                   real* const temp_data,
                   const real* const const_data,
-                  const LayerOption* const option)
+                  const ConvOption* const option)
 {
   // weight shape: G x C' x C x kernel_h x kernel_w
   const int num_groups = weight5d->shape[0][0]; // G
@@ -309,7 +309,7 @@ void conv_shape(const Tensor* const bottom3d,
                 Tensor* const bias1d,
                 int* const temp_size,
                 int* const const_size,
-                const LayerOption* const option)
+                const ConvOption* const option)
 {
   const int num_groups = option->num_groups; // G
   const int top_C = option->out_channels / option->num_groups;  // C'
@@ -366,7 +366,7 @@ void conv_shape(const Tensor* const bottom3d,
     bias1d->shape[0][0] = num_groups * top_C;
     bias1d->start[0] = 0;
   }
-  else if (bias1d) {
+  else {
     bias1d->num_items = 0;
     bias1d->ndim = 0;
     bias1d->shape[0][0] = 0;
@@ -396,7 +396,7 @@ int main(int argc, char* argv[])
   real *X_data = NULL, *Y_data = NULL, *Y_true_data = NULL;
   real *W_data = NULL, *b_data = NULL;
   real *p_temp_data = NULL, *const_data = NULL, *p_const_data = NULL;
-  LayerOption option;
+  ConvOption option;
   int temp_size, const_size;
 
   // set option

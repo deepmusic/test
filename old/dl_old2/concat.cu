@@ -7,15 +7,13 @@
 // --------------------------------------------------------------------------
 
 // concat: bottom[0], bottom[1], ..., bottom[M-1] -> top
-//   M = option->num_concats
+//   M = num_bottoms
 //   bottom[m]: C_m x H x W  (C_m may different from each other)
 //   top: sum(C_m) x H x W  (channel-wise concatenation)
 void concat_forward(const Tensor* const bottom3d[],
                     Tensor* const top3d,
-                    const LayerOption* const option)
+                    const int num_bottoms)
 {
-  const int num_bottoms = option->num_concats;
-
   const real* * p_bottom_data
       = (const real* *)malloc(num_bottoms * sizeof(real*));
   real* p_top_data = top3d->data;
@@ -79,10 +77,8 @@ void concat_forward(const Tensor* const bottom3d[],
 
 void concat_shape(const Tensor* const bottom3d[],
                   Tensor* const top3d,
-                  const LayerOption* const option)
+                  const int num_bottoms)
 {
-  const int num_bottoms = option->num_concats;
-
   // calculate shape for each item in the batch
   for (int n = 0; n < bottom3d[0]->num_items; ++n) {
     const int H = bottom3d[0]->shape[n][1];

@@ -110,7 +110,7 @@ void prelu_inplace_cpu(real* const bottom, const int data_size,
 //                             > 0, perform soft ReLU
 void relu_forward(const Tensor* const bottom,
                   Tensor* const top,
-                  const LayerOption* const option)
+                  const ReluOption* const option)
 {
   const int data_size = flatten_size(bottom);
 
@@ -160,7 +160,7 @@ void relu_forward(const Tensor* const bottom,
 //   if option->negative_slope = 0, perform ReLU
 //                             > 0, perform soft ReLU
 void relu_forward_inplace(Tensor* const bottom,
-                          const LayerOption* const option)
+                          const ReluOption* const option)
 {
   const int data_size = flatten_size(bottom);
 
@@ -227,7 +227,7 @@ int main(int argc, char* argv[])
   // variable declaration & memory allocation
   Tensor X, Y_relu, Y_prelu;
   real *X_data = NULL, *relu_data = NULL, *prelu_data = NULL;
-  LayerOption option;
+  ReluOption option;
 
   // set option
   {

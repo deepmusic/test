@@ -19,6 +19,7 @@ int flatten_size(const Tensor* const tensor)
 void print_tensor_info(const char* const name,
                        const Tensor* const tensor)
 {
+  return;
   printf("%s: ", name);
   if (tensor->num_items > 1) {
     printf("batch size = %d\n", tensor->num_items);

@@ -136,7 +136,7 @@ void max_pool_cpu(const real* const bottom3d,
 void pool_forward(const Tensor* const bottom3d,
                   Tensor* const top3d,
                   int* const argmax_data,
-                  const LayerOption* const option)
+                  const PoolOption* const option)
 {
   // kernel size, padding size & stride size
   const int kernel_h = option->kernel_h;
@@ -210,7 +210,7 @@ void pool_forward(const Tensor* const bottom3d,
 void pool_shape(const Tensor* const bottom3d,
                 Tensor* const top3d,
                 int* const argmax_size,
-                const LayerOption* const option)
+                const PoolOption* const option)
 {
   const int kernel_h = option->kernel_h;
   const int kernel_w = option->kernel_w;
@@ -264,7 +264,7 @@ int main(int argc, char* argv[])
   Tensor X, Y;
   real *X_data = NULL, *Y_data = NULL, *Y_true_data = NULL;
   int* p_argmax_data = NULL;
-  LayerOption option;
+  PoolOption option;
   int argmax_size;
 
   // set option
