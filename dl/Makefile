@@ -1,4 +1,4 @@
-CC := gcc
+CC := g++
 CFLAGS := -O3 -Wall -std=c99
 LDFLAGS := -lcblas -lm -lopencv_core -lopencv_highgui
 NVCC := /usr/local/cuda/bin/nvcc

@@ -15,11 +15,11 @@ void img2input(const unsigned char* const img,
                Tensor* const img_info1d,
                const int height, const int width, const int stride)
 {
-  static const real gs_max_size = 1000.0f;
-  static const real gs_base_size = 600.0f;
-  static const real gs_mean_blue = 102.9801f;
-  static const real gs_mean_green = 115.9465f;
-  static const real gs_mean_red = 122.7717f;
+  const real gs_max_size = 1000.0f;
+  const real gs_base_size = 600.0f;
+  const real gs_mean_blue = 102.9801f;
+  const real gs_mean_green = 115.9465f;
+  const real gs_mean_red = 122.7717f;
 
   const int img_size_min = MIN(height,  width);
   const int img_size_max = MAX(height,  width);
@@ -29,7 +29,7 @@ void img2input(const unsigned char* const img,
     img_scale = gs_max_size / img_size_max;
   }
 
-  static const int gs_scale_base = 32;
+  const int gs_scale_base = 32;
   const real img_scale_x = (real)((int)(width * img_scale / gs_scale_base) * gs_scale_base) / width;
   const real img_scale_y = (real)((int)(height * img_scale / gs_scale_base) * gs_scale_base) / height;
 
@@ -51,13 +51,13 @@ void img2input(const unsigned char* const img,
   for (int i = 0; i < resized_height; ++i) {
     const real y = i / img_scale_y;
     const int y0 = (int)y;
-    const int y1 = y0 + 1;
+    const int y1 = MIN(y0 + 1,  height - 1);
     const real ay = y - y0;
     const real by = 1 - ay;
     for (int j = 0; j < resized_width; ++j) {
-      const real x = j / img_scale_x;		
-      const int x0 = (int)x;			
-      const int x1 = x0 + 1;
+      const real x = j / img_scale_x;
+      const int x0 = (int)x;
+      const int x1 = MIN(x0 + 1,  width - 1);
       const real ax = x - x0;
       const real bx = 1 - ax;
       real B = 0, G = 0, R = 0;
@@ -85,6 +85,13 @@ void img2input(const unsigned char* const img,
       p_inputB[i * resized_width + j] = B - gs_mean_blue;
       p_inputG[i * resized_width + j] = G - gs_mean_green;
       p_inputR[i * resized_width + j] = R - gs_mean_red;
+/*
+      if (i == resized_height - 1) {
+        printf("%d %d:  %d %d %d %d %f %f %f %f,  %d %d %d %d   %f %f %f,  %f %f %f\n", i, j, y0, y1, x0, x1, ay, by, ax, bx,
+              img[y1 * stride + x1 * 3], img[y0 * stride + x1 * 3], img[y1 * stride + x0 * 3], img[y0 * stride + x0 * 3],
+              B, G, R, p_inputB[i * resized_width + j], p_inputG[i * resized_width + j], p_inputR[i * resized_width + j]);
+      }
+*/
     }
   }
 
@@ -112,7 +119,16 @@ void load_image(const char* const filename,
   const int height = image.rows;
   const int width = image.cols;
   const int stride = image.step.p[0];
-  //printf("Image %s: %d x %d, stride=%d\n", filename, height, width, stride);
-
+/*
+  printf("Image %s: %d x %d, stride=%d\n", filename, height, width, stride);
+  char path[1024];
+  sprintf(path, "params/%s.txt", filename + 35);
+  FILE* fp = fopen(path, "w");
+  for (int i = 0; i < height; ++i)
+    for (int j = 0; j < width; ++j)
+      for (int k = 0; k < 3; ++k)
+        fprintf(fp, "%d %d %d %d\n", i, j, k, image.data[i * width * 3 + j * 3 + k]);
+  fclose(fp);
+*/
   img2input(image.data, input3d, img_info1d, height, width, stride);
 }

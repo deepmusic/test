@@ -93,6 +93,25 @@ real anchor_ratios[5] = { 0.5f, 0.666f, 1.0f, 1.5f, 2.0f };
 real* proposal_temp = NULL;
 int* proposal_tempint = NULL;
 
+void print_tensor_data(const char* const name, const Tensor* const tensor)
+{
+    const int size = flatten_size(tensor);
+    cudaMemcpy(output_data, tensor->data,
+               size * sizeof(real),
+               cudaMemcpyDeviceToHost);
+    char path[1024];
+    sprintf(path, "params/%s_top0.txt.1", name);
+    FILE* fp = fopen(path, "w");
+    int j = 0;
+    for (int n = 0; n < tensor->num_items; ++n) {
+      for (int c = 0; c < tensor->shape[n][0]; ++c)
+        for (int h = 0; h < tensor->shape[n][1]; ++h)
+          for (int w = 0; w < tensor->shape[n][2]; ++w)
+            fprintf(fp, "%d %d %d %d %f\n", n, c, h, w, output_data[j++]);
+    }
+    fclose(fp);
+}
+
 void forward_frcnn_7_1_1(void)
 {
   // PVANET
@@ -1235,71 +1254,71 @@ void construct_frcnn_7_1_1(void)
 
   // PVANET parameter loading
   {
-    load_tensor("../data/temp/conv1_1_param0.bin", &pvanet.weight1_1, param_data);
-    load_tensor("../data/temp/conv1_1_param1.bin", &pvanet.bias1_1, param_data);
-    load_tensor("../data/temp/conv1_2_param0.bin", &pvanet.weight1_2, param_data);
-    load_tensor("../data/temp/conv1_2_param1.bin", &pvanet.bias1_2, param_data);
-    load_tensor("../data/temp/conv2_1_param0.bin", &pvanet.weight2_1, param_data);
-    load_tensor("../data/temp/conv2_1_param1.bin", &pvanet.bias2_1, param_data);
-    load_tensor("../data/temp/conv2_2_param0.bin", &pvanet.weight2_2, param_data);
-    load_tensor("../data/temp/conv2_2_param1.bin", &pvanet.bias2_2, param_data);
-    load_tensor("../data/temp/conv3_1_param0.bin", &pvanet.weight3_1, param_data);
-    load_tensor("../data/temp/conv3_1_param1.bin", &pvanet.bias3_1, param_data);
-    load_tensor("../data/temp/conv3_2_param0.bin", &pvanet.weight3_2, param_data);
-    load_tensor("../data/temp/conv3_2_param1.bin", &pvanet.bias3_2, param_data);
-    load_tensor("../data/temp/conv3_3_param0.bin", &pvanet.weight3_3, param_data);
-    load_tensor("../data/temp/conv3_3_param1.bin", &pvanet.bias3_3, param_data);
-    load_tensor("../data/temp/conv4_1_param0.bin", &pvanet.weight4_1, param_data);
-    load_tensor("../data/temp/conv4_1_param1.bin", &pvanet.bias4_1, param_data);
-    load_tensor("../data/temp/conv4_2_param0.bin", &pvanet.weight4_2, param_data);
-    load_tensor("../data/temp/conv4_2_param1.bin", &pvanet.bias4_2, param_data);
-    load_tensor("../data/temp/conv4_3_param0.bin", &pvanet.weight4_3, param_data);
-    load_tensor("../data/temp/conv4_3_param1.bin", &pvanet.bias4_3, param_data);
-    load_tensor("../data/temp/conv5_1_param0.bin", &pvanet.weight5_1, param_data);
-    load_tensor("../data/temp/conv5_1_param1.bin", &pvanet.bias5_1, param_data);
-    load_tensor("../data/temp/conv5_2_param0.bin", &pvanet.weight5_2, param_data);
-    load_tensor("../data/temp/conv5_2_param1.bin", &pvanet.bias5_2, param_data);
-    load_tensor("../data/temp/conv5_3_param0.bin", &pvanet.weight5_3, param_data);
-    load_tensor("../data/temp/conv5_3_param1.bin", &pvanet.bias5_3, param_data);
-    load_tensor("../data/temp/upsample_param0.bin", &pvanet.weight_up, param_data);
-    load_tensor("../data/temp/convf_param0.bin", &pvanet.weightf, param_data);
-    load_tensor("../data/temp/convf_param1.bin", &pvanet.biasf, param_data);
+    load_tensor("params/conv1_1_param0.bin", &pvanet.weight1_1, param_data);
+    load_tensor("params/conv1_1_param1.bin", &pvanet.bias1_1, param_data);
+    load_tensor("params/conv1_2_param0.bin", &pvanet.weight1_2, param_data);
+    load_tensor("params/conv1_2_param1.bin", &pvanet.bias1_2, param_data);
+    load_tensor("params/conv2_1_param0.bin", &pvanet.weight2_1, param_data);
+    load_tensor("params/conv2_1_param1.bin", &pvanet.bias2_1, param_data);
+    load_tensor("params/conv2_2_param0.bin", &pvanet.weight2_2, param_data);
+    load_tensor("params/conv2_2_param1.bin", &pvanet.bias2_2, param_data);
+    load_tensor("params/conv3_1_param0.bin", &pvanet.weight3_1, param_data);
+    load_tensor("params/conv3_1_param1.bin", &pvanet.bias3_1, param_data);
+    load_tensor("params/conv3_2_param0.bin", &pvanet.weight3_2, param_data);
+    load_tensor("params/conv3_2_param1.bin", &pvanet.bias3_2, param_data);
+    load_tensor("params/conv3_3_param0.bin", &pvanet.weight3_3, param_data);
+    load_tensor("params/conv3_3_param1.bin", &pvanet.bias3_3, param_data);
+    load_tensor("params/conv4_1_param0.bin", &pvanet.weight4_1, param_data);
+    load_tensor("params/conv4_1_param1.bin", &pvanet.bias4_1, param_data);
+    load_tensor("params/conv4_2_param0.bin", &pvanet.weight4_2, param_data);
+    load_tensor("params/conv4_2_param1.bin", &pvanet.bias4_2, param_data);
+    load_tensor("params/conv4_3_param0.bin", &pvanet.weight4_3, param_data);
+    load_tensor("params/conv4_3_param1.bin", &pvanet.bias4_3, param_data);
+    load_tensor("params/conv5_1_param0.bin", &pvanet.weight5_1, param_data);
+    load_tensor("params/conv5_1_param1.bin", &pvanet.bias5_1, param_data);
+    load_tensor("params/conv5_2_param0.bin", &pvanet.weight5_2, param_data);
+    load_tensor("params/conv5_2_param1.bin", &pvanet.bias5_2, param_data);
+    load_tensor("params/conv5_3_param0.bin", &pvanet.weight5_3, param_data);
+    load_tensor("params/conv5_3_param1.bin", &pvanet.bias5_3, param_data);
+    load_tensor("params/upsample_param0.bin", &pvanet.weight_up, param_data);
+    load_tensor("params/convf_param0.bin", &pvanet.weightf, param_data);
+    load_tensor("params/convf_param1.bin", &pvanet.biasf, param_data);
   }
 
   // SRPN parameter loading
   {
-    load_tensor("../data/temp/rpn_conv1_param0.bin", &srpn.weight_c1, param_data);
-    load_tensor("../data/temp/rpn_conv1_param1.bin", &srpn.bias_c1, param_data);
-    load_tensor("../data/temp/rpn_conv3_param0.bin", &srpn.weight_c3, param_data);
-    load_tensor("../data/temp/rpn_conv3_param1.bin", &srpn.bias_c3, param_data);
-    load_tensor("../data/temp/rpn_conv5_param0.bin", &srpn.weight_c5, param_data);
-    load_tensor("../data/temp/rpn_conv5_param1.bin", &srpn.bias_c5, param_data);
-    load_tensor("../data/temp/rpn_cls_score1_param0.bin", &srpn.weight_s1, param_data);
-    load_tensor("../data/temp/rpn_cls_score1_param1.bin", &srpn.bias_s1, param_data);
-    load_tensor("../data/temp/rpn_cls_score3_param0.bin", &srpn.weight_s3, param_data);
-    load_tensor("../data/temp/rpn_cls_score3_param1.bin", &srpn.bias_s3, param_data);
-    load_tensor("../data/temp/rpn_cls_score5_param0.bin", &srpn.weight_s5, param_data);
-    load_tensor("../data/temp/rpn_cls_score5_param1.bin", &srpn.bias_s5, param_data);
-    load_tensor("../data/temp/rpn_bbox_pred1_param0.bin", &srpn.weight_b1, param_data);
-    load_tensor("../data/temp/rpn_bbox_pred1_param1.bin", &srpn.bias_b1, param_data);
-    load_tensor("../data/temp/rpn_bbox_pred3_param0.bin", &srpn.weight_b3, param_data);
-    load_tensor("../data/temp/rpn_bbox_pred3_param1.bin", &srpn.bias_b3, param_data);
-    load_tensor("../data/temp/rpn_bbox_pred5_param0.bin", &srpn.weight_b5, param_data);
-    load_tensor("../data/temp/rpn_bbox_pred5_param1.bin", &srpn.bias_b5, param_data);
+    load_tensor("params/rpn_conv1_param0.bin", &srpn.weight_c1, param_data);
+    load_tensor("params/rpn_conv1_param1.bin", &srpn.bias_c1, param_data);
+    load_tensor("params/rpn_conv3_param0.bin", &srpn.weight_c3, param_data);
+    load_tensor("params/rpn_conv3_param1.bin", &srpn.bias_c3, param_data);
+    load_tensor("params/rpn_conv5_param0.bin", &srpn.weight_c5, param_data);
+    load_tensor("params/rpn_conv5_param1.bin", &srpn.bias_c5, param_data);
+    load_tensor("params/rpn_cls_score1_param0.bin", &srpn.weight_s1, param_data);
+    load_tensor("params/rpn_cls_score1_param1.bin", &srpn.bias_s1, param_data);
+    load_tensor("params/rpn_cls_score3_param0.bin", &srpn.weight_s3, param_data);
+    load_tensor("params/rpn_cls_score3_param1.bin", &srpn.bias_s3, param_data);
+    load_tensor("params/rpn_cls_score5_param0.bin", &srpn.weight_s5, param_data);
+    load_tensor("params/rpn_cls_score5_param1.bin", &srpn.bias_s5, param_data);
+    load_tensor("params/rpn_bbox_pred1_param0.bin", &srpn.weight_b1, param_data);
+    load_tensor("params/rpn_bbox_pred1_param1.bin", &srpn.bias_b1, param_data);
+    load_tensor("params/rpn_bbox_pred3_param0.bin", &srpn.weight_b3, param_data);
+    load_tensor("params/rpn_bbox_pred3_param1.bin", &srpn.bias_b3, param_data);
+    load_tensor("params/rpn_bbox_pred5_param0.bin", &srpn.weight_b5, param_data);
+    load_tensor("params/rpn_bbox_pred5_param1.bin", &srpn.bias_b5, param_data);
   }
 
   // RCNN parameter loading
   {
-    load_tensor("../data/temp/fc6_1_param0.bin", &rcnn.weight6_1, param_data);
-    load_tensor("../data/temp/fc6_2_param0.bin", &rcnn.weight6_2, param_data);
-    load_tensor("../data/temp/fc6_param1.bin", &rcnn.bias6_2, param_data);
-    load_tensor("../data/temp/fc7_1_param0.bin", &rcnn.weight7_1, param_data);
-    load_tensor("../data/temp/fc7_2_param0.bin", &rcnn.weight7_2, param_data);
-    load_tensor("../data/temp/fc7_param1.bin", &rcnn.bias7_2, param_data);
-    load_tensor("../data/temp/cls_score_param0.bin", &rcnn.weight_s, param_data);
-    load_tensor("../data/temp/cls_score_param1.bin", &rcnn.bias_s, param_data);
-    load_tensor("../data/temp/bbox_pred_param0.bin", &rcnn.weight_b, param_data);
-    load_tensor("../data/temp/bbox_pred_param1.bin", &rcnn.bias_b, param_data);
+    load_tensor("params/fc6_1_param0.bin", &rcnn.weight6_1, param_data);
+    load_tensor("params/fc6_2_param0.bin", &rcnn.weight6_2, param_data);
+    load_tensor("params/fc6_param1.bin", &rcnn.bias6_2, param_data);
+    load_tensor("params/fc7_1_param0.bin", &rcnn.weight7_1, param_data);
+    load_tensor("params/fc7_2_param0.bin", &rcnn.weight7_2, param_data);
+    load_tensor("params/fc7_param1.bin", &rcnn.bias7_2, param_data);
+    load_tensor("params/cls_score_param0.bin", &rcnn.weight_s, param_data);
+    load_tensor("params/cls_score_param1.bin", &rcnn.bias_s, param_data);
+    load_tensor("params/bbox_pred_param0.bin", &rcnn.weight_b, param_data);
+    load_tensor("params/bbox_pred_param1.bin", &rcnn.bias_b, param_data);
   }
 
   // acquire CuBLAS handle
@@ -1670,13 +1689,27 @@ int main(int argc, char* argv[])
 
         // retrieve output & save to file
         get_output(total_count, fp_out);
+/*
+        const Tensor* const t = &srpn.roi;
+        cudaMemcpy(output_data, t->data,
+                   flatten_size(t),
+                   cudaMemcpyDeviceToHost);
+        for (int n = 0; n < t->num_items; ++n) {
+          printf("Image %d, start = %d\n", n, t->start[n]);
+          real* roi = &output_data[t->start[n]];
+          for (int r = 0; r < 5; ++r) {
+            printf("  Box %d:  %.2f %.2f %.2f %.2f\n",
+                   r, roi[r * 4 + 0], roi[r * 4 + 1], roi[r * 4 + 2], roi[r * 4 + 3]);
+          }
+        }
+*/
 
         total_count += count;
         count = 0;
       }
     }
 
-    if (count > 0) {
+    if (0) { //if (count > 0) {
       prepare_input((const char * const *)&line, count);
       printf("forward-pass start\n");
       forward_frcnn_7_1_1();

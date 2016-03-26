@@ -100,7 +100,6 @@ void free_layer(Layer* const layer)
   }
 
   free(layer);
-  layer->params = NULL;
 }
 
 #define MAX_NUM_LAYERS 100
@@ -372,8 +371,83 @@ void shape_proposal_layer(Net* const net, Layer* const layer)
                  &temp_size, &tempint_size, &layer->option);
 
   update_net_size(net,
-      0,  0,
+      flatten_size(layer->p_bottoms[0]),  flatten_size(&layer->tops[0]),
       0,  temp_size,  tempint_size,  0);
+}
+
+void shape_roipool_layer(Net* const net, Layer* const layer)
+{
+  int tempint_size;
+
+  roipool_shape(layer->p_bottoms[0], layer->p_bottoms[1], &layer->tops[0],
+                &tempint_size, &layer->option);
+
+  update_net_size(net,
+      flatten_size(layer->p_bottoms[0]),  flatten_size(&layer->tops[0]),
+      0,  0,  tempint_size,  0);
+}
+
+void shape_fc_layer(Net* const net, Layer* const layer)
+{
+  int const_size;
+  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
+
+  fc_shape(layer->p_bottoms[0], &layer->tops[0],
+           &layer->params[0], p_bias,
+           &const_size, &layer->option);
+
+  update_net_size(net,
+      flatten_size(layer->p_bottoms[0]),  flatten_size(&layer->tops[0]),
+      flatten_size(&layer->params[0]),  0,  0,  const_size);
+}
+
+void shape_odout_layer(Net* const net, Layer* const layer)
+{
+  int temp_size, tempint_size;
+
+  odout_shape(layer->p_bottoms[0], &layer->tops[0],
+              &temp_size, &tempint_size, &layer->option);
+
+  update_net_size(net,
+      flatten_size(layer->p_bottoms[0]),  flatten_size(&layer->tops[0]),
+      0,  temp_size,  tempint_size,  0);
+}
+
+void print_tensor_data(const Net* const net, const Layer* const layer)
+{
+  for (int i = 0; i < layer->num_tops; ++i) {
+    const int size = flatten_size(&layer->tops[i]);
+    #ifdef GPU
+    cudaMemcpy(net->output_cpu_data, layer->tops[i].data,
+               size * sizeof(real),
+               cudaMemcpyDeviceToHost);
+    #else
+    memcpy(net->output_cpu_data, layer->tops[i].data, size * sizeof(real));
+    #endif
+    char path[1024];
+    sprintf(path, "params/%s_top%d.txt", layer->name, i);
+    FILE* fp = fopen(path, "w");
+    const Tensor* const t = &layer->tops[0];
+    int j = 0;
+    for (int n = 0; n < t->num_items; ++n) {
+      for (int c = 0; c < t->shape[n][0]; ++c)
+        for (int h = 0; h < t->shape[n][1]; ++h)
+          for (int w = 0; w < t->shape[n][2]; ++w)
+            fprintf(fp, "%d %d %d %d %f\n",
+                    n, c, h, w, net->output_cpu_data[j++]);
+    }
+    fclose(fp);
+  }
+}
+
+void forward_conv_layer(Net* const net, Layer* const layer)
+{
+  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
+
+  conv_forward(layer->p_bottoms[0], &layer->tops[0],
+               &layer->params[0], p_bias,
+               net->temp_data, net->const_data, &layer->option);
+  print_tensor_info(layer->name, &layer->tops[0]);
 }
 
 void forward_conv_relu_layer(Net* const net, Layer* const layer)
@@ -406,23 +480,63 @@ void forward_pool_layer(Net* const net, Layer* const layer)
 
 void forward_concat_layer(Net* const net, Layer* const layer)
 {
-  concat_forward(layer->p_bottoms, &layer->tops[0],
-                 &layer->option);
+  concat_forward(layer->p_bottoms, &layer->tops[0], &layer->option);
   print_tensor_info(layer->name, &layer->tops[0]);
 }
 
 void forward_proposal_layer(Net* const net, Layer* const layer)
 {
-  proposal_forward(layer->p_bottoms[0], layer->p_bottoms[1], net->img_info,
+  proposal_forward(layer->p_bottoms[0], layer->p_bottoms[1],
+                   layer->p_bottoms[2],
                    &layer->tops[0], net->anchors,
                    net->temp_cpu_data, net->tempint_cpu_data,
                    net->temp_data, net->tempint_data,
                    &layer->option);
-  print_tensor_info("img_info", net->img_info);
   print_tensor_info(layer->name, &layer->tops[0]);
 }
 
-void forward_frcnn_7_1_1(Net* net)
+void forward_roipool_layer(Net* const net, Layer* const layer)
+{
+  roipool_forward(layer->p_bottoms[0], layer->p_bottoms[1],
+                  &layer->tops[0],
+                  net->tempint_data, &layer->option);
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void forward_fc_relu_dropout_layer(Net* const net, Layer* const layer)
+{
+  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
+
+  fc_forward(layer->p_bottoms[0], &layer->tops[0],
+             &layer->params[0], p_bias,
+             net->const_data, &layer->option);
+  relu_forward_inplace(&layer->tops[0], &layer->option);
+  dropout_forward_inplace(&layer->tops[0], NULL, &layer->option);
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void forward_fc_layer(Net* const net, Layer* const layer)
+{
+  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
+
+  fc_forward(layer->p_bottoms[0], &layer->tops[0],
+             &layer->params[0], p_bias,
+             net->const_data, &layer->option);
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void forward_odout_layer(Net* const net, Layer* const layer)
+{
+  odout_forward(layer->p_bottoms[0], layer->p_bottoms[1],
+                layer->p_bottoms[2], layer->p_bottoms[3],
+                &layer->tops[0],
+                net->temp_cpu_data, net->tempint_cpu_data,
+                net->temp_data, net->tempint_data,
+                &layer->option);
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void forward_frcnn_7_1_1(Net* const net)
 {
   // PVANET
   {
@@ -477,10 +591,10 @@ void forward_frcnn_7_1_1(Net* net)
       forward_conv_relu_layer(net, net->layers[i]);
 
       // rpn_cls_score1, 3, 5
-      forward_conv_relu_layer(net, net->layers[i + 1]);
+      forward_conv_layer(net, net->layers[i + 1]);
 
       // rpn_bbox_pred1, 3, 5
-      forward_conv_relu_layer(net, net->layers[i + 2]);
+      forward_conv_layer(net, net->layers[i + 2]);
     }
 
     // rpn_score
@@ -488,52 +602,164 @@ void forward_frcnn_7_1_1(Net* net)
     forward_concat_layer(net, net->layers[27]);
 
     // pred
-    Tensor* const pred = &net->layers[28]->tops[0];
-    const Tensor* const score = net->layers[28]->p_bottoms[0];
-    pred->ndim = 3;
-    pred->num_items = score->num_items;
-    for (int n = 0; n < score->num_items; ++n) {
-      pred->shape[n][0] = 2;
-      pred->shape[n][1]
-          = score->shape[n][0] / 2 * score->shape[n][1];
-      pred->shape[n][2] = score->shape[n][2];
-      pred->start[n] = score->start[n];
+    {
+      Tensor* const pred = &net->layers[28]->tops[0];
+      const Tensor* const score = net->layers[28]->p_bottoms[0];
+      pred->ndim = 3;
+      pred->num_items = score->num_items;
+      for (int n = 0; n < score->num_items; ++n) {
+        pred->shape[n][0] = 2;
+        pred->shape[n][1]
+            = score->shape[n][0] / 2 * score->shape[n][1];
+        pred->shape[n][2] = score->shape[n][2];
+        pred->start[n] = score->start[n];
+      }
+      pred->data = score->data;
+      softmax_inplace_forward(pred, net->temp_data);
+      print_tensor_info(net->layers[28]->name, pred);
     }
-    pred->data = score->data;
-    softmax_inplace_forward(pred, net->temp_data);
-    print_tensor_info(net->layers[28]->name, pred);
 
     // pred reshape
-    pred->ndim = 4;
-    pred->num_items = score->num_items;
-    for (int n = 0; n < score->num_items; ++n) {
-      pred->shape[n][0] = 2;
-      pred->shape[n][1] = score->shape[n][0] / 2;
-      pred->shape[n][2] = score->shape[n][1];
-      pred->shape[n][3] = score->shape[n][2];
+    {
+      Tensor* const pred = &net->layers[28]->tops[0];
+      const Tensor* const score = net->layers[28]->p_bottoms[0];
+      pred->ndim = 4;
+      pred->num_items = score->num_items;
+      for (int n = 0; n < score->num_items; ++n) {
+        pred->shape[n][0] = 2;
+        pred->shape[n][1] = score->shape[n][0] / 2;
+        pred->shape[n][2] = score->shape[n][1];
+        pred->shape[n][3] = score->shape[n][2];
+      }
+      print_tensor_info("rpn_pred_reshape", pred);
     }
-    print_tensor_info("rpn_pred_reshape", pred);
 
     // rpn_bbox
-    net->layers[29]->tops[0].data = net->layer_data[0];
+    net->layers[29]->tops[0].data = net->layer_data[1];
     forward_concat_layer(net, net->layers[29]);
 
     // bbox reshape
-    Tensor* const bbox = &net->layers[29]->tops[0];
-    bbox->ndim = 4;
-    for (int n = 0; n < bbox->num_items; ++n) {
-      const int C = bbox->shape[n][0];
-      const int H = bbox->shape[n][1];
-      const int W = bbox->shape[n][2];
-      bbox->shape[n][0] = C / 4;
-      bbox->shape[n][1] = 4;
-      bbox->shape[n][2] = H;
-      bbox->shape[n][3] = W;
+    {
+      Tensor* const bbox = &net->layers[29]->tops[0];
+      bbox->ndim = 4;
+      for (int n = 0; n < bbox->num_items; ++n) {
+        const int C = bbox->shape[n][0];
+        const int H = bbox->shape[n][1];
+        const int W = bbox->shape[n][2];
+        bbox->shape[n][0] = C / 4;
+        bbox->shape[n][1] = 4;
+        bbox->shape[n][2] = H;
+        bbox->shape[n][3] = W;
+      }
+      print_tensor_info("rpn_bbox_reshape", bbox);
     }
-    print_tensor_info("rpn_bbox_reshape", bbox);
 
     // proposal
     forward_proposal_layer(net, net->layers[30]);
+  }
+
+  // R-CNN
+  {
+    // roipool
+    net->layers[31]->tops[0].data = net->layer_data[2];
+    forward_roipool_layer(net, net->layers[31]);
+
+    // roipool_flat
+    {
+      Tensor* const roipool_flat = &net->layers[32]->tops[0];
+      const Tensor* const roipool = &net->layers[31]->tops[0];
+      // calculate total number of RoI-pooled data
+      int total_num_rois = 0;
+      for (int n = 0; n < roipool->num_items; ++n) {
+        total_num_rois += roipool->shape[n][0];
+      }
+
+      // reshape to 2d tensor: total_num_rois x (C * H * W)
+      roipool_flat->ndim = 2;
+      roipool_flat->num_items = 1;
+      roipool_flat->shape[0][0] = total_num_rois;
+      roipool_flat->shape[0][1] = roipool->shape[0][1]
+                                  * roipool->shape[0][2]
+                                  * roipool->shape[0][3];
+      roipool_flat->start[0] = 0;
+      roipool_flat->data = roipool->data;
+      print_tensor_info("rcnn_roipool_flat", roipool_flat);
+    }
+
+    // fc6_1, 6_2, 7_1, 7_2
+    for (int i = 33; i <= 36; i += 2) {
+      net->layers[i]->tops[0].data = net->layer_data[i % 2];
+      forward_fc_layer(net, net->layers[i]);
+
+      net->layers[i + 1]->tops[0].data = net->layer_data[(i + 1) % 2];
+      forward_fc_relu_dropout_layer(net, net->layers[i + 1]);
+    }
+
+    // score
+    net->layers[37]->tops[0].data = net->layer_data[2];
+    forward_fc_layer(net, net->layers[37]);
+
+    // pred
+    {
+      Tensor* const pred = &net->layers[38]->tops[0];
+      const Tensor* const score = &net->layers[37]->tops[0];
+      const Tensor* const roipool_flat = &net->layers[32]->tops[0];
+      pred->ndim = 4;
+      pred->num_items = 1;
+      pred->shape[0][0] = roipool_flat->shape[0][0];
+      pred->shape[0][1] = net->layers[37]->option.out_channels;
+      pred->shape[0][2] = 1;
+      pred->shape[0][3] = 1;
+      pred->start[0] = 0;
+      pred->data = score->data;
+      softmax_inplace_forward(pred, net->temp_data);
+      print_tensor_info("pred", pred);
+    }
+
+    // pred reshape
+    {
+      Tensor* const pred = &net->layers[38]->tops[0];
+      const Tensor* const roipool = &net->layers[31]->tops[0];
+      pred->ndim = 2;
+      pred->num_items = roipool->num_items;
+      {
+        int total_size = 0;
+        for (int n = 0; n < roipool->num_items; ++n) {
+          pred->shape[n][0] = roipool->shape[n][0];
+          pred->shape[n][1] = net->layers[37]->option.out_channels;
+          pred->start[n] = total_size;
+          total_size += pred->shape[n][0] * pred->shape[n][1];
+        }
+      }
+      print_tensor_info("pred_reshape", pred);
+    }
+
+    // bbox
+    net->layers[39]->tops[0].data = net->layer_data[3];
+    forward_fc_layer(net, net->layers[39]);
+
+    // bbox reshape
+    {
+      Tensor* const bbox = &net->layers[39]->tops[0];
+      const Tensor* const roipool = &net->layers[31]->tops[0];
+      bbox->ndim = 3;
+      bbox->num_items = roipool->num_items;
+      {
+        int total_size = 0;
+        for (int n = 0; n < roipool->num_items; ++n) {
+          bbox->shape[n][0] = roipool->shape[n][0];
+          bbox->shape[n][1] = net->layers[39]->option.out_channels / 4;
+          bbox->shape[n][2] = 4;
+          bbox->start[n] = total_size;
+          total_size += bbox->shape[n][0] * bbox->shape[n][1]
+                        * bbox->shape[n][2];
+        }
+      }
+    }
+
+    // out
+    net->layers[40]->tops[0].data = net->layer_data[4];
+    forward_odout_layer(net, net->layers[40]);
   }
 }
 
@@ -586,7 +812,9 @@ void setup_frcnn_7_1_1(Net* const net)
       net->layers[i]->option.stride_h = 2;
       net->layers[i]->option.stride_w = 2;
       net->layers[i]->option.negative_slope = 0;
+      #ifdef GPU
       net->layers[i]->option.handle = (void*)&net->cublas_handle;
+      #endif
     }
     {
       net->layers[8]->option.pad_h = 0;
@@ -631,7 +859,9 @@ void setup_frcnn_7_1_1(Net* const net)
       net->layers[i]->option.stride_h = 1;
       net->layers[i]->option.stride_w = 1;
       net->layers[i]->option.negative_slope = 0;
+      #ifdef GPU
       net->layers[i]->option.handle = (void*)&net->cublas_handle;
+      #endif
     }
     {
       net->layers[21]->option.kernel_h = 3;
@@ -686,9 +916,42 @@ void setup_frcnn_7_1_1(Net* const net)
     net->layers[30]->option.pre_nms_topn = 6000;
     net->layers[30]->option.post_nms_topn = 300;
     net->layers[30]->option.nms_thresh = 0.7f;
+
+    net->layers[31]->option.pooled_height = 6;
+    net->layers[31]->option.pooled_width = 6;
+    net->layers[31]->option.spatial_scale = 0.0625;
+
+    for (int i = 33; i <= 39; ++i) {
+      net->layers[i]->option.bias = 1;
+      net->layers[i]->option.negative_slope = 0;
+      net->layers[i]->option.threshold = 0.5f;
+      net->layers[i]->option.test = 1;
+      net->layers[i]->option.scaled = 0;
+      #ifdef GPU
+      net->layers[i]->option.handle = (void*)&net->cublas_handle;
+      #endif
+    }
+    net->layers[33]->option.bias = 0;
+    net->layers[35]->option.bias = 0;
+    net->layers[33]->option.out_channels = 512;
+    net->layers[34]->option.out_channels = 4096;
+    net->layers[35]->option.out_channels = 128;
+    net->layers[36]->option.out_channels = 4096;
+    net->layers[37]->option.out_channels = 21;
+    net->layers[39]->option.out_channels = 84;
+
+    net->layers[40]->option.min_size = 16;
+    net->layers[40]->option.score_thresh = 0.7f;
+    net->layers[40]->option.nms_thresh = 0.3f;
   }
 
   {
+    for (int i = 0; i < net->num_layers; ++i) {
+      net->layers[i]->num_bottoms = 0;
+      net->layers[i]->num_tops = 0;
+      net->layers[i]->num_params = 0;
+    }
+
     net->layers[0]->num_bottoms = 0;
     net->layers[0]->num_tops = 1;
     net->layers[0]->num_params = 0;
@@ -723,15 +986,30 @@ void setup_frcnn_7_1_1(Net* const net)
     net->layers[29]->num_tops = 1;
     net->layers[29]->num_params = 0;
 
-    net->layers[30]->num_bottoms = 2;
+    net->layers[30]->num_bottoms = 3;
     net->layers[30]->num_tops = 1;
     net->layers[30]->num_params = 0;
 
-    for (int i = 31; i < net->num_layers; ++i) {
-      net->layers[i]->num_bottoms = 0;
-      net->layers[i]->num_tops = 0;
-      net->layers[i]->num_params = 0;
+    net->layers[31]->num_bottoms = 2;
+    net->layers[31]->num_tops = 1;
+    net->layers[31]->num_params = 0;
+
+    net->layers[32]->num_bottoms = 1;
+    net->layers[32]->num_tops = 1;
+    net->layers[32]->num_params = 0;
+
+    for (int i = 33; i <= 39; ++i) {
+      net->layers[i]->num_bottoms = 1;
+      net->layers[i]->num_tops = 1;
+      net->layers[i]->num_params = 2;
     }
+    net->layers[33]->num_params = 1;
+    net->layers[35]->num_params = 1;
+    net->layers[38]->num_params = 0;
+
+    net->layers[40]->num_bottoms = 4;
+    net->layers[40]->num_tops = 1;
+    net->layers[40]->num_params = 0;
   }
 
   {
@@ -781,6 +1059,30 @@ void connect_frcnn_7_1_1(Net* const net)
     // proposal
     net->layers[30]->p_bottoms[0] = &net->layers[28]->tops[0];
     net->layers[30]->p_bottoms[1] = &net->layers[29]->tops[0];
+    net->layers[30]->p_bottoms[2] = net->img_info;
+  }
+
+  {
+    // roipool
+    net->layers[31]->p_bottoms[0] = &net->layers[17]->tops[0];
+    net->layers[31]->p_bottoms[1] = &net->layers[30]->tops[0];
+    // roipool_flat
+    net->layers[32]->p_bottoms[0] = &net->layers[31]->tops[0];
+    // fc6_1, 6_2, 7_1, 7_2
+    for (int i = 33; i <= 36; ++i) {
+      net->layers[i]->p_bottoms[0] = &net->layers[i - 1]->tops[0];
+    }
+    // score
+    net->layers[37]->p_bottoms[0] = &net->layers[36]->tops[0];
+    // pred
+    net->layers[38]->p_bottoms[0] = &net->layers[37]->tops[0];
+    // bbox
+    net->layers[39]->p_bottoms[0] = &net->layers[36]->tops[0];
+    // out
+    net->layers[40]->p_bottoms[0] = &net->layers[38]->tops[0];
+    net->layers[40]->p_bottoms[1] = &net->layers[39]->tops[0];
+    net->layers[40]->p_bottoms[2] = &net->layers[30]->tops[0];
+    net->layers[40]->p_bottoms[3] = net->img_info;
   }
 }
 
@@ -815,38 +1117,102 @@ void shape_frcnn_7_1_1(Net* const net)
     // rpn_score
     shape_concat_layer(net, net->layers[27]);
     // rpn_pred
-    Tensor* const pred = &net->layers[28]->tops[0];
-    const Tensor* const score = net->layers[28]->p_bottoms[0];
-    pred->ndim = 4;
-    pred->num_items = score->num_items;
-    for (int n = 0; n < score->num_items; ++n) {
-      pred->shape[n][0] = 2;
-      pred->shape[n][1] = score->shape[n][0] / 2;
-      pred->shape[n][2] = score->shape[n][1];
-      pred->shape[n][3] = score->shape[n][2];
+    {
+      Tensor* const pred = &net->layers[28]->tops[0];
+      const Tensor* const score = net->layers[28]->p_bottoms[0];
+      pred->ndim = 4;
+      pred->num_items = score->num_items;
+      for (int n = 0; n < score->num_items; ++n) {
+        pred->shape[n][0] = 2;
+        pred->shape[n][1] = score->shape[n][0] / 2;
+        pred->shape[n][2] = score->shape[n][1];
+        pred->shape[n][3] = score->shape[n][2];
+      }
     }
     // rpn_bbox
     shape_concat_layer(net, net->layers[29]);
-    Tensor* const bbox = &net->layers[29]->tops[0];
-    bbox->ndim = 4;
-    for (int n = 0; n < bbox->num_items; ++n) {
-      const int C = bbox->shape[n][0];
-      const int H = bbox->shape[n][1];
-      const int W = bbox->shape[n][2];
-      bbox->shape[n][0] = C / 4;
-      bbox->shape[n][1] = 4;
-      bbox->shape[n][2] = H;
-      bbox->shape[n][3] = W;
+    {
+      Tensor* const bbox = &net->layers[29]->tops[0];
+      bbox->ndim = 4;
+      for (int n = 0; n < bbox->num_items; ++n) {
+        const int C = bbox->shape[n][0];
+        const int H = bbox->shape[n][1];
+        const int W = bbox->shape[n][2];
+        bbox->shape[n][0] = C / 4;
+        bbox->shape[n][1] = 4;
+        bbox->shape[n][2] = H;
+        bbox->shape[n][3] = W;
+      }
     }
     // img_info
-    net->img_info->ndim = 1;
-    net->img_info->num_items = bbox->num_items;
-    for (int n = 0; n < net->img_info->num_items; ++n) {
-      net->img_info->shape[n][0] = 4;
-      net->img_info->start[n] = n * 4;
+    {
+      Tensor* const bbox = &net->layers[29]->tops[0];
+      net->img_info->ndim = 1;
+      net->img_info->num_items = bbox->num_items;
+      for (int n = 0; n < net->img_info->num_items; ++n) {
+        net->img_info->shape[n][0] = 4;
+        net->img_info->start[n] = n * 4;
+      }
     }
     // proposal
     shape_proposal_layer(net, net->layers[30]);
+  }
+
+  // R-CNN
+  {
+    // roipool
+    shape_roipool_layer(net, net->layers[31]);
+    // roipool reshape
+    {
+      Tensor* const roipool_flat = &net->layers[32]->tops[0];
+      const Tensor* const roipool = &net->layers[31]->tops[0];
+      // calculate total number of RoI-pooled data
+      int total_num_rois = 0;
+      for (int n = 0; n < roipool->num_items; ++n) {
+        total_num_rois += roipool->shape[n][0];
+      }
+
+      // reshape to 2d tensor: total_num_rois x (C * H * W)
+      roipool_flat->ndim = 2;
+      roipool_flat->num_items = 1;
+      roipool_flat->shape[0][0] = total_num_rois;
+      roipool_flat->shape[0][1] = roipool->shape[0][1]
+                                  * roipool->shape[0][2]
+                                  * roipool->shape[0][3];
+      roipool_flat->start[0] = 0;
+    }
+    // fc6_1, 6_2, 7_1, 7_2
+    for (int i = 33; i <= 36; ++i) {
+      shape_fc_layer(net, net->layers[i]);
+    }
+    // score
+    shape_fc_layer(net, net->layers[37]);
+    // pred
+    {
+      Tensor* const pred = &net->layers[38]->tops[0];
+      const Tensor* const roipool = &net->layers[31]->tops[0];
+      pred->ndim = 2;
+      pred->num_items = roipool->num_items;
+      for (int n = 0; n < roipool->num_items; ++n) {
+        pred->shape[n][0] = roipool->shape[n][0];
+        pred->shape[n][1] = net->layers[37]->option.out_channels;
+      }
+    }
+    // bbox
+    shape_fc_layer(net, net->layers[39]);
+    {
+      Tensor* const bbox = &net->layers[39]->tops[0];
+      const Tensor* const roipool = &net->layers[31]->tops[0];
+      bbox->ndim = 3;
+      bbox->num_items = roipool->num_items;
+      for (int n = 0; n < roipool->num_items; ++n) {
+        bbox->shape[n][0] = roipool->shape[n][0];
+        bbox->shape[n][1] = net->layers[39]->option.out_channels / 4;
+        bbox->shape[n][2] = 4;
+      }
+    }
+    // out
+    shape_odout_layer(net, net->layers[40]);
   }
 }
 
@@ -954,7 +1320,8 @@ void prepare_input(Net* net,
   // network reshape
   shape_frcnn_7_1_1(net);
 
-  print_tensor_info("input data loaded", input);
+  print_tensor_info("data", input);
+  print_tensor_info("img_info", net->img_info);
 }
 
 void get_output(Net* net, const int image_start_index, FILE* fp)
@@ -969,7 +1336,7 @@ void get_output(Net* net, const int image_start_index, FILE* fp)
                     output_size * sizeof(real),
                     cudaMemcpyDeviceToHost);
   #else
-    memcpy(net->output_data, out->data, output_size * sizeof(real));
+    memcpy(net->output_cpu_data, out->data, output_size * sizeof(real));
   #endif
   }
 
@@ -1028,7 +1395,7 @@ int main(int argc, char* argv[])
       const int len = strlen(line[count]);
       line[count][len - 1] = 0;
       ++count;
-      if (count == 4) {
+      if (count == 1) {
         // input data loading
         prepare_input(&frcnn, (const char * const *)&line, count);
 
@@ -1038,18 +1405,7 @@ int main(int argc, char* argv[])
         printf("forward-pass end\n");
 
         // retrieve output & save to file
-        //get_output(&frcnn, total_count, fp_out);
-        cudaMemcpy(frcnn.output_cpu_data, frcnn.layers[30]->tops[0].data,
-                   flatten_size(&frcnn.layers[30]->tops[0]),
-                   cudaMemcpyDeviceToHost);
-        for (int n = 0; n < frcnn.layers[30]->tops[0].num_items; ++n) {
-          printf("Image %d, start = %d\n", n, frcnn.layers[30]->tops[0].start[n]);
-          real* roi = &frcnn.output_cpu_data[frcnn.layers[30]->tops[0].start[n]];
-          for (int r = 0; r < frcnn.layers[30]->tops[0].shape[n][0]; ++r) {
-            printf("  Box %d:  %.2f %.2f %.2f %.2f\n",
-                   r, roi[r * 4 + 0], roi[r * 4 + 1], roi[r * 4 + 2], roi[r * 4 + 3]);
-          }
-        }
+        get_output(&frcnn, total_count, fp_out);
 
         total_count += count;
         count = 0;
@@ -1061,7 +1417,7 @@ int main(int argc, char* argv[])
       printf("forward-pass start\n");
       forward_frcnn_7_1_1(&frcnn);
       printf("forward-pass end\n");
-      //get_output(&frcnn, total_count, fp_out);
+      get_output(&frcnn, total_count, fp_out);
     }
 
     fclose(fp_list);

@@ -130,7 +130,7 @@ def plot_f(weight, bias, swap_bgr=False):
     fig.axes.get_yaxis().set_visible(False)
   plt.show()
 
-img, im_info = load_image('data/voc/2007/VOC2007/JPEGImages/000004.jpg')
+#img, im_info = load_image('data/voc/2007/VOC2007/JPEGImages/000004.jpg')
 #a = load_data('data/temp/conv_bottom0.bin')
 #b = layer_img(img, a[0])
 #plot_imgs(b)

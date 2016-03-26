@@ -30,7 +30,6 @@ void fc_forward(const Tensor* const bottom2d,
   top2d->ndim = 2;
   top2d->shape[0][0] = N;
   top2d->shape[0][1] = top_D;
-
   // compute top = dot(bottom, weight.transpose())
   //   bottom: N x D
   //   weight: D' x D
