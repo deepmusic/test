@@ -10,43 +10,65 @@
 
 using namespace cv;
 
-void img2input(const unsigned char* const img,
-               Tensor* const input3d,
-               Tensor* const img_info1d,
-               const int height, const int width, const int stride)
+#ifdef GPU
+#define PASS
+#endif
+
+#ifdef PASS
+__global__
+void bilinear_resize_gpu(const unsigned char* const img,
+                         real* const input3d,
+                         const int height, const int width,
+                         const int resized_height, const int resized_width,
+                         const real img_scale_y, const real img_scale_x,
+                         const int stride)
 {
-  const real gs_max_size = 1000.0f;
-  const real gs_base_size = 600.0f;
-  const real gs_mean_blue = 102.9801f;
-  const real gs_mean_green = 115.9465f;
-  const real gs_mean_red = 122.7717f;
+  const real gs_mean[3] = { 102.9801f, 115.9465f, 122.7717f };
 
-  const int img_size_min = MIN(height,  width);
-  const int img_size_max = MAX(height,  width);
+  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const int resized_area = resized_height * resized_width;
+  if (index < 3 * resized_area) {
+    const int c = index / resized_area;
+    const int i = (index / resized_width) % resized_height;
+    const int j = index % resized_width;
 
-  real img_scale = gs_base_size / img_size_min;
-  if (ROUND(img_scale * img_size_max) > gs_max_size) {
-    img_scale = gs_max_size / img_size_max;
+    const real y = i / img_scale_y;
+    const int y0 = (int)y;
+    const int y1 = MIN(y0 + 1,  height - 1);
+    const real ay = y - y0;
+    const real by = 1 - ay;
+
+    const real x = j / img_scale_x;
+    const int x0 = (int)x;
+    const int x1 = MIN(x0 + 1,  width - 1);
+    const real ax = x - x0;
+    const real bx = 1 - ax;
+
+    real val = -gs_mean[c];
+    val += (ax > 0) * (ay > 0) * ax * ay * img[y1 * stride + x1 * 3 + c];
+    val += (ax > 0) * (by > 0) * ax * by * img[y0 * stride + x1 * 3 + c];
+    val += (bx > 0) * (ay > 0) * bx * ay * img[y1 * stride + x0 * 3 + c];
+    val += (bx > 0) * (by > 0) * bx * by * img[y0 * stride + x0 * 3 + c];
+
+    input3d[index] = val;
   }
+}
+#else
+void bilinear_resize_cpu(const unsigned char* const img,
+                         real* const input3d,
+                         const int height, const int width,
+                         const int resized_height, const int resized_width,
+                         const real img_scale_y, const real img_scale_x,
+                         const int stride)
+{
+  static const real gs_mean_blue = 102.9801f;
+  static const real gs_mean_green = 115.9465f;
+  static const real gs_mean_red = 122.7717f;
 
-  const int gs_scale_base = 32;
-  const real img_scale_x = (real)((int)(width * img_scale / gs_scale_base) * gs_scale_base) / width;
-  const real img_scale_y = (real)((int)(height * img_scale / gs_scale_base) * gs_scale_base) / height;
-
-  const int resized_height = ROUND(height * img_scale_y);
-  const int resized_width = ROUND(width * img_scale_x);
-  const int input_area = resized_height * resized_width;
-
-  const int n = img_info1d->num_items;
-  real* const p_img_info1d = img_info1d->data + n * 4;
-  p_img_info1d[0] = resized_height;
-  p_img_info1d[1] = resized_width;
-  p_img_info1d[2] = img_scale_x;
-  p_img_info1d[3] = img_scale_y;
-
-  real* const p_inputB = input3d->data + input3d->start[n] + 0 * input_area;
-  real* const p_inputG = input3d->data + input3d->start[n] + 1 * input_area;
-  real* const p_inputR = input3d->data + input3d->start[n] + 2 * input_area;
+  const int resized_area = resized_height * resized_width;
+  real* const p_inputB = input3d + 0 * resized_area;
+  real* const p_inputG = input3d + 1 * resized_area;
+  real* const p_inputR = input3d + 2 * resized_area;
 
   for (int i = 0; i < resized_height; ++i) {
     const real y = i / img_scale_y;
@@ -94,6 +116,65 @@ void img2input(const unsigned char* const img,
 */
     }
   }
+}
+#endif
+
+void img2input(const unsigned char* const img,
+               Tensor* const input3d,
+               Tensor* const img_info1d,
+               unsigned char* const temp_data,
+               const int height, const int width, const int stride)
+{
+  static const real gs_max_size = 1000.0f;
+  static const real gs_base_size = 600.0f;
+
+  const int img_size_min = MIN(height,  width);
+  const int img_size_max = MAX(height,  width);
+
+  real img_scale = gs_base_size / img_size_min;
+  if (ROUND(img_scale * img_size_max) > gs_max_size) {
+    img_scale = gs_max_size / img_size_max;
+  }
+
+  const int gs_scale_base = 32;
+  const real img_scale_x
+      = (real)((int)(width * img_scale / gs_scale_base) * gs_scale_base)
+        / width;
+  const real img_scale_y
+      = (real)((int)(height * img_scale / gs_scale_base) * gs_scale_base)
+        / height;
+
+  const int resized_height = ROUND(height * img_scale_y);
+  const int resized_width = ROUND(width * img_scale_x);
+
+  const int n = img_info1d->num_items;
+  real* const p_img_info1d = img_info1d->data + n * 4;
+  p_img_info1d[0] = resized_height;
+  p_img_info1d[1] = resized_width;
+  p_img_info1d[2] = img_scale_x;
+  p_img_info1d[3] = img_scale_y;
+
+  #ifdef PASS
+  {
+    const int num_threads = 3 * resized_height * resized_width;
+    const int threads_per_block = 512;
+    const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
+    cudaMemcpyAsync(temp_data, img,
+                    height * width * 3 * sizeof(unsigned char),
+                    cudaMemcpyHostToDevice);
+    bilinear_resize_gpu<<<num_blocks, threads_per_block>>>(
+        temp_data,  input3d->data + input3d->start[n],
+        height,  width,  resized_height,  resized_width,
+        img_scale_y,  img_scale_x,  stride);
+  }
+  #else
+  {
+    bilinear_resize_cpu(
+        img,  input3d->data + input3d->start[n],
+        height,  width,  resized_height,  resized_width,
+        img_scale_y,  img_scale_x,  stride);
+  }
+  #endif
 
   const int input_size = 3 * resized_height * resized_width;
   //printf("image size = %d x %d x 3 = %d\n", resized_height, resized_width, input_size);
@@ -109,7 +190,8 @@ void img2input(const unsigned char* const img,
 
 void load_image(const char* const filename,
                 Tensor* const input3d,
-                Tensor* const img_info1d)
+                Tensor* const img_info1d,
+                real* const temp_data)
 {
   Mat image = imread(filename);
   if (!image.data) {
@@ -130,5 +212,6 @@ void load_image(const char* const filename,
         fprintf(fp, "%d %d %d %d\n", i, j, k, image.data[i * width * 3 + j * 3 + k]);
   fclose(fp);
 */
-  img2input(image.data, input3d, img_info1d, height, width, stride);
+  img2input(image.data, input3d, img_info1d, (unsigned char*)temp_data,
+            height, width, stride);
 }

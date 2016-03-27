@@ -19,10 +19,10 @@ __global__
 void dropout_gpu(const real* const bottom,
                  const unsigned int* const mask,
                  real* const top,
-                 const int data_size,
+                 const long int data_size,
                  const unsigned int uint_thresh)
 {
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const long int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < data_size) {
     top[index] = (mask[index] > uint_thresh) * bottom[index];
   }
@@ -31,10 +31,10 @@ void dropout_gpu(const real* const bottom,
 void dropout_cpu(const real* const bottom,
                  const unsigned int* const mask,
                  real* const top,
-                 const int data_size,
+                 const long int data_size,
                  const unsigned int uint_thresh)
 {
-  for (int index = 0; index < data_size; ++index) {
+  for (long int index = 0; index < data_size; ++index) {
     top[index] = (mask[index] > uint_thresh) * bottom[index];
   }
 }
@@ -49,11 +49,11 @@ __global__
 void dropout_scaled_gpu(const real* const bottom,
                         const unsigned int* const mask,
                         real* const top,
-                        const int data_size,
+                        const long int data_size,
                         const unsigned int uint_thresh,
                         const real inv_scale)
 {
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const long int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < data_size) {
     top[index] = (mask[index] > uint_thresh) * inv_scale
                  * bottom[index];
@@ -63,11 +63,11 @@ void dropout_scaled_gpu(const real* const bottom,
 void dropout_scaled_cpu(const real* const bottom,
                         const unsigned int* const mask,
                         real* const top,
-                        const int data_size,
+                        const long int data_size,
                         const unsigned int uint_thresh,
                         const real inv_scale)
 {
-  for (int index = 0; index < data_size; ++index) {
+  for (long int index = 0; index < data_size; ++index) {
     top[index] = (mask[index] > uint_thresh) * inv_scale
                  * bottom[index];
   }
@@ -81,10 +81,10 @@ void dropout_scaled_cpu(const real* const bottom,
 __global__
 void dropout_test_gpu(const real* const bottom,
                       real* const top,
-                      const int data_size,
+                      const long int data_size,
                       const real scale)
 {
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const long int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < data_size) {
     top[index] = scale * bottom[index];
   }
@@ -92,10 +92,10 @@ void dropout_test_gpu(const real* const bottom,
 #else
 void dropout_test_cpu(const real* const bottom,
                       real* const top,
-                      const int data_size,
+                      const long int data_size,
                       const real scale)
 {
-  for (int index = 0; index < data_size; ++index) {
+  for (long int index = 0; index < data_size; ++index) {
     top[index] = scale * bottom[index];
   }
 }
@@ -106,10 +106,10 @@ void dropout_test_cpu(const real* const bottom,
 __global__
 void dropout_inplace_gpu(real* const bottom,
                          const unsigned int* const mask,
-                         const int data_size,
+                         const long int data_size,
                          const unsigned int uint_thresh)
 {
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const long int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < data_size) {
     bottom[index] *= (mask[index] > uint_thresh);
   }
@@ -117,10 +117,10 @@ void dropout_inplace_gpu(real* const bottom,
 #else
 void dropout_inplace_cpu(real* const bottom,
                          const unsigned int* const mask,
-                         const int data_size,
+                         const long int data_size,
                          const unsigned int uint_thresh)
 {
-  for (int index = 0; index < data_size; ++index) {
+  for (long int index = 0; index < data_size; ++index) {
     bottom[index] *= (mask[index] > uint_thresh);
   }
 }
@@ -131,11 +131,11 @@ void dropout_inplace_cpu(real* const bottom,
 __global__
 void dropout_scaled_inplace_gpu(real* const bottom,
                                 const unsigned int* const mask,
-                                const int data_size,
+                                const long int data_size,
                                 const unsigned int uint_thresh,
                                 const real inv_scale)
 {
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const long int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < data_size) {
     bottom[index] *= (mask[index] > uint_thresh) * inv_scale;
   }
@@ -143,11 +143,11 @@ void dropout_scaled_inplace_gpu(real* const bottom,
 #else
 void dropout_scaled_inplace_cpu(real* const bottom,
                                 const unsigned int* const mask,
-                                const int data_size,
+                                const long int data_size,
                                 const unsigned int uint_thresh,
                                 const real inv_scale)
 {
-  for (int index = 0; index < data_size; ++index) {
+  for (long int index = 0; index < data_size; ++index) {
     bottom[index] *= (mask[index] > uint_thresh) * inv_scale;
   }
 }
@@ -157,20 +157,20 @@ void dropout_scaled_inplace_cpu(real* const bottom,
 #ifdef GPU
 __global__
 void dropout_test_inplace_gpu(real* const bottom,
-                              const int data_size,
+                              const long int data_size,
                               const real scale)
 {
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const long int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < data_size) {
     bottom[index] *= scale;
   }
 }
 #else
 void dropout_test_inplace_cpu(real* const bottom,
-                              const int data_size,
+                              const long int data_size,
                               const real scale)
 {
-  for (int index = 0; index < data_size; ++index) {
+  for (long int index = 0; index < data_size; ++index) {
     bottom[index] *= scale;
   }
 }
@@ -197,7 +197,7 @@ void dropout_forward(const Tensor* const bottom,
                      Tensor* const top,
                      const LayerOption* const option)
 {
-  const int data_size = flatten_size(bottom);
+  const long int data_size = flatten_size(bottom);
 
   // perform dropout transform
   #ifdef GPU
@@ -217,7 +217,8 @@ void dropout_forward(const Tensor* const bottom,
       }
     }
     else {
-      // random number generation
+      // TODO: random number generation
+
       unsigned int uint_thresh = (unsigned int)option->threshold * UINT_MAX;
       if (option->scaled) {
         // scaled dropout
@@ -248,7 +249,8 @@ void dropout_forward(const Tensor* const bottom,
       }
     }
     else {
-      // random number generation
+      // TODO: random number generation
+
       unsigned int uint_thresh = (unsigned int)option->threshold * UINT_MAX;
       if (option->scaled) {
         // scaled dropout
@@ -282,7 +284,7 @@ void dropout_forward_inplace(Tensor* const bottom,
                              unsigned int* const mask,
                              const LayerOption* const option)
 {
-  const int data_size = flatten_size(bottom);
+  const long int data_size = flatten_size(bottom);
 
   // perform dropout transform
   #ifdef GPU
@@ -301,7 +303,8 @@ void dropout_forward_inplace(Tensor* const bottom,
       }
     }
     else {
-      // random number generation
+      // TODO: random number generation
+
       if (option->scaled) {
         // scaled dropout
         dropout_scaled_inplace_gpu<<<num_blocks, threads_per_block>>>(
@@ -329,7 +332,8 @@ void dropout_forward_inplace(Tensor* const bottom,
       }
     }
     else {
-      // random number generation
+      // TODO: random number generation
+
       if (option->scaled) {
         // scaled dropout
         dropout_scaled_inplace_cpu(
@@ -363,6 +367,31 @@ void dropout_shape(const Tensor* const bottom,
       top->shape[n][i] = bottom->shape[n][i];
     }
   }
+}
+
+
+
+// --------------------------------------------------------------------------
+// API code
+// --------------------------------------------------------------------------
+
+void forward_dropout_layer(Net* const net, Layer* const layer)
+{
+  dropout_forward(layer->p_bottoms[0], (unsigned int*)net->tempint_data,
+                  &layer->tops[0], &layer->option);
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void forward_inplace_dropout_layer(Net* const net, Layer* const layer)
+{
+  dropout_forward_inplace(&layer->tops[0], (unsigned int*)net->tempint_data,
+                          &layer->option);
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void shape_dropout_layer(Net* const net, Layer* const layer)
+{
+  dropout_shape(layer->p_bottoms[0], &layer->tops[0]);
 }
 
 
@@ -426,8 +455,8 @@ int main(int argc, char* argv[])
   // bind loaded data to corresponding tensors
   #ifdef GPU
   {
-    const int X_size = flatten_size(&X);
-    const int Y_size = flatten_size(&Y);
+    const long int X_size = flatten_size(&X);
+    const long int Y_size = flatten_size(&Y);
 
     printf("gpu malloc\n");
     cudaMalloc(&X.data, X_size * sizeof(real));
@@ -440,7 +469,7 @@ int main(int argc, char* argv[])
   }
   #else
   {
-    const int X_size = flatten_size(&X);
+    const long int X_size = flatten_size(&X);
 
     X.data = X_data;
     Y.data = Y_data;
@@ -457,17 +486,17 @@ int main(int argc, char* argv[])
   // copy GPU data to main memory
   #ifdef GPU
   {
-    const int Y_size = flatten_size(&Y);
+    const long int Y_size = flatten_size(&Y);
 
     printf("memcpy: cpu <- gpu\n");
-    cudaMemcpy(Y_data, Y.data, Y_size * sizeof(real),
-               cudaMemcpyDeviceToHost);
+    cudaMemcpyAsync(Y_data, Y.data, Y_size * sizeof(real),
+                    cudaMemcpyDeviceToHost);
   }
   #endif
 
   // verify results
   {
-    const int Y_size = flatten_size(&Y);
+    const long int Y_size = flatten_size(&Y);
 
     printf("verification\n");
 

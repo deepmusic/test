@@ -620,6 +620,34 @@ void proposal_shape(const Tensor* const bottom4d,
 
 
 // --------------------------------------------------------------------------
+// API code
+// --------------------------------------------------------------------------
+
+void forward_proposal_layer(Net* const net, Layer* const layer)
+{
+  proposal_forward(layer->p_bottoms[0], layer->p_bottoms[1],
+                   layer->p_bottoms[2],
+                   &layer->tops[0], net->anchors,
+                   net->temp_cpu_data, net->tempint_cpu_data,
+                   net->temp_data, net->tempint_data,
+                   &layer->option);
+
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void shape_proposal_layer(Net* const net, Layer* const layer)
+{
+  int temp_size, tempint_size;
+
+  proposal_shape(layer->p_bottoms[0], &layer->tops[0],
+                 &temp_size, &tempint_size, &layer->option);
+
+  update_net_size(net, layer, temp_size, tempint_size, 0);
+}
+
+
+
+// --------------------------------------------------------------------------
 // test code
 // --------------------------------------------------------------------------
 
@@ -761,9 +789,9 @@ int main(int argc, char* argv[])
   // bind loaded data to corresponding tensors
   #ifdef GPU
   {
-    const int score_size = flatten_size(&score);
-    const int d_anchor_size = flatten_size(&d_anchor);
-    const int roi_size = flatten_size(&roi);
+    const long int score_size = flatten_size(&score);
+    const long int d_anchor_size = flatten_size(&d_anchor);
+    const long int roi_size = flatten_size(&roi);
 
     printf("gpu malloc\n");
     cudaMalloc(&score.data, score_size * sizeof(real));
@@ -805,7 +833,7 @@ int main(int argc, char* argv[])
   // copy GPU data to main memory
   #ifdef GPU
   {
-    const int roi_size = flatten_size(&roi);
+    const long int roi_size = flatten_size(&roi);
 
     printf("memcpy: cpu <- gpu\n");
     cudaMemcpyAsync(roi_data, roi.data, roi_size * sizeof(real),
@@ -815,8 +843,8 @@ int main(int argc, char* argv[])
 
   // verify results
   {
-    const int roi_size = flatten_size(&roi);
-    const int roi_true_size = flatten_size(&roi_true);
+    const long int roi_size = flatten_size(&roi);
+    const long int roi_true_size = flatten_size(&roi_true);
     int i = 0, i_true = 0;
 
     printf("verification\n");

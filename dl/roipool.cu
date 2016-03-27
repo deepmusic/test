@@ -80,7 +80,8 @@ void roi_pool_cpu(const real* const bottom3d,
                   const real spatial_scale)
 {
   // thread index: (r, c, h, w) = r*C*H'*W' + c*H'*W' + h*W' + w
-  for (int index = 0; index < R * C * top_H * top_W; ++index) {
+  const int top_size = R * C * top_H * top_W;
+  for (int index = 0; index < top_size; ++index) {
     // parse thread index -> (r, c, h, w)
     const int r = index / top_W / top_H / C;
     const int c = (index / top_W / top_H) % C;
@@ -272,6 +273,30 @@ void roipool_shape(const Tensor* const bottom3d,
 
 
 // --------------------------------------------------------------------------
+// API code
+// --------------------------------------------------------------------------
+
+void forward_roipool_layer(Net* const net, Layer* const layer)
+{
+  roipool_forward(layer->p_bottoms[0], layer->p_bottoms[1],
+                  &layer->tops[0],
+                  net->tempint_data, &layer->option);
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void shape_roipool_layer(Net* const net, Layer* const layer)
+{
+  int tempint_size;
+
+  roipool_shape(layer->p_bottoms[0], layer->p_bottoms[1], &layer->tops[0],
+                &tempint_size, &layer->option);
+
+  update_net_size(net, layer, 0, tempint_size, 0);
+}
+
+
+
+// --------------------------------------------------------------------------
 // test code
 // --------------------------------------------------------------------------
 
@@ -357,9 +382,9 @@ int main(int argc, char* argv[])
   // bind loaded data to corresponding tensors
   #ifdef GPU
   {
-    const int X_size = flatten_size(&X);
-    const int Y_size = flatten_size(&Y);
-    const int roi_size = flatten_size(&roi);
+    const long int X_size = flatten_size(&X);
+    const long int Y_size = flatten_size(&Y);
+    const long int roi_size = flatten_size(&roi);
 
     printf("gpu malloc\n");
     cudaMalloc(&X.data, X_size * sizeof(real));
@@ -391,7 +416,7 @@ int main(int argc, char* argv[])
   // copy GPU data to main memory
   #ifdef GPU
   {
-    const int Y_size = flatten_size(&Y);
+    const long int Y_size = flatten_size(&Y);
 
     printf("memcpy: cpu <- gpu\n");
     cudaMemcpyAsync(Y_data, Y.data, Y_size * sizeof(real),
@@ -401,7 +426,7 @@ int main(int argc, char* argv[])
 
   // verify results
   {
-    const int Y_size = flatten_size(&Y);
+    const long int Y_size = flatten_size(&Y);
 
     printf("verification\n");
 

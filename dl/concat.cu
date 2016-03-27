@@ -112,6 +112,27 @@ void concat_shape(const Tensor* const bottom3d[],
 
 
 // --------------------------------------------------------------------------
+// API code
+// --------------------------------------------------------------------------
+
+void forward_concat_layer(Net* const net, Layer* const layer)
+{
+  concat_forward(layer->p_bottoms, &layer->tops[0], &layer->option);
+
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void shape_concat_layer(Net* const net, Layer* const layer)
+{
+  concat_shape(layer->p_bottoms, &layer->tops[0],
+               &layer->option);
+
+  update_net_size(net, layer, 0, 0, 0);
+}
+
+
+
+// --------------------------------------------------------------------------
 // test code
 // --------------------------------------------------------------------------
 

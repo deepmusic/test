@@ -13,18 +13,18 @@
 #ifdef GPU
 __global__
 void relu_gpu(const real* const bottom, real* const top,
-              const int data_size)
+              const long int data_size)
 {
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const long int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < data_size) {
     top[index] = (bottom[index] > 0) ? bottom[index] : 0;
   }
 }
 #else
 void relu_cpu(const real* const bottom, real* const top,
-              const int data_size)
+              const long int data_size)
 {
-  for (int index = 0; index < data_size; ++index) {
+  for (long int index = 0; index < data_size; ++index) {
     top[index] = (bottom[index] > 0) ? bottom[index] : 0;
   }
 }
@@ -35,9 +35,9 @@ void relu_cpu(const real* const bottom, real* const top,
 #ifdef GPU
 __global__
 void prelu_gpu(const real* const bottom, real* const top,
-               const int data_size, const real negative_slope)
+               const long int data_size, const real negative_slope)
 {
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const long int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < data_size) {
     top[index] = (bottom[index] > 0) ? bottom[index] :
                                        bottom[index] * negative_slope;
@@ -45,9 +45,9 @@ void prelu_gpu(const real* const bottom, real* const top,
 }
 #else
 void prelu_cpu(const real* const bottom, real* const top,
-               const int data_size, const real negative_slope)
+               const long int data_size, const real negative_slope)
 {
-  for (int index = 0; index < data_size; ++index) {
+  for (long int index = 0; index < data_size; ++index) {
     top[index] = (bottom[index] > 0) ? bottom[index] :
                                        bottom[index] * negative_slope;
   }
@@ -57,17 +57,17 @@ void prelu_cpu(const real* const bottom, real* const top,
 // in-place ReLU transform
 #ifdef GPU
 __global__
-void relu_inplace_gpu(real* const bottom, const int data_size)
+void relu_inplace_gpu(real* const bottom, const long int data_size)
 {
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const long int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < data_size) {
     bottom[index] = (bottom[index] > 0) ? bottom[index] : 0;
   }
 }
 #else
-void relu_inplace_cpu(real* const bottom, const int data_size)
+void relu_inplace_cpu(real* const bottom, const long int data_size)
 {
-  for (int index = 0; index < data_size; ++index) {
+  for (long int index = 0; index < data_size; ++index) {
     bottom[index] = (bottom[index] > 0) ? bottom[index] : 0;
   }
 }
@@ -76,20 +76,20 @@ void relu_inplace_cpu(real* const bottom, const int data_size)
 // in-place soft ReLU transform
 #ifdef GPU
 __global__
-void prelu_inplace_gpu(real* const bottom, const int data_size,
+void prelu_inplace_gpu(real* const bottom, const long int data_size,
                        const real negative_slope)
 {
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const long int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < data_size) {
     bottom[index] = (bottom[index] > 0) ? bottom[index] :
                                           bottom[index] * negative_slope;
   }
 }
 #else
-void prelu_inplace_cpu(real* const bottom, const int data_size,
+void prelu_inplace_cpu(real* const bottom, const long int data_size,
                        const real negative_slope)
 {
-  for (int index = 0; index < data_size; ++index) {
+  for (long int index = 0; index < data_size; ++index) {
     bottom[index] = (bottom[index] > 0) ? bottom[index] :
                                           bottom[index] * negative_slope;
   }
@@ -112,7 +112,7 @@ void relu_forward(const Tensor* const bottom,
                   Tensor* const top,
                   const LayerOption* const option)
 {
-  const int data_size = flatten_size(bottom);
+  const long int data_size = flatten_size(bottom);
 
   // perform (soft-)ReLU transform
   //   if option->negative_slope = 0, perform ReLU
@@ -162,7 +162,7 @@ void relu_forward(const Tensor* const bottom,
 void relu_forward_inplace(Tensor* const bottom,
                           const LayerOption* const option)
 {
-  const int data_size = flatten_size(bottom);
+  const long int data_size = flatten_size(bottom);
 
   // perform (soft-)ReLU transform
   //   if option->negative_slope = 0, perform ReLU
@@ -211,6 +211,29 @@ void relu_shape(const Tensor* const bottom,
       top->shape[n][i] = bottom->shape[n][i];
     }
   }
+}
+
+
+
+// --------------------------------------------------------------------------
+// API code
+// --------------------------------------------------------------------------
+
+void forward_relu_layer(Net* const net, Layer* const layer)
+{
+  relu_forward(layer->p_bottoms[0], &layer->tops[0], &layer->option);
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void forward_inplace_relu_layer(Net* const net, Layer* const layer)
+{
+  relu_forward_inplace(&layer->tops[0], &layer->option);
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void shape_relu_layer(Net* const net, Layer* const layer)
+{
+  relu_shape(layer->p_bottoms[0], &layer->tops[0]);
 }
 
 
@@ -273,9 +296,9 @@ int main(int argc, char* argv[])
   // bind loaded data to corresponding tensors
   #ifdef GPU
   {
-    const int X_size = flatten_size(&X);
-    const int relu_size = flatten_size(&Y_relu);
-    const int prelu_size = flatten_size(&Y_prelu);
+    const long int X_size = flatten_size(&X);
+    const long int relu_size = flatten_size(&Y_relu);
+    const long int prelu_size = flatten_size(&Y_prelu);
 
     printf("gpu malloc\n");
     cudaMalloc(&X.data, X_size * sizeof(real));
@@ -307,8 +330,8 @@ int main(int argc, char* argv[])
   // copy GPU data to main memory
   #ifdef GPU
   {
-    const int relu_size = flatten_size(&Y_relu);
-    const int prelu_size = flatten_size(&Y_prelu);
+    const long int relu_size = flatten_size(&Y_relu);
+    const long int prelu_size = flatten_size(&Y_prelu);
 
     printf("memcpy: cpu <- gpu (relu)\n");
     cudaMemcpyAsync(relu_data, Y_relu.data, relu_size * sizeof(real),
@@ -322,8 +345,8 @@ int main(int argc, char* argv[])
 
   // verify results
   {
-    const int relu_size = flatten_size(&Y_relu);
-    const int prelu_size = flatten_size(&Y_prelu);
+    const long int relu_size = flatten_size(&Y_relu);
+    const long int prelu_size = flatten_size(&Y_prelu);
 
     printf("verification (relu)\n");
 

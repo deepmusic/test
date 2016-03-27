@@ -32,14 +32,16 @@ __global__
 void channel_max_gpu(const real* const data3d, real* const max2d,
                      const int N, const int C, const int D)
 {
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
-  if (index < N * D) {
+  const long int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const long int max_size = N * D;
+  if (index < max_size) {
     const int n = index / D;
     const int d = index % D;
 
     real maxval = -FLT_MAX;
     for (int c = 0; c < C; ++c) {
-      maxval = MAX(maxval,  data3d[(n * C + c) * D + d]);
+      const long int data_index = (n * C + c) * D + d;
+      maxval = MAX(maxval,  data3d[data_index]);
     }
     max2d[index] = maxval;
   }
@@ -50,11 +52,13 @@ void channel_max_cpu(const real* const data3d, real* const max2d,
 {
   for (int n = 0; n < N; ++n) {
     for (int d = 0; d < D; ++d) {
+      const long int max_index = n * D + d;
       real maxval = -FLT_MAX;
       for (int c = 0; c < C; ++c) {
-        maxval = MAX(maxval,  data3d[(n * C + c) * D + d]);
+        const long int data_index = (n * C + c) * D + d;
+        maxval = MAX(maxval,  data3d[data_index]);
       }
-      max2d[n * D + d] = maxval;
+      max2d[max_index] = maxval;
     }
   }
 }
@@ -66,11 +70,13 @@ __global__
 void subtract_max_gpu(real* const data3d, const real* const max2d,
                       const int N, const int C, const int D)
 {
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
-  if (index < N * C * D) {
+  const long int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const long int data_size = N * C * D;
+  if (index < data_size) {
     const int n = index / C / D;
     const int d = index % D;
-    data3d[index] -= max2d[n * D + d];
+    const long int max_index = n * D + d;
+    data3d[index] -= max2d[max_index];
   }
 }
 #else
@@ -80,7 +86,9 @@ void subtract_max_cpu(real* const data3d, const real* const max2d,
   for (int n = 0; n < N; ++n) {
     for (int c = 0; c < C; ++c) {
       for (int d = 0; d < D; ++d) {
-        data3d[(n * C + c) * D + d] -= max2d[n * D + d];
+        const long int data_index = (n * C + c) * D + d;
+        const long int max_index = n * D + d;
+        data3d[data_index] -= max2d[max_index];
       } // endfor d
     } // endfor c
   } // endfor n
@@ -90,17 +98,17 @@ void subtract_max_cpu(real* const data3d, const real* const max2d,
 // in-place element-wise exp: data3d[n][c][d] = exp(data[n][c][d])
 #ifdef GPU
 __global__
-void exp_gpu(real* const data, const int data_size)
+void exp_gpu(real* const data, const long int data_size)
 {
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const long int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < data_size) {
     data[index] = exp(data[index]);
   }
 }
 #else
-void exp_cpu(real* const data, const int data_size)
+void exp_cpu(real* const data, const long int data_size)
 {
-  for (int index = 0; index < data_size; ++index) {
+  for (long int index = 0; index < data_size; ++index) {
     data[index] = exp(data[index]);
   }
 }
@@ -112,14 +120,16 @@ __global__
 void channel_sum_gpu(const real* const data3d, real* const sum2d,
                      const int N, const int C, const int D)
 {
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
-  if (index < N * D) {
+  const long int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const long int sum_size = N * D;
+  if (index < sum_size) {
     const int n = index / D;
     const int d = index % D;
 
     real sumval = 0;
     for (int c = 0; c < C; ++c) {
-      sumval += data3d[(n * C + c) * D + d];
+      const long int data_index = (n * C + c) * D + d;
+      sumval += data3d[data_index];
     }
     sum2d[index] = sumval;
   }
@@ -130,11 +140,13 @@ void channel_sum_cpu(const real* const data3d, real* const sum2d,
 {
   for (int n = 0; n < N; ++n) {
     for (int d = 0; d < D; ++d) {
+      const long int sum_index = n * D + d;
       real sumval = 0;
       for (int c = 0; c < C; ++c) {
-        sumval += data3d[(n * C + c) * D + d];
+        const long int data_index = (n * C + c) * D + d;
+        sumval += data3d[data_index];
       }
-      sum2d[n * D + d] = sumval;
+      sum2d[sum_index] = sumval;
     }
   }
 }
@@ -146,11 +158,12 @@ __global__
 void div_sum_gpu(real* const data3d, const real* const sum2d,
                  const int N, const int C, const int D)
 {
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  const long int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < N * C * D) {
     const int n = index / C / D;
     const int d = index % D;
-    data3d[index] /= sum2d[n * D + d];
+    const long int sum_index = n * D + d;
+    data3d[index] /= sum2d[sum_index];
   }
 }
 #else
@@ -160,7 +173,9 @@ void div_sum_cpu(real* const data3d, const real* const sum2d,
   for (int n = 0; n < N; ++n) {
     for (int c = 0; c < C; ++c) {
       for (int d = 0; d < D; ++d) {
-        data3d[(n * C + c) * D + d] /= sum2d[n * D + d];
+        const long int data_index = (n * C + c) * D + d;
+        const long int sum_index = n * D + d;
+        data3d[data_index] /= sum2d[sum_index];
       } // endfor d
     } // endfor c
   } // endfor n
@@ -179,7 +194,7 @@ void softmax_inplace(real* const bottom3d,
   // 1. max[n][d] = max_c(bottom[n][c][d])
   {
   #ifdef GPU
-    const int num_threads = N * D;
+    const long int num_threads = N * D;
     const int threads_per_block = 512;
     const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
     channel_max_gpu<<<num_blocks, threads_per_block>>>(
@@ -192,7 +207,7 @@ void softmax_inplace(real* const bottom3d,
   // 2. sub[n][c][d] = bottom[n][c][d] - max[n][d]
   {
   #ifdef GPU
-    const int num_threads = N * C * D;
+    const long int num_threads = N * C * D;
     const int threads_per_block = 512;
     const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
     subtract_max_gpu<<<num_blocks, threads_per_block>>>(
@@ -205,13 +220,13 @@ void softmax_inplace(real* const bottom3d,
   // 3. exp[n][c][d] = exp(sub[n][c][d])
   {
   #ifdef GPU
-    const int num_threads = N * C * D;
+    const long int num_threads = N * C * D;
     const int threads_per_block = 512;
     const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
     exp_gpu<<<num_blocks, threads_per_block>>>(
         bottom3d,  num_threads);
   #else
-    const int data_size = N * C * D;
+    const long int data_size = N * C * D;
     exp_cpu(bottom3d,  data_size);
   #endif
   }
@@ -219,7 +234,7 @@ void softmax_inplace(real* const bottom3d,
   // 4. sum[n][d] = sum_c(exp[n][c][d])
   {
   #ifdef GPU
-    const int num_threads = N * D;
+    const long int num_threads = N * D;
     const int threads_per_block = 512;
     const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
     channel_sum_gpu<<<num_blocks, threads_per_block>>>(
@@ -232,7 +247,7 @@ void softmax_inplace(real* const bottom3d,
   // 5. top[n][c][d] = exp[n][c][d] / sum[n][d]
   {
   #ifdef GPU
-    const int num_threads = N * C * D;
+    const long int num_threads = N * C * D;
     const int threads_per_block = 512;
     const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
     div_sum_gpu<<<num_blocks, threads_per_block>>>(
@@ -260,7 +275,7 @@ void softmax_forward(const Tensor* const bottom3d,
                      real* const temp_data)
 {
   // copy bottom -> top, and then perform inplace operation
-  const int data_size = flatten_size(bottom3d);
+  const long int data_size = flatten_size(bottom3d);
 
   // memcpy bottom -> top
   {

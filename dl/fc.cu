@@ -169,6 +169,34 @@ void fc_shape(const Tensor* const bottom2d,
 
 
 // --------------------------------------------------------------------------
+// API code
+// --------------------------------------------------------------------------
+
+void forward_fc_layer(Net* const net, Layer* const layer)
+{
+  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
+
+  fc_forward(layer->p_bottoms[0], &layer->tops[0],
+             &layer->params[0], p_bias,
+             net->const_data, &layer->option);
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void shape_fc_layer(Net* const net, Layer* const layer)
+{
+  int const_size;
+  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
+
+  fc_shape(layer->p_bottoms[0], &layer->tops[0],
+           &layer->params[0], p_bias,
+           &const_size, &layer->option);
+
+  update_net_size(net, layer, 0, 0, const_size);
+}
+
+
+
+// --------------------------------------------------------------------------
 // test code
 // --------------------------------------------------------------------------
 
@@ -241,10 +269,10 @@ int main(int argc, char* argv[])
   // bind loaded data to corresponding tensors
   #ifdef GPU
   {
-    const int X_size = flatten_size(&X);
-    const int Y_size = flatten_size(&Y);
-    const int W_size = flatten_size(&W);
-    const int b_size = flatten_size(&b);
+    const long int X_size = flatten_size(&X);
+    const long int Y_size = flatten_size(&Y);
+    const long int W_size = flatten_size(&W);
+    const long int b_size = flatten_size(&b);
 
     printf("gpu malloc\n");
     cudaMalloc(&X.data, X_size * sizeof(real));
@@ -294,7 +322,7 @@ int main(int argc, char* argv[])
   // copy GPU data to main memory
   #ifdef GPU
   {
-    const int Y_size = flatten_size(&Y);
+    const long int Y_size = flatten_size(&Y);
 
     printf("memcpy: cpu <- gpu\n");
     cudaMemcpyAsync(Y_data, Y.data, Y_size * sizeof(real),

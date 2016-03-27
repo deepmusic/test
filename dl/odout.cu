@@ -6,6 +6,8 @@
 // kernel code
 //   transform_box: transform a box according to a given gradient
 //   sort_box: sort a list of boxes in descending order of their scores
+//   filter_box: discard boxes whose scores < threshold
+//   filter_output: remove duplicated boxes, and select final output boxes
 // --------------------------------------------------------------------------
 
 // transform a box according to a given gradient
@@ -102,7 +104,7 @@ void sort_box(real* const list, const int start, const int end)
   }
 }
 
-// find boxes whose scores >= threshold
+// discard boxes whose scores < threshold
 //   list: num_boxes x 5 array,  (x1, y1, x2, y2, score) for each box
 static
 int filter_box(real* const list, const int num_boxes, const real threshold)
@@ -183,6 +185,7 @@ void retrieve_output_gpu(const real* const proposals,
 }
 #endif
 
+// remove duplicated boxes, and select final output boxes
 #ifdef GPU
 void filter_output_gpu(const real* const bottom2d,
                        const real* const d_anchor3d,
@@ -341,6 +344,13 @@ void filter_output_cpu(const real* const bottom2d,
 }
 #endif
 
+
+
+// --------------------------------------------------------------------------
+// layer operator code
+//   odout_forward
+// --------------------------------------------------------------------------
+
 void odout_forward(const Tensor* const bottom2d,
                    const Tensor* const d_anchor3d,
                    const Tensor* const roi2d,
@@ -413,6 +423,12 @@ void odout_forward(const Tensor* const bottom2d,
   }
 }
 
+
+
+// --------------------------------------------------------------------------
+// layer shape calculator code
+// --------------------------------------------------------------------------
+
 void odout_shape(const Tensor* const bottom2d,
                  Tensor* const top2d,
                  int* const proposals_size,
@@ -446,4 +462,32 @@ void odout_shape(const Tensor* const bottom2d,
     *proposals_size = num_power_of_2 * 5;
     *keep_size = total_num_rois;
   }
+}
+
+
+
+// --------------------------------------------------------------------------
+// API code
+// --------------------------------------------------------------------------
+
+void forward_odout_layer(Net* const net, Layer* const layer)
+{
+  odout_forward(layer->p_bottoms[0], layer->p_bottoms[1],
+                layer->p_bottoms[2], layer->p_bottoms[3],
+                &layer->tops[0],
+                net->temp_cpu_data, net->tempint_cpu_data,
+                net->temp_data, net->tempint_data,
+                &layer->option);
+
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void shape_odout_layer(Net* const net, Layer* const layer)
+{
+  int temp_size, tempint_size;
+
+  odout_shape(layer->p_bottoms[0], &layer->tops[0],
+              &temp_size, &tempint_size, &layer->option);
+
+  update_net_size(net, layer, temp_size, tempint_size, 0);
 }

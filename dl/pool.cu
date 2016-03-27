@@ -252,6 +252,30 @@ void pool_shape(const Tensor* const bottom3d,
 
 
 // --------------------------------------------------------------------------
+// API code
+// --------------------------------------------------------------------------
+
+void forward_pool_layer(Net* const net, Layer* const layer)
+{
+  pool_forward(layer->p_bottoms[0], &layer->tops[0],
+               net->tempint_data, &layer->option);
+
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void shape_pool_layer(Net* const net, Layer* const layer)
+{
+  int tempint_size;
+
+  pool_shape(layer->p_bottoms[0], &layer->tops[0],
+             &tempint_size, &layer->option);
+
+  update_net_size(net, layer, 0, tempint_size, 0);
+}
+
+
+
+// --------------------------------------------------------------------------
 // test code
 // --------------------------------------------------------------------------
 
@@ -316,8 +340,8 @@ int main(int argc, char* argv[])
   // bind loaded data to corresponding tensors
   #ifdef GPU
   {
-    const int X_size = flatten_size(&X);
-    const int Y_size = flatten_size(&Y);
+    const long int X_size = flatten_size(&X);
+    const long int Y_size = flatten_size(&Y);
 
     printf("gpu malloc\n");
     cudaMalloc(&X.data, X_size * sizeof(real));
@@ -345,7 +369,7 @@ int main(int argc, char* argv[])
   // copy GPU data to main memory
   #ifdef GPU
   {
-    const int Y_size = flatten_size(&Y);
+    const long int Y_size = flatten_size(&Y);
 
     printf("memcpy: cpu <- gpu\n");
     cudaMemcpyAsync(Y_data, Y.data, Y_size * sizeof(real),

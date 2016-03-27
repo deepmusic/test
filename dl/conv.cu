@@ -152,6 +152,7 @@ void conv_forward(const Tensor* const bottom3d,
   // do forward-pass for each item in the batch
   const real* p_bottom_item = bottom3d->data;
   real* p_top_item = top3d->data;
+  real* p_temp_data = temp_data;
   for (int n = 0; n < bottom3d->num_items; ++n) {
     // bottom shape: (G * C) x H x W
     const int bottom_H = bottom3d->shape[n][1];  // H
@@ -175,13 +176,13 @@ void conv_forward(const Tensor* const bottom3d,
       const int threads_per_block = 512;
       const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
       convert_bottom_gpu<<<num_blocks, threads_per_block>>>(
-          p_bottom_item,  temp_data,
+          p_bottom_item,  p_temp_data,
           num_groups * bottom_C,  bottom_H,  bottom_W,
           top_H,  top_W,
           kernel_h,  kernel_w,  pad_h,  pad_w,  stride_h,  stride_w);
     #else
       convert_bottom_cpu(
-          p_bottom_item,  temp_data,
+          p_bottom_item,  p_temp_data,
           num_groups * bottom_C,  bottom_H,  bottom_W,
           top_H,  top_W,
           kernel_h,  kernel_w,  pad_h,  pad_w,  stride_h,  stride_w);
@@ -195,7 +196,7 @@ void conv_forward(const Tensor* const bottom3d,
     for (int g = 0; g < num_groups; ++g) {
       const int kernel_size = bottom_C * kernel_h * kernel_w;
       const int top_area = top_H * top_W;
-      const real* const p_temp_g = temp_data +
+      const real* const p_temp_g = p_temp_data +
                           g * kernel_size * top_area;
       const real* const p_weight_g = weight5d->data +
                           g * top_C * kernel_size;
@@ -288,8 +289,11 @@ void conv_forward(const Tensor* const bottom3d,
     {
       const int bottom_size = num_groups * bottom_C * bottom_H * bottom_W;
       const int top_size = num_groups * top_C * top_H * top_W;
+      //const int temp_size =
+      //    num_groups * bottom_C * kernel_h * kernel_w * top_H * top_W;
       p_bottom_item += bottom_size;
       p_top_item += top_size;
+      //p_temp_data += temp_size;
     }
   } // endfor batch
 
@@ -322,8 +326,7 @@ void conv_shape(const Tensor* const bottom3d,
   const int stride_w = option->stride_w;
 
   // calculate shape for each item in the batch
-  int max_top_area = 0;
-  int total_size = 0;
+  int total_size = 0, total_top_area = 0, max_top_area = 0;
   for (int n = 0; n < bottom3d->num_items; ++n) {
     // bottom shape: (G * C) x H x W
     const int bottom_H = bottom3d->shape[n][1];  // H
@@ -343,7 +346,8 @@ void conv_shape(const Tensor* const bottom3d,
     top3d->start[n] = total_size;
     total_size += num_groups * top_C * top_H * top_W;
 
-    // max(H' * W') in the batch
+    // sum(H' * W') & max(H' * W') in the batch
+    total_top_area += top_area;
     max_top_area = MAX(max_top_area,  top_area);
   }
   top3d->ndim = 3;
@@ -373,11 +377,40 @@ void conv_shape(const Tensor* const bottom3d,
     bias1d->start[0] = 0;
   }
 
-  // temporary data size: G * C * kernel_h * kernel_w * max(H' * W')
+  // temporary data size: G * C * kernel_h * kernel_w * sum(H' * W')
   *temp_size = num_groups * bottom_C * kernel_h * kernel_w * max_top_area;
 
   // constant data size: max(H' * W')
   *const_size = max_top_area;
+}
+
+
+
+// --------------------------------------------------------------------------
+// API code
+// --------------------------------------------------------------------------
+
+void forward_conv_layer(Net* const net, Layer* const layer)
+{
+  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
+
+  conv_forward(layer->p_bottoms[0], &layer->tops[0],
+               &layer->params[0], p_bias,
+               net->temp_data, net->const_data, &layer->option);
+
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void shape_conv_layer(Net* const net, Layer* const layer)
+{
+  int temp_size, const_size;
+  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
+
+  conv_shape(layer->p_bottoms[0], &layer->tops[0],
+             &layer->params[0], p_bias,
+             &temp_size, &const_size, &layer->option);
+
+  update_net_size(net, layer, temp_size, 0, const_size);
 }
 
 

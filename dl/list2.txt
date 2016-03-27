@@ -4,3 +4,9 @@
 ../data/voc/2007/VOC2007/JPEGImages/000004.jpg
 ../data/voc/2007/VOC2007/JPEGImages/000006.jpg
 ../data/voc/2007/VOC2007/JPEGImages/000008.jpg
+../data/voc/2007/VOC2007/JPEGImages/000010.jpg
+../data/voc/2007/VOC2007/JPEGImages/000011.jpg
+../data/voc/2007/VOC2007/JPEGImages/000013.jpg
+../data/voc/2007/VOC2007/JPEGImages/000014.jpg
+../data/voc/2007/VOC2007/JPEGImages/000015.jpg
+../data/voc/2007/VOC2007/JPEGImages/000018.jpg

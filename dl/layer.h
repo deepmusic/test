@@ -57,7 +57,7 @@ typedef struct Tensor_
 } Tensor;
 
 // total number of elements in a tensor
-int flatten_size(const Tensor* const tensor);
+long int flatten_size(const Tensor* const tensor);
 
 // print shapes for all batch items in tensor
 void print_tensor_info(const char* name,
@@ -66,7 +66,7 @@ void print_tensor_info(const char* name,
 // allocate memory for tensor
 //   allocate GPU memory in GPU mode, or CPU memory in CPU mode
 //   return memory size in bytes
-int malloc_tensor(Tensor* const tensor);
+long int malloc_tensor(Tensor* const tensor);
 
 // load binary data from file & store to CPU memory
 //   data: pointer to CPU memory for storing data
@@ -92,14 +92,16 @@ void load_tensor(const char* const filename,
 
 void load_image(const char* const filename,
                 Tensor* const input3d,
-                Tensor* const img_info1d);
+                Tensor* const img_info1d,
+                real* const temp_data);
 
 
 
 // --------------------------------------------------------------------------
+// layer data structure & some functions
+// --------------------------------------------------------------------------
+
 // layer options
-// --------------------------------------------------------------------------
-
 typedef struct LayerOption_
 {
   int num_groups;
@@ -134,219 +136,139 @@ typedef struct LayerOption_
   real threshold;
 } LayerOption;
 
+typedef struct Layer_
+{
+  char name[32];
+  Tensor** p_bottoms;
+  int num_bottoms;
+  Tensor* tops;
+  int num_tops;
+  int* allocate_top_data;
+  Tensor* params;
+  int num_params;
+  LayerOption option;
+} Layer;
+
+long int malloc_layer(Layer* const layer);
+
 
 
 // --------------------------------------------------------------------------
-// convolution & deconvolution
-//   conv_forward
-//   conv_shape
-//   deconv_forward
-//   deconv_shape
+// net data structure & some functions
 // --------------------------------------------------------------------------
 
-// convolution: bottom -> top
-//   G: number of groups
-//   bottom: (G * C) x H x W
-//   top: (G * C') x H' x W'
-//   weight: G x C' x C x kernel_h x kernel_w
-//   bias: (G * C') x 1
-//   temp: (G * C * kernel_h * kernel_w) x (H' * W') array
-//   const: 1 x (H' * W') array,  const[i] = 1 for all i
-void conv_forward(const Tensor* const bottom3d,
-                  Tensor* const top3d,
-                  const Tensor* const weight5d,
-                  const Tensor* const bias1d,
-                  real* const temp_data,
-                  const real* const const_data,
-                  const LayerOption* const option);
+#define MAX_NUM_LAYERS 100
+#define MAX_NUM_LAYER_DATA 5
+#define MAX_NUM_RATIOS 10
+#define MAX_NUM_SCALES 10
 
-void conv_shape(const Tensor* const bottom3d,
-                Tensor* const top3d,
-                Tensor* const weight5d,
-                Tensor* const bias1d,
-                int* const temp_size,
-                int* const const_size,
-                const LayerOption* const option);
+typedef struct Net_
+{
+  Layer* layers[MAX_NUM_LAYERS];
+  int num_layers;
 
-// deconvolution: bottom -> top
-//   G: number of groups
-//   bottom: (G * C') x H' x W'
-//   top: (G * C) x H x W
-//   weight: G x C' x C x kernel_h x kernel_w
-//   bias: (G * C) x 1
-//   temp: (G * C * kernel_h * kernel_w) x (H' * W') array
-//   const: 1 x (H * W) array,  const[i] = 1 for all i
-void deconv_forward(const Tensor* const bottom3d,
-                    Tensor* const top3d,
-                    const Tensor* const weight5d,
-                    const Tensor* const bias1d,
-                    real* const temp_data,
-                    const real* const const_data,
-                    const LayerOption* const option);
+  real* layer_data[MAX_NUM_LAYER_DATA];
+  int reserved_layer_data[MAX_NUM_LAYER_DATA];
+  real* input_cpu_data;
+  real* output_cpu_data;
+  long int layer_size;
+  int num_layer_data;
 
-void deconv_shape(const Tensor* const bottom3d,
-                  Tensor* const top3d,
-                  Tensor* const weight5d,
-                  Tensor* const bias1d,
-                  int* const temp_size,
-                  int* const const_size,
-                  const LayerOption* const option);
+  real* param_cpu_data;
+  long int param_size;
+
+  real* temp_data;
+  real* temp_cpu_data;
+  long int temp_size;
+
+  int* tempint_data;
+  int* tempint_cpu_data;
+  long int tempint_size;
+
+  real* const_data;
+  long int const_size;
+
+  Tensor* img_info;
+  real* anchors;
+  real anchor_ratios[MAX_NUM_RATIOS];
+  real anchor_scales[MAX_NUM_SCALES];
+
+  long int space_cpu;
+  long int space;
+
+  int initialized;
+
+  #ifdef GPU
+  cublasHandle_t cublas_handle;
+  #endif
+} Net;
+
+void malloc_net(Net* const net);
+
+void free_net(Net* const net);
+
+void update_net_size(Net* const net,
+                     const Layer* const layer,
+                     const int temp_size,
+                     const int tempint_size,
+                     const int const_size);
+
+void print_layer_tops(const Net* const net,
+                      const Layer* const layer);
+
+
+
+// --------------------------------------------------------------------------
+// convolution
+// --------------------------------------------------------------------------
+
+void forward_conv_layer(Net* const net, Layer* const layer);
+void shape_conv_layer(Net* const net, Layer* const layer);
+
+
+
+// --------------------------------------------------------------------------
+// deconvolution
+// --------------------------------------------------------------------------
+
+void forward_deconv_layer(Net* const net, Layer* const layer);
+void shape_deconv_layer(Net* const net, Layer* const layer);
 
 
 
 // --------------------------------------------------------------------------
 // fully-connected
-//   fc_forward
-//   fc_shape
 // --------------------------------------------------------------------------
 
-// fully-connected: bottom -> top
-//   bottom: N x D (N items of D-dim array)
-//   top: N x D' (N items of D-dim array)
-//   weight: D' x D
-//   bias: 1 x D'
-//   const: N-dim array,  const[i] = 1 for all i
-void fc_forward(const Tensor* const bottom2d,
-                Tensor* const top2d,
-                const Tensor* const weight2d,
-                const Tensor* const bias1d,
-                const real* const const_data,
-                const LayerOption* const option);
-
-void fc_shape(const Tensor* const bottom2d,
-              Tensor* const top2d,
-              Tensor* const weight2d,
-              Tensor* const bias1d,
-              int* const const_size,
-              const LayerOption* const option);
+void forward_fc_layer(Net* const net, Layer* const layer);
+void shape_fc_layer(Net* const net, Layer* const layer);
 
 
 
 // --------------------------------------------------------------------------
 // pooling
-//   pool_forward
-//   pool_shape
 // --------------------------------------------------------------------------
 
-// max-pooling: bottom -> top
-//   bottom: C x H x W
-//   top: C x H' x W'
-//   argmax: C x H' x W' array
-void pool_forward(const Tensor* const bottom3d,
-                  Tensor* const top3d,
-                  int* const argmax_data,
-                  const LayerOption* const option);
-
-void pool_shape(const Tensor* const bottom3d,
-                Tensor* const top3d,
-                int* const argmax_size,
-                const LayerOption* const option);
+void forward_pool_layer(Net* const net, Layer* const layer);
+void shape_pool_layer(Net* const net, Layer* const layer);
 
 
 
 // --------------------------------------------------------------------------
 // RoI pooling
-//   struct LayerOption
-//   roipool_forward
-//   roipool_shape
 // --------------------------------------------------------------------------
 
-// RoI pooling: bottom -> top
-//   bottom: C x H x W
-//   roi: R x 4
-//   top: R x C x H' x W'
-//   argmax: R * C * H' * W' array
-void roipool_forward(const Tensor* const bottom3d,
-                     const Tensor* const roi2d,
-                     Tensor* const top4d,
-                     int* const argmax_data,
-                     const LayerOption* option);
-
-void roipool_shape(const Tensor* const bottom3d,
-                   const Tensor* const roi2d,
-                   Tensor* const top4d,
-                   int* const argmax_size,
-                   const LayerOption* option);
-
-
-
-// --------------------------------------------------------------------------
-// ReLU transform
-//   struct LayerOption
-//   relu_forward
-//   relu_forward_inplace
-//   relu_shape
-// --------------------------------------------------------------------------
-
-// (soft-)ReLU transform: bottom -> top
-//   data size: total number of nodes (N * C * H * W or something)
-//   if option->negative_slope = 0, perform ReLU
-//                             > 0, perform soft ReLU
-void relu_forward(const Tensor* const bottom,
-                  Tensor* const top,
-                  const LayerOption* const option);
-
-// in-place (soft-)ReLU transform: bottom -> bottom
-//   data size: total number of nodes (N * C * H * W or something)
-//   if option->negative_slope = 0, perform ReLU
-//                             > 0, perform soft ReLU
-void relu_forward_inplace(Tensor* const bottom,
-                          const LayerOption* const option);
-
-void relu_shape(const Tensor* const bottom,
-                Tensor* const top);
+void forward_roipool_layer(Net* const net, Layer* const layer);
+void shape_roipool_layer(Net* const net, Layer* const layer);
 
 
 
 // --------------------------------------------------------------------------
 // top-n proposal generation
-//   struct LayerOption
-//   proposal_forward
-//   proposal_shape
-//   generate_anchors
 // --------------------------------------------------------------------------
 
-// proposal: bottom -> top
-//   bottom: 2 x num_anchors x H x W tensor
-//     bottom[0, n, h, w] = foreground score of anchor n at node (h, w)
-//     bottom[1, n, h, w] = background score of anchor n at node (h, w)
-//   d_anchor: num_anchors x 4 x H x W tensor
-//     d_anchor[n, :, h, w] = gradient (dx, dy, d(log w), d(log h))
-//                            of anchor n at center location (h, w)
-//   img_info: 4 x 1 tensor,  (img_H, img_W, min_box_W, min_box_H)
-//     img_H, img_W: raw image height & width
-//     min_box_W: minimum box width in raw image
-//     min_box_H: minimum box height in raw image
-//   top: num_RoIs x 4 tensor,  (x1, y1, x2, y2) of each RoI
-//   anchors: num_anchors * 4 array,  (x1, y1, x2, y2) of each anchor
-//   4 temporary arrays
-//     proposals: all box proposals with their scores
-//       "num_boxes x 5" array,  (x1, y1, x2, y2, score) for each box
-//       in GPU mode, if proposals = NULL, use bitonic sort in GPU
-//       if proposals != NULL & allocated in main memory, quicksort in CPU
-//     keep: indices of proposals to be retrieved as RoIs
-//       "num_rois x 1" array,  keep[i]: index of i-th RoI in proposals
-//       TODO: always stored in main memory due to implementation issue
-//     proposals_dev: GPU memory space, required in GPU mode
-//       in GPU mode, total space allocated for proposals should be
-//       a power of 2 >= num_boxes
-//     keep_dev: GPU memory space, required in GPU mode
-void proposal_forward(const Tensor* const bottom4d,
-                      const Tensor* const d_anchor4d,
-                      const Tensor* const img_info1d,
-                      Tensor* const top2d,
-                      const real* const anchors,
-                      real* const proposals,
-                      int* const keep,
-                      real* const proposals_dev,
-                      int* const keep_dev,
-                      const LayerOption* const option);
-
-void proposal_shape(const Tensor* const bottom4d,
-                    Tensor* const top2d,
-                    int* const proposals_size,
-                    int* const keep_size,
-                    const LayerOption* const option);
+void forward_proposal_layer(Net* const net, Layer* const layer);
+void shape_proposal_layer(Net* const net, Layer* const layer);
 
 // given a base box, enumerate transformed boxes of varying sizes and ratios
 //   option->base_size: base box's width & height (i.e., base box is square)
@@ -365,53 +287,22 @@ void generate_anchors(real* const anchors,
 
 
 // --------------------------------------------------------------------------
-// dropout
-//   struct LayerOption
-//   dropout_forward
-//   dropout_forward_inplace
-//   dropout_shape
-// --------------------------------------------------------------------------
-
-// dropout transform: bottom -> top
-//   if option->scaled = 1, perform scaled dropout
-//   if option->test = 1, perform testing-time dropout
-//   if both = 1, perform testing-time scaled dropout,
-//                which is actually do nothing:  top[i] = bottom[i]
-//   if both = 0, perform dropout
-//   data size: total number of nodes (N * C * H * W or something)
-//   mask: data_size x 1 temporary array
-void dropout_forward(const Tensor* const bottom,
-                     unsigned int* const mask,
-                     Tensor* const top,
-                     const LayerOption* const option);
-
-// in-place dropout transform: bottom -> bottom
-void dropout_forward_inplace(Tensor* const bottom,
-                             unsigned int* const mask,
-                             const LayerOption* const option);
-
-void dropout_shape(const Tensor* const bottom,
-                   Tensor* const top);
-
-
-
-// --------------------------------------------------------------------------
 // concat
-//   concat_forward
-//   concat_shape
 // --------------------------------------------------------------------------
 
-// concat: bottom[0], bottom[1], ..., bottom[M-1] -> top
-//   M = option->num_concats
-//   bottom[m]: C_m x H x W  (C_m may different from each other)
-//   top: sum(C_m) x H x W  (channel-wise concatenation)
-void concat_forward(const Tensor* const bottom3d[],
-                    Tensor* const top3d,
-                    const LayerOption* const option);
+void forward_concat_layer(Net* const net, Layer* const layer);
+void shape_concat_layer(Net* const net, Layer* const layer);
 
-void concat_shape(const Tensor* const bottom3d[],
-                  Tensor* const top3d,
-                  const LayerOption* const option);
+
+
+// --------------------------------------------------------------------------
+// object detection output
+//   odout_forward
+//   odout_shape
+// --------------------------------------------------------------------------
+
+void forward_odout_layer(Net* const net, Layer* const layer);
+void shape_odout_layer(Net* const net, Layer* const layer);
 
 
 
@@ -442,28 +333,22 @@ void softmax_shape(const Tensor* const bottom3d,
 
 
 // --------------------------------------------------------------------------
-// object detection output
-//   struct LayerOption
-//   odout_forward
-//   odout_shape
+// dropout
 // --------------------------------------------------------------------------
 
-void odout_forward(const Tensor* const bottom2d,
-                   const Tensor* const d_anchor3d,
-                   const Tensor* const roi2d,
-                   const Tensor* const img_info1d,
-                   Tensor* const top2d,
-                   real* const proposals,
-                   int* const keep,
-                   real* const proposals_dev,
-                   int* const keep_dev,
-                   const LayerOption* const option);
+void forward_dropout_layer(Net* const net, Layer* const layer);
+void forward_inplace_dropout_layer(Net* const net, Layer* const layer);
+void shape_dropout_layer(Net* const net, Layer* const layer);
 
-void odout_shape(const Tensor* const bottom2d,
-                 Tensor* const top2d,
-                 int* const proposals_size,
-                 int* const keep_size,
-                 const LayerOption* const option);
+
+
+// --------------------------------------------------------------------------
+// ReLU
+// --------------------------------------------------------------------------
+
+void forward_relu_layer(Net* const net, Layer* const layer);
+void forward_inplace_relu_layer(Net* const net, Layer* const layer);
+void shape_relu_layer(Net* const net, Layer* const layer);
 
 
 

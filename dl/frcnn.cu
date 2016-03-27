@@ -2,584 +2,34 @@
 #include <stdio.h>
 #include <string.h>
 
-typedef struct Layer_
-{
-  char name[32];
-  Tensor** p_bottoms;
-  int num_bottoms;
-  Tensor* tops;
-  int num_tops;
-  int* allocate_top_data;
-  Tensor* params;
-  int num_params;
-  LayerOption option;
-} Layer;
-
-long int malloc_layer(Layer* const layer)
-{
-  long int space_cpu = 0;
-
-  layer->p_bottoms = (layer->num_bottoms <= 0) ? NULL :
-                     (Tensor**)malloc(layer->num_bottoms * sizeof(Tensor*));
-  space_cpu += layer->num_bottoms * sizeof(Tensor*);
-
-  layer->tops = (layer->num_tops <= 0) ? NULL :
-                (Tensor*)malloc(layer->num_tops * sizeof(Tensor));
-  layer->allocate_top_data = (layer->num_tops <= 0) ? NULL:
-                             (int*)calloc(layer->num_tops, sizeof(int));
-  space_cpu += layer->num_tops * (sizeof(Tensor) + sizeof(int));
-
-  layer->params = (layer->num_params <= 0) ? NULL : 
-                  (Tensor*)malloc(layer->num_params * sizeof(Tensor));
-  space_cpu += layer->num_params * sizeof(Tensor);
-
-  return space_cpu;
-}
-
-long int malloc_load_layer_data(Layer* const layer,
-                                const char* const name,
-                                real* const temp_cpu_space)
-{
-  long int space = 0;
-
-  for (int i = 0; i < layer->num_tops; ++i) {
-    if (layer->allocate_top_data[i]) {
-      space += malloc_tensor(&layer->tops[i]);
-    }
-  }
-
-  for (int i = 0; i < layer->num_params; ++i) {
-    char path[1024];
-    printf("malloc param %d\n", i);
-    space += malloc_tensor(&layer->params[i]);
-    sprintf(path, "params/%s_param%d.bin", name, i);
-    printf("load param %s\n", path);
-    load_tensor(path, &layer->params[i], temp_cpu_space);
-  }
-
-  return space;
-}
-
-void free_layer(Layer* const layer)
-{
-  if (layer->p_bottoms) {
-    free(layer->p_bottoms);
-    layer->p_bottoms = NULL;
-  }
-
-  if (layer->tops) {
-    for (int i = 0; i < layer->num_tops; ++i) {
-      if (layer->allocate_top_data[i]) {
-        #ifdef GPU
-        cudaFree(layer->tops[i].data);
-        layer->tops[i].data = NULL;
-        #else
-        free(layer->tops[i].data);
-        layer->tops[i].data = NULL;
-        #endif
-      }
-    }
-    free(layer->tops);
-    layer->tops = NULL;
-    free(layer->allocate_top_data);
-    layer->allocate_top_data = NULL;
-  }
-
-  if (layer->params) {
-    for (int i = 0; i < layer->num_params; ++i) {
-      #ifdef GPU
-      cudaFree(layer->params[i].data);
-      layer->params[i].data = NULL;
-      #else
-      free(layer->params[i].data);
-      layer->params[i].data = NULL;
-      #endif
-    }
-    free(layer->params);
-    layer->params = NULL;
-  }
-
-  free(layer);
-}
-
-#define MAX_NUM_LAYERS 100
-#define MAX_NUM_LAYER_DATA 5
-#define MAX_NUM_RATIOS 10
-#define MAX_NUM_SCALES 10
-
-typedef struct Net_
-{
-  Layer* layers[MAX_NUM_LAYERS];
-  int num_layers;
-
-  real* layer_data[MAX_NUM_LAYER_DATA];
-  int reserved_layer_data[MAX_NUM_LAYER_DATA];
-  real* input_cpu_data;
-  real* output_cpu_data;
-  int layer_size;
-  int num_layer_data;
-
-  real* param_cpu_data;
-  int param_size;
-
-  real* temp_data;
-  real* temp_cpu_data;
-  int temp_size;
-
-  int* tempint_data;
-  int* tempint_cpu_data;
-  int tempint_size;
-
-  real* const_data;
-  int const_size;
-
-  Tensor* img_info;
-  real* anchors;
-  real anchor_ratios[MAX_NUM_RATIOS];
-  real anchor_scales[MAX_NUM_SCALES];
-
-  long int space_cpu;
-  long int space;
-
-  #ifdef GPU
-  cublasHandle_t cublas_handle;
-  #endif
-} Net;
-
-void malloc_net(Net* const net)
-{
-  long int space_cpu = 0;
-  long int space = 0;
-
-  for (int i = 0; i < net->num_layer_data; ++i) {
-    #ifdef GPU
-    cudaMalloc(&net->layer_data[i], net->layer_size * sizeof(real));
-    #else
-    net->layer_data[i] = (real*)malloc(net->layer_size * sizeof(real));
-    #endif
-    net->reserved_layer_data[i] = 0;
-  }
-  space += net->num_layer_data * net->layer_size * sizeof(real);
-
-  #ifdef GPU
-  {
-    cudaMalloc(&net->temp_data, net->temp_size * sizeof(real));
-    cudaMalloc(&net->tempint_data, net->tempint_size * sizeof(int));
-    cudaMalloc(&net->const_data, net->const_size * sizeof(real));
-  }
-  #else
-  {
-    net->temp_data = (real*)malloc(net->temp_size * sizeof(real));
-    net->tempint_data = (int*)malloc(net->tempint_size * sizeof(int));
-    net->const_data = (real*)malloc(net->const_size * sizeof(real));
-  }
-  #endif
-  space += sizeof(real) * (net->temp_size + net->const_size)
-           + sizeof(int) * (net->tempint_size);
-
-  net->input_cpu_data = (real*)malloc(net->layer_size * sizeof(real));
-  net->output_cpu_data = (real*)malloc(net->layer_size * sizeof(real));
-  net->param_cpu_data = (real*)malloc(net->param_size * sizeof(real));
-  net->temp_cpu_data = (real*)malloc(net->temp_size * sizeof(real));
-  net->tempint_cpu_data = (int*)malloc(net->tempint_size * sizeof(int));
-  space_cpu += sizeof(real) * (2 * net->layer_size + net->param_size
-                               + net->temp_size)
-               + sizeof(int) * (net->tempint_size);
-
-  // data initialization
-  {
-  #ifdef GPU
-    for (int i = 0; i < net->const_size; ++i) {
-      net->output_cpu_data[i] = 1;
-    }
-    cudaMemcpy(net->const_data, net->output_cpu_data,
-               net->const_size * sizeof(real),
-               cudaMemcpyHostToDevice);
-  #else
-    for (int i = 0; i < net->const_size; ++i) {
-      net->const_data[i] = 1;
-    }
-  #endif
-  }
-
-  for (int i = 0; i < net->num_layers; ++i) {
-    space += malloc_load_layer_data(net->layers[i], net->layers[i]->name,
-                                    net->param_cpu_data);
-  }
-
-  net->img_info->data
-      = (real*)malloc(flatten_size(net->img_info) * sizeof(real));
-  space_cpu += sizeof(real) * flatten_size(net->img_info);
-
-  // acquire CuBLAS handle
-  #ifdef GPU
-  {
-    if (cublasCreate(&net->cublas_handle) != CUBLAS_STATUS_SUCCESS) {
-      printf("cublas creation failed\n");
-    }
-  }
-  #endif
-
-  net->space_cpu = space_cpu;
-  net->space = space;
-}
-
-void free_net(Net* const net)
-{
-  for (int i = 0; i < net->num_layers; ++i) {
-    free_layer(net->layers[i]);
-  }
-
-  for (int i = 0; i < net->num_layer_data; ++i) {
-    #ifdef GPU
-    cudaFree(net->layer_data[i]);
-    #else
-    free(net->layer_data[i]);
-    #endif
-    net->layer_data[i] = NULL;
-  }
-
-  #ifdef GPU
-  {
-    cudaFree(net->temp_data);
-    cudaFree(net->tempint_data);
-    cudaFree(net->const_data);
-    cudaFree(net->anchors);
-  }
-  #else
-  {
-    free(net->temp_data);
-    free(net->tempint_data);
-    free(net->const_data);
-    free(net->anchors);
-  }
-  #endif
-
-  free(net->input_cpu_data);
-  free(net->output_cpu_data);
-  free(net->param_cpu_data);
-  free(net->temp_cpu_data);
-  free(net->tempint_cpu_data);
-
-  free(net->img_info->data);
-  free(net->img_info);
-
-  net->temp_data = NULL;
-  net->tempint_data = NULL;
-  net->const_data = NULL;
-  net->input_cpu_data = NULL;
-  net->output_cpu_data = NULL;
-  net->param_cpu_data = NULL;
-  net->temp_cpu_data = NULL;
-  net->tempint_cpu_data = NULL;
-  net->anchors = NULL;
-  net->img_info = NULL;
-
-  #ifdef GPU
-  {
-    if (cublasDestroy(net->cublas_handle) != CUBLAS_STATUS_SUCCESS) {
-      printf("cublas destruction failed\n");
-    }
-  }
-  #endif
-}
-
-void update_net_size(Net* const net,
-                     const int bottom_size,
-                     const int top_size,
-                     const int param_size,
-                     const int temp_size,
-                     const int tempint_size,
-                     const int const_size)
-{
-  net->layer_size = MAX(net->layer_size,  bottom_size);
-  net->layer_size = MAX(net->layer_size,  top_size);
-  net->param_size = MAX(net->param_size,  param_size);
-  net->temp_size = MAX(net->temp_size,  temp_size);
-  net->tempint_size = MAX(net->tempint_size,  tempint_size);
-  net->const_size = MAX(net->const_size,  const_size);
-}
-
-real* get_layer_data(Net* const net)
-{
-  for (int i = 0; i < net->num_layer_data; ++i) {
-    if (!net->reserved_layer_data[i]) {
-      net->reserved_layer_data[i] = 1;
-      return net->layer_data[i];
-    }
-  }
-
-  printf("[ERROR] Not enough temporary space for storing layer output!\n");
-  return NULL;
-}
-
-void shape_conv_layer(Net* const net, Layer* const layer)
-{
-  int temp_size, const_size;
-  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
-
-  conv_shape(layer->p_bottoms[0], &layer->tops[0],
-             &layer->params[0], p_bias,
-             &temp_size, &const_size, &layer->option);
-
-  update_net_size(net,
-      flatten_size(layer->p_bottoms[0]),  flatten_size(&layer->tops[0]),
-      flatten_size(&layer->params[0]),  temp_size,  0,  const_size);
-}
-
-void shape_deconv_layer(Net* const net, Layer* const layer)
-{
-  int temp_size, const_size;
-  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
-
-  deconv_shape(layer->p_bottoms[0], &layer->tops[0],
-               &layer->params[0], p_bias,
-               &temp_size, &const_size, &layer->option);
-
-  update_net_size(net,
-      flatten_size(layer->p_bottoms[0]),  flatten_size(&layer->tops[0]),
-      flatten_size(&layer->params[0]),  temp_size,  0,  const_size);
-}
-
-void shape_pool_layer(Net* const net, Layer* const layer)
-{
-  int tempint_size;
-
-  pool_shape(layer->p_bottoms[0], &layer->tops[0],
-             &tempint_size, &layer->option);
-
-  update_net_size(net,
-      flatten_size(layer->p_bottoms[0]),  flatten_size(&layer->tops[0]),
-      0,  0,  tempint_size,  0);
-}
-
-void shape_concat_layer(Net* const net, Layer* const layer)
-{
-  concat_shape(layer->p_bottoms, &layer->tops[0],
-               &layer->option);
-
-  update_net_size(net,
-      0,  flatten_size(&layer->tops[0]),
-      0,  0,  0,  0);
-}
-
-void shape_proposal_layer(Net* const net, Layer* const layer)
-{
-  int temp_size, tempint_size;
-
-  proposal_shape(layer->p_bottoms[0], &layer->tops[0],
-                 &temp_size, &tempint_size, &layer->option);
-
-  update_net_size(net,
-      flatten_size(layer->p_bottoms[0]),  flatten_size(&layer->tops[0]),
-      0,  temp_size,  tempint_size,  0);
-}
-
-void shape_roipool_layer(Net* const net, Layer* const layer)
-{
-  int tempint_size;
-
-  roipool_shape(layer->p_bottoms[0], layer->p_bottoms[1], &layer->tops[0],
-                &tempint_size, &layer->option);
-
-  update_net_size(net,
-      flatten_size(layer->p_bottoms[0]),  flatten_size(&layer->tops[0]),
-      0,  0,  tempint_size,  0);
-}
-
-void shape_fc_layer(Net* const net, Layer* const layer)
-{
-  int const_size;
-  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
-
-  fc_shape(layer->p_bottoms[0], &layer->tops[0],
-           &layer->params[0], p_bias,
-           &const_size, &layer->option);
-
-  update_net_size(net,
-      flatten_size(layer->p_bottoms[0]),  flatten_size(&layer->tops[0]),
-      flatten_size(&layer->params[0]),  0,  0,  const_size);
-}
-
-void shape_odout_layer(Net* const net, Layer* const layer)
-{
-  int temp_size, tempint_size;
-
-  odout_shape(layer->p_bottoms[0], &layer->tops[0],
-              &temp_size, &tempint_size, &layer->option);
-
-  update_net_size(net,
-      flatten_size(layer->p_bottoms[0]),  flatten_size(&layer->tops[0]),
-      0,  temp_size,  tempint_size,  0);
-}
-
-void print_tensor_data(const Net* const net, const Layer* const layer)
-{
-  for (int i = 0; i < layer->num_tops; ++i) {
-    const int size = flatten_size(&layer->tops[i]);
-    #ifdef GPU
-    cudaMemcpy(net->output_cpu_data, layer->tops[i].data,
-               size * sizeof(real),
-               cudaMemcpyDeviceToHost);
-    #else
-    memcpy(net->output_cpu_data, layer->tops[i].data, size * sizeof(real));
-    #endif
-    char path[1024];
-    sprintf(path, "params/%s_top%d.txt", layer->name, i);
-    FILE* fp = fopen(path, "w");
-    const Tensor* const t = &layer->tops[0];
-    int j = 0;
-    for (int n = 0; n < t->num_items; ++n) {
-      for (int c = 0; c < t->shape[n][0]; ++c)
-        for (int h = 0; h < t->shape[n][1]; ++h)
-          for (int w = 0; w < t->shape[n][2]; ++w)
-            fprintf(fp, "%d %d %d %d %f\n",
-                    n, c, h, w, net->output_cpu_data[j++]);
-    }
-    fclose(fp);
-  }
-}
-
-void forward_conv_layer(Net* const net, Layer* const layer)
-{
-  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
-
-  conv_forward(layer->p_bottoms[0], &layer->tops[0],
-               &layer->params[0], p_bias,
-               net->temp_data, net->const_data, &layer->option);
-  print_tensor_info(layer->name, &layer->tops[0]);
-}
-
-void forward_conv_relu_layer(Net* const net, Layer* const layer)
-{
-  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
-
-  conv_forward(layer->p_bottoms[0], &layer->tops[0],
-               &layer->params[0], p_bias,
-               net->temp_data, net->const_data, &layer->option);
-  relu_forward_inplace(&layer->tops[0], &layer->option);
-  print_tensor_info(layer->name, &layer->tops[0]);
-}
-
-void forward_deconv_layer(Net* const net, Layer* const layer)
-{
-  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
-
-  deconv_forward(layer->p_bottoms[0], &layer->tops[0],
-                 &layer->params[0], p_bias,
-                 net->temp_data, net->const_data, &layer->option);
-  print_tensor_info(layer->name, &layer->tops[0]);
-}
-
-void forward_pool_layer(Net* const net, Layer* const layer)
-{
-  pool_forward(layer->p_bottoms[0], &layer->tops[0],
-               net->tempint_data, &layer->option);
-  print_tensor_info(layer->name, &layer->tops[0]);
-}
-
-void forward_concat_layer(Net* const net, Layer* const layer)
-{
-  concat_forward(layer->p_bottoms, &layer->tops[0], &layer->option);
-  print_tensor_info(layer->name, &layer->tops[0]);
-}
-
-void forward_proposal_layer(Net* const net, Layer* const layer)
-{
-  proposal_forward(layer->p_bottoms[0], layer->p_bottoms[1],
-                   layer->p_bottoms[2],
-                   &layer->tops[0], net->anchors,
-                   net->temp_cpu_data, net->tempint_cpu_data,
-                   net->temp_data, net->tempint_data,
-                   &layer->option);
-  print_tensor_info(layer->name, &layer->tops[0]);
-}
-
-void forward_roipool_layer(Net* const net, Layer* const layer)
-{
-  roipool_forward(layer->p_bottoms[0], layer->p_bottoms[1],
-                  &layer->tops[0],
-                  net->tempint_data, &layer->option);
-  print_tensor_info(layer->name, &layer->tops[0]);
-}
-
-void forward_fc_relu_dropout_layer(Net* const net, Layer* const layer)
-{
-  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
-
-  fc_forward(layer->p_bottoms[0], &layer->tops[0],
-             &layer->params[0], p_bias,
-             net->const_data, &layer->option);
-  relu_forward_inplace(&layer->tops[0], &layer->option);
-  dropout_forward_inplace(&layer->tops[0], NULL, &layer->option);
-  print_tensor_info(layer->name, &layer->tops[0]);
-}
-
-void forward_fc_layer(Net* const net, Layer* const layer)
-{
-  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
-
-  fc_forward(layer->p_bottoms[0], &layer->tops[0],
-             &layer->params[0], p_bias,
-             net->const_data, &layer->option);
-  print_tensor_info(layer->name, &layer->tops[0]);
-}
-
-void forward_odout_layer(Net* const net, Layer* const layer)
-{
-  odout_forward(layer->p_bottoms[0], layer->p_bottoms[1],
-                layer->p_bottoms[2], layer->p_bottoms[3],
-                &layer->tops[0],
-                net->temp_cpu_data, net->tempint_cpu_data,
-                net->temp_data, net->tempint_data,
-                &layer->option);
-  print_tensor_info(layer->name, &layer->tops[0]);
-}
-
 void forward_frcnn_7_1_1(Net* const net)
 {
   // PVANET
   {
-    // data
-    net->layers[0]->tops[0].data = net->layer_data[0];
-
     // 1_1, 1_2, 2_1, 2_2, 3_1, 3_2, 3_3
     for (int i = 1; i <= 7; ++i) {
-      net->layers[i]->tops[0].data = net->layer_data[i % 2];
-      forward_conv_relu_layer(net, net->layers[i]);
+      forward_conv_layer(net, net->layers[i]);
+      forward_inplace_relu_layer(net, net->layers[i]);
     }
 
     // downsample
-    net->layers[8]->tops[0].data = net->layer_data[2];
     forward_pool_layer(net, net->layers[8]);
 
-    // 4_1, 4_2
-    for (int i = 9; i <= 10; ++i) {
-      net->layers[i]->tops[0].data = net->layer_data[i % 2];
-      forward_conv_relu_layer(net, net->layers[i]);
-    }
-
-    // 4_3
-    net->layers[11]->tops[0].data = net->layer_data[3];
-    forward_conv_relu_layer(net, net->layers[11]);
-
-    // 5_1, 5_2, 5_3
-    for (int i = 12; i <= 14; ++i) {
-      net->layers[i]->tops[0].data = net->layer_data[i % 2];
-      forward_conv_relu_layer(net, net->layers[i]);
+    // 4_1, 4_2, 4_3, 5_1, 5_2, 5_3
+    for (int i = 9; i <= 14; ++i) {
+      forward_conv_layer(net, net->layers[i]);
+      forward_inplace_relu_layer(net, net->layers[i]);
     }
 
     // upsample
-    net->layers[15]->tops[0].data = net->layer_data[4];
     forward_deconv_layer(net, net->layers[15]);
 
     // concat
-    net->layers[16]->tops[0].data = net->layer_data[0];
     forward_concat_layer(net, net->layers[16]);
 
     // convf
-    net->layers[17]->tops[0].data = net->layer_data[4];
-    forward_conv_relu_layer(net, net->layers[17]);
+    forward_conv_layer(net, net->layers[17]);
+    forward_inplace_relu_layer(net, net->layers[17]);
   }
 
   // Multi-scale RPN
@@ -587,8 +37,8 @@ void forward_frcnn_7_1_1(Net* const net)
     // rpn_1, 3, 5
     for (int i = 18; i <= 26; i += 3) {
       // rpn_conv1, 3, 5
-      net->layers[i]->tops[0].data = net->layer_data[0];
-      forward_conv_relu_layer(net, net->layers[i]);
+      forward_conv_layer(net, net->layers[i]);
+      forward_inplace_relu_layer(net, net->layers[i]);
 
       // rpn_cls_score1, 3, 5
       forward_conv_layer(net, net->layers[i + 1]);
@@ -598,7 +48,6 @@ void forward_frcnn_7_1_1(Net* const net)
     }
 
     // rpn_score
-    net->layers[27]->tops[0].data = net->layer_data[0];
     forward_concat_layer(net, net->layers[27]);
 
     // pred
@@ -614,7 +63,6 @@ void forward_frcnn_7_1_1(Net* const net)
         pred->shape[n][2] = score->shape[n][2];
         pred->start[n] = score->start[n];
       }
-      pred->data = score->data;
       softmax_inplace_forward(pred, net->temp_data);
       print_tensor_info(net->layers[28]->name, pred);
     }
@@ -635,7 +83,6 @@ void forward_frcnn_7_1_1(Net* const net)
     }
 
     // rpn_bbox
-    net->layers[29]->tops[0].data = net->layer_data[1];
     forward_concat_layer(net, net->layers[29]);
 
     // bbox reshape
@@ -661,7 +108,6 @@ void forward_frcnn_7_1_1(Net* const net)
   // R-CNN
   {
     // roipool
-    net->layers[31]->tops[0].data = net->layer_data[2];
     forward_roipool_layer(net, net->layers[31]);
 
     // roipool_flat
@@ -682,27 +128,24 @@ void forward_frcnn_7_1_1(Net* const net)
                                   * roipool->shape[0][2]
                                   * roipool->shape[0][3];
       roipool_flat->start[0] = 0;
-      roipool_flat->data = roipool->data;
       print_tensor_info("rcnn_roipool_flat", roipool_flat);
     }
 
-    // fc6_1, 6_2, 7_1, 7_2
+    // fc6_L, 6_U, 7_L, 7_U
     for (int i = 33; i <= 36; i += 2) {
-      net->layers[i]->tops[0].data = net->layer_data[i % 2];
       forward_fc_layer(net, net->layers[i]);
 
-      net->layers[i + 1]->tops[0].data = net->layer_data[(i + 1) % 2];
-      forward_fc_relu_dropout_layer(net, net->layers[i + 1]);
+      forward_fc_layer(net, net->layers[i + 1]);
+      forward_inplace_relu_layer(net, net->layers[i + 1]);
+      forward_inplace_dropout_layer(net, net->layers[i + 1]);
     }
 
     // score
-    net->layers[37]->tops[0].data = net->layer_data[2];
     forward_fc_layer(net, net->layers[37]);
 
     // pred
     {
       Tensor* const pred = &net->layers[38]->tops[0];
-      const Tensor* const score = &net->layers[37]->tops[0];
       const Tensor* const roipool_flat = &net->layers[32]->tops[0];
       pred->ndim = 4;
       pred->num_items = 1;
@@ -711,7 +154,6 @@ void forward_frcnn_7_1_1(Net* const net)
       pred->shape[0][2] = 1;
       pred->shape[0][3] = 1;
       pred->start[0] = 0;
-      pred->data = score->data;
       softmax_inplace_forward(pred, net->temp_data);
       print_tensor_info("pred", pred);
     }
@@ -735,7 +177,6 @@ void forward_frcnn_7_1_1(Net* const net)
     }
 
     // bbox
-    net->layers[39]->tops[0].data = net->layer_data[3];
     forward_fc_layer(net, net->layers[39]);
 
     // bbox reshape
@@ -758,7 +199,6 @@ void forward_frcnn_7_1_1(Net* const net)
     }
 
     // out
-    net->layers[40]->tops[0].data = net->layer_data[4];
     forward_odout_layer(net, net->layers[40]);
   }
 }
@@ -784,10 +224,12 @@ void setup_frcnn_7_1_1(Net* const net)
 
     // R-CNN: 10 layers
     "rcnn_roipool", "rcnn_roipool_flat",
-    "fc6_1", "fc6_2", "fc7_1", "fc7_2",
+    "fc6_L", "fc6_U", "fc7_L", "fc7_U",
     "cls_score", "cls_pred", "bbox_pred",
     "out"
   };
+
+  net->initialized = 0;
 
   net->num_layers = 41;
   for (int i = 0; i < net->num_layers; ++i) {
@@ -1014,7 +456,7 @@ void setup_frcnn_7_1_1(Net* const net)
 
   {
     net->num_layers = 41;
-    net->num_layer_data = 5;
+    net->num_layer_data = 4;
     net->layer_size = 0;
     net->param_size = 0;
     net->temp_size = 0;
@@ -1068,7 +510,7 @@ void connect_frcnn_7_1_1(Net* const net)
     net->layers[31]->p_bottoms[1] = &net->layers[30]->tops[0];
     // roipool_flat
     net->layers[32]->p_bottoms[0] = &net->layers[31]->tops[0];
-    // fc6_1, 6_2, 7_1, 7_2
+    // fc6_L, 6_U, 7_L, 7_U
     for (int i = 33; i <= 36; ++i) {
       net->layers[i]->p_bottoms[0] = &net->layers[i - 1]->tops[0];
     }
@@ -1181,7 +623,7 @@ void shape_frcnn_7_1_1(Net* const net)
                                   * roipool->shape[0][3];
       roipool_flat->start[0] = 0;
     }
-    // fc6_1, 6_2, 7_1, 7_2
+    // fc6_L, 6_U, 7_L, 7_U
     for (int i = 33; i <= 36; ++i) {
       shape_fc_layer(net, net->layers[i]);
     }
@@ -1227,6 +669,7 @@ void construct_frcnn_7_1_1(Net* net)
   }
 
   {
+    net->layers[8]->allocate_top_data[0] = 1;
     net->layers[19]->allocate_top_data[0] = 1;
     net->layers[20]->allocate_top_data[0] = 1;
     net->layers[22]->allocate_top_data[0] = 1;
@@ -1249,15 +692,47 @@ void construct_frcnn_7_1_1(Net* net)
   }
   shape_frcnn_7_1_1(net);
 
-  printf("Max layer size = %d\n", net->layer_size);
-  printf("Max param size = %d\n", net->param_size);
-  printf("Max temp size = %d\n", net->temp_size);
-  printf("Max tempint size = %d\n", net->tempint_size);
-  printf("Max const size = %d\n", net->const_size);
+  printf("Max layer size = %ld\n", net->layer_size);
+  printf("Max param size = %ld\n", net->param_size);
+  printf("Max temp size = %ld\n", net->temp_size);
+  printf("Max tempint size = %ld\n", net->tempint_size);
+  printf("Max const size = %ld\n", net->const_size);
 
   malloc_net(net);
 
   net->space_cpu += space_cpu;
+
+  {
+    for (int i = 0; i < net->num_layers; ++i) {
+      for (int j = 0; j < net->layers[i]->num_tops; ++j) {
+        if (!net->layers[i]->allocate_top_data[j]) {
+          net->layers[i]->tops[j].data = net->layer_data[j];
+        }
+      }
+    }
+
+    net->layers[1]->tops[0].data = net->layer_data[1];
+    net->layers[3]->tops[0].data = net->layer_data[1];
+    net->layers[5]->tops[0].data = net->layer_data[1];
+    net->layers[7]->tops[0].data = net->layer_data[1];
+    net->layers[10]->tops[0].data = net->layer_data[1];
+    net->layers[12]->tops[0].data = net->layer_data[1];
+    net->layers[14]->tops[0].data = net->layer_data[1];
+
+    net->layers[11]->tops[0].data = net->layer_data[2];
+    net->layers[15]->tops[0].data = net->layer_data[3];
+    net->layers[17]->tops[0].data = net->layer_data[1];
+    net->layers[27]->tops[0].data = net->layer_data[0];
+    net->layers[28]->tops[0].data = net->layers[27]->tops[0].data;
+    net->layers[29]->tops[0].data = net->layer_data[2];
+    net->layers[31]->tops[0].data = net->layer_data[2];
+    net->layers[32]->tops[0].data = net->layers[31]->tops[0].data;
+    net->layers[34]->tops[0].data = net->layer_data[1];
+    net->layers[36]->tops[0].data = net->layer_data[1];
+    net->layers[37]->tops[0].data = net->layer_data[0];
+    net->layers[38]->tops[0].data = net->layers[37]->tops[0].data;
+    net->layers[39]->tops[0].data = net->layer_data[2];
+  }
 
   const int num_anchors = net->layers[30]->option.num_scales
                           * net->layers[30]->option.num_ratios
@@ -1266,9 +741,9 @@ void construct_frcnn_7_1_1(Net* net)
   {
     cudaMalloc(&net->anchors, num_anchors * 4 * sizeof(real));
     generate_anchors(net->param_cpu_data, &net->layers[30]->option);
-    cudaMemcpy(net->anchors, net->param_cpu_data,
-               num_anchors * 4 * sizeof(real),
-               cudaMemcpyHostToDevice);
+    cudaMemcpyAsync(net->anchors, net->param_cpu_data,
+                    num_anchors * 4 * sizeof(real),
+                    cudaMemcpyHostToDevice);
   }
   #else
   {
@@ -1293,10 +768,11 @@ void construct_frcnn_7_1_1(Net* net)
 }
 
 void prepare_input(Net* net,
-                   const char* const filename[], const int num_images)
+                   const char* const filename[],
+                   const int num_images)
 {
   Tensor* input = &net->layers[0]->tops[0];
-  input->data = net->input_cpu_data;
+  //input->data = net->input_cpu_data;
   input->ndim = 3;
   input->num_items = 0;
   input->start[0] = 0;
@@ -1305,18 +781,19 @@ void prepare_input(Net* net,
   net->img_info->num_items = 0;
 
   for (int i = 0; i < num_images; ++i) {
-    load_image(filename[i], input, net->img_info);
+    load_image(filename[i], input, net->img_info, net->temp_data);
   }
-
+/*
   #ifdef GPU
-  cudaMemcpyAsync(net->layer_data[0], net->input_cpu_data,
+  cudaMemcpyAsync(net->layer_data[0], input->data,
                   flatten_size(input) * sizeof(real),
                   cudaMemcpyHostToDevice);
   #else
-  memcpy(net->layer_data[0], net->input_cpu_data,
+  memcpy(net->layer_data[0], input->data,
          flatten_size(input) * sizeof(real));
   #endif
-
+  input->data = net->layer_data[0];
+*/
   // network reshape
   shape_frcnn_7_1_1(net);
 
@@ -1329,7 +806,7 @@ void get_output(Net* net, const int image_start_index, FILE* fp)
   // retrieve output
   {
     const Tensor* const out = &net->layers[net->num_layers - 1]->tops[0];
-    const int output_size = flatten_size(out);
+    const long int output_size = flatten_size(out);
 
   #ifdef GPU
     cudaMemcpyAsync(net->output_cpu_data, out->data,
@@ -1378,9 +855,9 @@ int main(int argc, char* argv[])
 
   // load a text file containing image filenames to be tested
   {
-    char line1[1024], line2[1024], line3[1024], line4[1024];
-    char* line[] = { line1, line2, line3, line4 };
-    int total_count = 0, count = 0;
+    char buf[10240];
+    char* line[20];
+    int total_count = 0, count = 0, buf_count = 0;
     FILE* fp_list = fopen(argv[1], "r");
     FILE* fp_out = fopen(argv[2], "wb");
 
@@ -1391,32 +868,32 @@ int main(int argc, char* argv[])
       printf("File write error: %s\n", argv[2]);
     }
 
-    while (fgets(line[count], 1024, fp_list)) {
-      const int len = strlen(line[count]);
-      line[count][len - 1] = 0;
+    while (fgets(&buf[buf_count], 1024, fp_list)) {
+      const Tensor* const input = &frcnn.layers[0]->tops[0];
+      const int len = strlen(&buf[buf_count]);
+      buf[buf_count + len - 1] = 0;
+      line[count] = &buf[buf_count];
       ++count;
-      if (count == 1) {
+      buf_count += len;
+      if (count == input->num_items) {
         // input data loading
         prepare_input(&frcnn, (const char * const *)&line, count);
 
         // forward-pass
-        printf("forward-pass start\n");
         forward_frcnn_7_1_1(&frcnn);
-        printf("forward-pass end\n");
 
         // retrieve output & save to file
         get_output(&frcnn, total_count, fp_out);
 
         total_count += count;
         count = 0;
+        buf_count = 0;
       }
     }
 
     if (count > 0) {
       prepare_input(&frcnn, (const char * const *)&line, count);
-      printf("forward-pass start\n");
       forward_frcnn_7_1_1(&frcnn);
-      printf("forward-pass end\n");
       get_output(&frcnn, total_count, fp_out);
     }
 

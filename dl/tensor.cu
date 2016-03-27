@@ -2,11 +2,11 @@
 #include <stdio.h>
 
 // total number of elements in a tensor
-int flatten_size(const Tensor* const tensor)
+long int flatten_size(const Tensor* const tensor)
 {
-  int total_size = 0;
+  long int total_size = 0;
   for (int n = 0; n < tensor->num_items; ++n) {
-    int size = 1;
+    long int size = 1;
     for (int d = 0; d < tensor->ndim; ++d) {
       size *= tensor->shape[n][d];
     }
@@ -42,9 +42,9 @@ void print_tensor_info(const char* const name,
 
 // allocate memory for tensor
 //   allocate GPU memory in GPU mode, or CPU memory in CPU mode
-int malloc_tensor(Tensor* const tensor)
+long int malloc_tensor(Tensor* const tensor)
 {
-  const int data_size = flatten_size(tensor);
+  const long int data_size = flatten_size(tensor);
 
   #ifdef GPU
   cudaMalloc(&tensor->data, data_size * sizeof(real));
@@ -113,13 +113,13 @@ void load_tensor(const char* const filename,
 
   {
   #ifdef GPU
-    int data_size = 1;
+    long int data_size = 1;
     load_data(filename, &ndim, shape, temp_data);
     for (int i = 0; i < ndim; ++i) {
       data_size *= shape[i];
     }
     if (data_size != flatten_size(tensor)) {
-      printf("[ERROR] Size mismatch: %s (%d) != tensor (%d)\n",
+      printf("[ERROR] Size mismatch: %s (%ld) != tensor (%ld)\n",
              filename, data_size, flatten_size(tensor));
     }
     cudaMemcpyAsync(tensor->data, temp_data, data_size * sizeof(real),

@@ -171,12 +171,12 @@ void deconv_forward(const Tensor* const bottom3d,
         pp_weight[g] = weight5d->data + g * bottom_C * kernel_size;
         pp_temp[g] = temp_data + g * kernel_size * bottom_area;
       }
-      cudaMemcpy(pp_bottom_dev, pp_bottom, num_groups * sizeof(real*),
-                 cudaMemcpyHostToDevice);
-      cudaMemcpy(pp_weight_dev, pp_weight, num_groups * sizeof(real*),
-                 cudaMemcpyHostToDevice);
-      cudaMemcpy(pp_temp_dev, pp_temp, num_groups * sizeof(real*),
-                 cudaMemcpyHostToDevice);
+      cudaMemcpyAsync(pp_bottom_dev, pp_bottom, num_groups * sizeof(real*),
+                      cudaMemcpyHostToDevice);
+      cudaMemcpyAsync(pp_weight_dev, pp_weight, num_groups * sizeof(real*),
+                      cudaMemcpyHostToDevice);
+      cudaMemcpyAsync(pp_temp_dev, pp_temp, num_groups * sizeof(real*),
+                      cudaMemcpyHostToDevice);
 
       // compute Z = alpha * dot(X.transpose(), Y) + beta * Z
       //   X (= weight): p x m,  Y (= bottom): p x n,  Z (= top): m x n
@@ -411,6 +411,35 @@ void deconv_shape(const Tensor* const bottom3d,
 
 
 // --------------------------------------------------------------------------
+// API code
+// --------------------------------------------------------------------------
+
+void forward_deconv_layer(Net* const net, Layer* const layer)
+{
+  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
+
+  deconv_forward(layer->p_bottoms[0], &layer->tops[0],
+                 &layer->params[0], p_bias,
+                 net->temp_data, net->const_data, &layer->option);
+
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void shape_deconv_layer(Net* const net, Layer* const layer)
+{
+  int temp_size, const_size;
+  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
+
+  deconv_shape(layer->p_bottoms[0], &layer->tops[0],
+               &layer->params[0], p_bias,
+               &temp_size, &const_size, &layer->option);
+
+  update_net_size(net, layer, temp_size, 0, const_size);
+}
+
+
+
+// --------------------------------------------------------------------------
 // test code
 // --------------------------------------------------------------------------
 
@@ -496,10 +525,10 @@ int main(int argc, char* argv[])
   // bind loaded data to corresponding tensors
   #ifdef GPU
   {
-    const int X_size = flatten_size(&X);
-    const int Y_size = flatten_size(&Y);
-    const int W_size = flatten_size(&W);
-    const int b_size = flatten_size(&b);
+    const long int X_size = flatten_size(&X);
+    const long int Y_size = flatten_size(&Y);
+    const long int W_size = flatten_size(&W);
+    const long int b_size = flatten_size(&b);
 
     printf("gpu malloc\n");
     cudaMalloc(&X.data, X_size * sizeof(real));
@@ -551,7 +580,7 @@ int main(int argc, char* argv[])
   // copy GPU data to main memory
   #ifdef GPU
   {
-    const int Y_size = flatten_size(&Y);
+    const long int Y_size = flatten_size(&Y);
 
     printf("memcpy: cpu <- gpu\n");
     cudaMemcpyAsync(Y_data, Y.data, Y_size * sizeof(real),

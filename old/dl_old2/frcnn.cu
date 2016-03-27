@@ -1309,12 +1309,12 @@ void construct_frcnn_7_1_1(void)
 
   // RCNN parameter loading
   {
-    load_tensor("params/fc6_1_param0.bin", &rcnn.weight6_1, param_data);
-    load_tensor("params/fc6_2_param0.bin", &rcnn.weight6_2, param_data);
-    load_tensor("params/fc6_param1.bin", &rcnn.bias6_2, param_data);
-    load_tensor("params/fc7_1_param0.bin", &rcnn.weight7_1, param_data);
-    load_tensor("params/fc7_2_param0.bin", &rcnn.weight7_2, param_data);
-    load_tensor("params/fc7_param1.bin", &rcnn.bias7_2, param_data);
+    load_tensor("params/fc6_L_param0.bin", &rcnn.weight6_1, param_data);
+    load_tensor("params/fc6_U_param0.bin", &rcnn.weight6_2, param_data);
+    load_tensor("params/fc6_U_param1.bin", &rcnn.bias6_2, param_data);
+    load_tensor("params/fc7_L_param0.bin", &rcnn.weight7_1, param_data);
+    load_tensor("params/fc7_U_param0.bin", &rcnn.weight7_2, param_data);
+    load_tensor("params/fc7_U_param1.bin", &rcnn.bias7_2, param_data);
     load_tensor("params/cls_score_param0.bin", &rcnn.weight_s, param_data);
     load_tensor("params/cls_score_param1.bin", &rcnn.bias_s, param_data);
     load_tensor("params/bbox_pred_param0.bin", &rcnn.weight_b, param_data);
@@ -1709,11 +1709,9 @@ int main(int argc, char* argv[])
       }
     }
 
-    if (0) { //if (count > 0) {
+    if (count > 0) {
       prepare_input((const char * const *)&line, count);
-      printf("forward-pass start\n");
       forward_frcnn_7_1_1();
-      printf("forward-pass end\n");
       get_output(total_count, fp_out);
     }
 
