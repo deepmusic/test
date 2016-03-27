@@ -367,3 +367,167 @@ void softmax_shape(const Tensor* const bottom3d,
     top3d->start[n] = bottom3d->start[n];
   }
 }
+
+
+
+// --------------------------------------------------------------------------
+// API code
+// --------------------------------------------------------------------------
+
+void forward_rpn_pred_layer(void* const net_, void* const layer_)
+{
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+
+  // 3d tensor: C x H x W
+  Tensor* const score = &layer->tops[0];
+
+  // reshape to 3d tensor: 2 x (C / 2) x (H * W)
+  score->ndim = 3;
+  for (int n = 0; n < score->num_items; ++n) {
+    const int C = score->shape[n][0];
+    const int H = score->shape[n][1];
+    const int W = score->shape[n][2];
+    score->shape[n][0] = 2;
+    score->shape[n][1] = C / 2;
+    score->shape[n][2] = H * W;
+
+    // backup for reshape to 4d tensor
+    score->shape[n][3] = W;
+  }
+
+  // softmax transform
+  softmax_inplace_forward(score, net->temp_data);
+
+  // reshape to 4d tensor: 2 x (C / 2) x H x W
+  score->ndim = 4;
+  for (int n = 0; n < score->num_items; ++n) {
+    score->shape[n][2] /= score->shape[n][3];
+  }
+
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void shape_rpn_pred_layer(void* const net_, void* const layer_)
+{
+  Layer* const layer = (Layer*)layer_;
+
+  // 3d tensor: C x H x W
+  Tensor* const score = &layer->tops[0];
+
+  // reshape to 4d tensor: 2 x (C / 2) x H x W
+  score->ndim = 4;
+  for (int n = 0; n < score->num_items; ++n) {
+    const int C = score->shape[n][0];
+    const int H = score->shape[n][1];
+    const int W = score->shape[n][2];
+    score->shape[n][0] = 2;
+    score->shape[n][1] = C / 2;
+    score->shape[n][2] = H;
+    score->shape[n][3] = W;
+  }
+}
+
+void forward_rpn_bbox_layer(void* const net_, void* const layer_)
+{
+  Layer* const layer = (Layer*)layer_;
+
+  shape_rpn_bbox_layer(net_, layer);
+
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void shape_rpn_bbox_layer(void* const net_, void* const layer_)
+{
+  Layer* const layer = (Layer*)layer_;
+
+  // 3d tensor: C x H x W
+  Tensor* const bbox = &layer->tops[0];
+
+  // reshape to 4d tensor: (C / 4) x 4 x H x W
+  bbox->ndim = 4;
+  for (int n = 0; n < bbox->num_items; ++n) {
+    const int C = bbox->shape[n][0];
+    const int H = bbox->shape[n][1];
+    const int W = bbox->shape[n][2];
+    bbox->shape[n][0] = C / 4;
+    bbox->shape[n][1] = 4;
+    bbox->shape[n][2] = H;
+    bbox->shape[n][3] = W;
+  }
+}
+
+void forward_rcnn_pred_layer(void* const net_, void* const layer_)
+{
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+
+  Tensor* const pred = &layer->tops[0];
+  const Tensor* const score = layer->p_bottoms[0];
+
+  pred->ndim = 4;
+  pred->num_items = 1;
+  pred->shape[0][0] = score->shape[0][0];
+  pred->shape[0][1] = score->shape[0][1];
+  pred->shape[0][2] = 1;
+  pred->shape[0][3] = 1;
+  pred->start[0] = 0;
+
+  softmax_inplace_forward(pred, net->temp_data);
+
+  shape_rcnn_pred_layer(net, layer);
+
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void shape_rcnn_pred_layer(void* const net_, void* const layer_)
+{
+  Layer* const layer = (Layer*)layer_;
+
+  Tensor* const pred = &layer->tops[0];
+  const Tensor* const score = layer->p_bottoms[0];
+  const Tensor* const roi = layer->p_bottoms[1];
+
+  pred->ndim = 2;
+  pred->num_items = roi->num_items;
+  {
+    int total_size = 0;
+    for (int n = 0; n < roi->num_items; ++n) {
+      pred->shape[n][0] = roi->shape[n][0];
+      pred->shape[n][1] = score->shape[0][1];
+      pred->start[n] = total_size;
+      total_size += pred->shape[n][0] * pred->shape[n][1];
+    }
+  }
+}
+
+void forward_rcnn_bbox_layer(void* const net_, void* const layer_)
+{
+  Layer* const layer = (Layer*)layer_;
+
+  shape_rcnn_bbox_layer(net_, layer);
+
+  print_tensor_info(layer->name, &layer->tops[0]);
+}
+
+void shape_rcnn_bbox_layer(void* const net_, void* const layer_)
+{
+  Layer* const layer = (Layer*)layer_;
+
+  Tensor* const bbox = &layer->tops[0];
+  const Tensor* const roi = layer->p_bottoms[1];
+
+  bbox->ndim = 3;
+  bbox->num_items = roi->num_items;
+  {
+    const int out_channels = bbox->shape[0][1];
+    int total_size = 0;
+    for (int n = 0; n < roi->num_items; ++n) {
+      bbox->shape[n][0] = roi->shape[n][0];
+      bbox->shape[n][1] = out_channels / 4;
+      bbox->shape[n][2] = 4;
+      bbox->start[n] = total_size;
+      total_size += roi->shape[n][0] * out_channels;
+    }
+  }
+}

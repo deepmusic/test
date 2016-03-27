@@ -32,60 +32,12 @@
 
 // --------------------------------------------------------------------------
 // kernel code
-//   transform_box: transform a box according to a given gradient
 //   generate_anchors: generate anchor boxes of varying sizes and ratios
+//   transform_box: transform a box according to a given gradient
 //   sort_box: sort a list of boxes in descending order of their scores
 //   enumerate_proposals: generate all candidate boxes with their scores
 //   retrieve_rois: retrieve boxes that are determined to be kept by NMS
 // --------------------------------------------------------------------------
-
-// transform a box according to a given gradient
-//   box: (x1, y1, x2, y2)
-//   gradient: dx, dy, d(log w), d(log h)
-#ifdef GPU
-__device__
-#endif
-static
-int transform_box(real* const box,
-                  const real dx, const real dy,
-                  const real d_log_w, const real d_log_h,
-                  const real img_W, const real img_H,
-                  const real min_box_W, const real min_box_H)
-{
-  // width & height of box
-  const real w = box[2] - box[0] + 1.0f;
-  const real h = box[3] - box[1] + 1.0f;
-  // center location of box
-  const real ctr_x = box[0] + 0.5f * w;
-  const real ctr_y = box[1] + 0.5f * h;
-
-  // new center location according to gradient (dx, dy)
-  const real pred_ctr_x = dx * w + ctr_x;
-  const real pred_ctr_y = dy * h + ctr_y;
-  // new width & height according to gradient d(log w), d(log h)
-  const real pred_w = exp(d_log_w) * w;
-  const real pred_h = exp(d_log_h) * h;
-
-  // update upper-left corner location
-  box[0] = pred_ctr_x - 0.5f * pred_w;
-  box[1] = pred_ctr_y - 0.5f * pred_h;
-  // update lower-right corner location
-  box[2] = pred_ctr_x + 0.5f * pred_w;
-  box[3] = pred_ctr_y + 0.5f * pred_h;
-
-  // adjust new corner locations to be within the image region,
-  box[0] = MAX(0.0f,  MIN(box[0],  img_W - 1.0f));
-  box[1] = MAX(0.0f,  MIN(box[1],  img_H - 1.0f));
-  box[2] = MAX(0.0f,  MIN(box[2],  img_W - 1.0f));
-  box[3] = MAX(0.0f,  MIN(box[3],  img_H - 1.0f));
-
-  // recompute new width & height
-  const real box_w = box[2] - box[0] + 1.0f;
-  const real box_h = box[3] - box[1] + 1.0f;
-
-  // check if new box's size >= threshold
-  return (box_w >= min_box_W) * (box_h >= min_box_H);
-}
 
 // given a base box, enumerate transformed boxes of varying sizes and ratios
 //   option->base_size: base box's width & height (i.e., base box is square)
@@ -133,6 +85,54 @@ void generate_anchors(real* const anchors,
       } // endfor i
     } // endfor c
   }
+}
+
+// transform a box according to a given gradient
+//   box: (x1, y1, x2, y2)
+//   gradient: dx, dy, d(log w), d(log h)
+#ifdef GPU
+__device__
+#endif
+static
+int transform_box(real* const box,
+                  const real dx, const real dy,
+                  const real d_log_w, const real d_log_h,
+                  const real img_W, const real img_H,
+                  const real min_box_W, const real min_box_H)
+{
+  // width & height of box
+  const real w = box[2] - box[0] + 1.0f;
+  const real h = box[3] - box[1] + 1.0f;
+  // center location of box
+  const real ctr_x = box[0] + 0.5f * w;
+  const real ctr_y = box[1] + 0.5f * h;
+
+  // new center location according to gradient (dx, dy)
+  const real pred_ctr_x = dx * w + ctr_x;
+  const real pred_ctr_y = dy * h + ctr_y;
+  // new width & height according to gradient d(log w), d(log h)
+  const real pred_w = exp(d_log_w) * w;
+  const real pred_h = exp(d_log_h) * h;
+
+  // update upper-left corner location
+  box[0] = pred_ctr_x - 0.5f * pred_w;
+  box[1] = pred_ctr_y - 0.5f * pred_h;
+  // update lower-right corner location
+  box[2] = pred_ctr_x + 0.5f * pred_w;
+  box[3] = pred_ctr_y + 0.5f * pred_h;
+
+  // adjust new corner locations to be within the image region,
+  box[0] = MAX(0.0f,  MIN(box[0],  img_W - 1.0f));
+  box[1] = MAX(0.0f,  MIN(box[1],  img_H - 1.0f));
+  box[2] = MAX(0.0f,  MIN(box[2],  img_W - 1.0f));
+  box[3] = MAX(0.0f,  MIN(box[3],  img_H - 1.0f));
+
+  // recompute new width & height
+  const real box_w = box[2] - box[0] + 1.0f;
+  const real box_h = box[3] - box[1] + 1.0f;
+
+  // check if new box's size >= threshold
+  return (box_w >= min_box_W) * (box_h >= min_box_H);
 }
 
 // bitonic sort a list of boxes in descending order of their scores (GPU)
@@ -623,11 +623,41 @@ void proposal_shape(const Tensor* const bottom4d,
 // API code
 // --------------------------------------------------------------------------
 
-void forward_proposal_layer(Net* const net, Layer* const layer)
+void init_proposal_layer(void* const net_, void* const layer_)
 {
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+
+  const int num_anchors = layer->option.num_scales
+                          * layer->option.num_ratios
+                          * layer->option.num_concats;
+
+  #ifdef GPU
+  {
+    cudaMalloc(&layer->p_aux_data[0], num_anchors * 4 * sizeof(real));
+    generate_anchors(net->param_cpu_data, &layer->option);
+    cudaMemcpyAsync(layer->p_aux_data[0], net->param_cpu_data,
+                    num_anchors * 4 * sizeof(real),
+                    cudaMemcpyHostToDevice);
+  }
+  #else
+  {
+    layer->p_aux_data[0] = (real*)malloc(num_anchors * 4 * sizeof(real));
+    generate_anchors(layer->p_aux_data[0], &layer->option);
+  }
+  #endif
+
+  net->space += num_anchors * 4 * sizeof(real);
+}
+
+void forward_proposal_layer(void* const net_, void* const layer_)
+{
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+
   proposal_forward(layer->p_bottoms[0], layer->p_bottoms[1],
                    layer->p_bottoms[2],
-                   &layer->tops[0], net->anchors,
+                   &layer->tops[0], layer->p_aux_data[0],
                    net->temp_cpu_data, net->tempint_cpu_data,
                    net->temp_data, net->tempint_data,
                    &layer->option);
@@ -635,8 +665,11 @@ void forward_proposal_layer(Net* const net, Layer* const layer)
   print_tensor_info(layer->name, &layer->tops[0]);
 }
 
-void shape_proposal_layer(Net* const net, Layer* const layer)
+void shape_proposal_layer(void* const net_, void* const layer_)
 {
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+
   int temp_size, tempint_size;
 
   proposal_shape(layer->p_bottoms[0], &layer->tops[0],

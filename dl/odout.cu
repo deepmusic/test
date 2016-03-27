@@ -470,8 +470,11 @@ void odout_shape(const Tensor* const bottom2d,
 // API code
 // --------------------------------------------------------------------------
 
-void forward_odout_layer(Net* const net, Layer* const layer)
+void forward_odout_layer(void* const net_, void* const layer_)
 {
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+
   odout_forward(layer->p_bottoms[0], layer->p_bottoms[1],
                 layer->p_bottoms[2], layer->p_bottoms[3],
                 &layer->tops[0],
@@ -482,8 +485,11 @@ void forward_odout_layer(Net* const net, Layer* const layer)
   print_tensor_info(layer->name, &layer->tops[0]);
 }
 
-void shape_odout_layer(Net* const net, Layer* const layer)
+void shape_odout_layer(void* const net_, void* const layer_)
 {
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+
   int temp_size, tempint_size;
 
   odout_shape(layer->p_bottoms[0], &layer->tops[0],

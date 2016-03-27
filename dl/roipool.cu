@@ -210,16 +210,37 @@ void roipool_forward(const Tensor* const bottom3d,
     }
   } // endfor batch
 
-  top4d->ndim = 4;
-  top4d->num_items = bottom3d->num_items;
-  {
-    int total_size = 0;
-    for (int n = 0; n < bottom3d->num_items; ++n) {
-      const int R = roi2d->shape[n][0];
-      const int C = bottom3d->shape[n][0];
-      const int top_size = R * C * top_H * top_W;
-      top4d->start[n] = total_size;
-      total_size += top_size;
+  // if option->flatten = true,
+  // reshape to 2d tensor: total_num_rois x (C * H' * W')
+  if (option->flatten) {
+    // for all items, C should be equal to each other
+    const int C = bottom3d->shape[0][0];
+
+    // calculate total number of RoI-pooled data
+    int total_num_rois = 0;
+    for (int n = 0; n < roi2d->num_items; ++n) {
+      total_num_rois += roi2d->shape[n][0];
+    }
+
+    // reshape to 2d tensor: total_num_rois x (C * H' * W')
+    top4d->ndim = 2;
+    top4d->num_items = 1;
+    top4d->shape[0][0] = total_num_rois;
+    top4d->shape[0][1] = C * top_H * top_W;
+    top4d->start[0] = 0;
+  }
+  else {
+    top4d->ndim = 4;
+    top4d->num_items = bottom3d->num_items;
+    {
+      int total_size = 0;
+      for (int n = 0; n < bottom3d->num_items; ++n) {
+        const int R = roi2d->shape[n][0];
+        const int C = bottom3d->shape[n][0];
+        const int top_size = R * C * top_H * top_W;
+        top4d->start[n] = total_size;
+        total_size += top_size;
+      }
     }
   }
 }
@@ -240,7 +261,32 @@ void roipool_shape(const Tensor* const bottom3d,
   const int top_H = option->pooled_height; // H'
   const int top_W = option->pooled_width; // W'
 
-  // calculate shape for each item in the batch
+  // if option->flatten = true,
+  // reshape to 2d tensor: total_num_rois x (C * H' * W')
+  if (option->flatten) {
+    // for all items, C should be equal to each other
+    const int C = bottom3d->shape[0][0];
+
+    // calculate total number of RoI-pooled data
+    int total_num_rois = 0;
+    for (int n = 0; n < roi2d->num_items; ++n) {
+      total_num_rois += roi2d->shape[n][0];
+    }
+
+    // reshape to 2d tensor: total_num_rois x (C * H' * W')
+    top4d->ndim = 2;
+    top4d->num_items = 1;
+    top4d->shape[0][0] = total_num_rois;
+    top4d->shape[0][1] = C * top_H * top_W;
+    top4d->start[0] = 0;
+
+    // argmax data size = total top size
+    *argmax_size = top4d->shape[0][0] * top4d->shape[0][1];
+
+    return;
+  }
+
+  // otherwise, calculate shape for each item in the batch
   for (int n = 0; n < bottom3d->num_items; ++n) {
     // bottom shape: R x C x H X W
     const int R = roi2d->shape[n][0];
@@ -276,16 +322,22 @@ void roipool_shape(const Tensor* const bottom3d,
 // API code
 // --------------------------------------------------------------------------
 
-void forward_roipool_layer(Net* const net, Layer* const layer)
+void forward_roipool_layer(void* const net_, void* const layer_)
 {
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+
   roipool_forward(layer->p_bottoms[0], layer->p_bottoms[1],
                   &layer->tops[0],
                   net->tempint_data, &layer->option);
   print_tensor_info(layer->name, &layer->tops[0]);
 }
 
-void shape_roipool_layer(Net* const net, Layer* const layer)
+void shape_roipool_layer(void* const net_, void* const layer_)
 {
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+
   int tempint_size;
 
   roipool_shape(layer->p_bottoms[0], layer->p_bottoms[1], &layer->tops[0],
@@ -318,6 +370,7 @@ int main(int argc, char* argv[])
     option.pooled_height = 6;
     option.pooled_width = 6;
     option.spatial_scale = 0.0625;
+    option.flatten = 0;
   }
 
   // load data

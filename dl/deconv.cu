@@ -414,8 +414,11 @@ void deconv_shape(const Tensor* const bottom3d,
 // API code
 // --------------------------------------------------------------------------
 
-void forward_deconv_layer(Net* const net, Layer* const layer)
+void forward_deconv_layer(void* const net_, void* const layer_)
 {
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+
   Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
 
   deconv_forward(layer->p_bottoms[0], &layer->tops[0],
@@ -425,8 +428,11 @@ void forward_deconv_layer(Net* const net, Layer* const layer)
   print_tensor_info(layer->name, &layer->tops[0]);
 }
 
-void shape_deconv_layer(Net* const net, Layer* const layer)
+void shape_deconv_layer(void* const net_, void* const layer_)
 {
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+
   int temp_size, const_size;
   Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
 

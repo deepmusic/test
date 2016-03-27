@@ -2,23 +2,32 @@
 #include <string.h>
 #include <stdio.h>
 
+void init_layer(Layer* const layer)
+{
+  memset(layer, 0, sizeof(Layer));
+}
+
 long int malloc_layer(Layer* const layer)
 {
   long int space_cpu = 0;
 
   layer->p_bottoms = (layer->num_bottoms <= 0) ? NULL :
-                     (Tensor**)malloc(layer->num_bottoms * sizeof(Tensor*));
+                     (Tensor**)calloc(layer->num_bottoms, sizeof(Tensor*));
   space_cpu += layer->num_bottoms * sizeof(Tensor*);
 
   layer->tops = (layer->num_tops <= 0) ? NULL :
-                (Tensor*)malloc(layer->num_tops * sizeof(Tensor));
+                (Tensor*)calloc(layer->num_tops, sizeof(Tensor));
   layer->allocate_top_data = (layer->num_tops <= 0) ? NULL:
                              (int*)calloc(layer->num_tops, sizeof(int));
   space_cpu += layer->num_tops * (sizeof(Tensor) + sizeof(int));
 
   layer->params = (layer->num_params <= 0) ? NULL : 
-                  (Tensor*)malloc(layer->num_params * sizeof(Tensor));
+                  (Tensor*)calloc(layer->num_params, sizeof(Tensor));
   space_cpu += layer->num_params * sizeof(Tensor);
+
+  layer->p_aux_data = (layer->num_aux_data <= 0) ? NULL : 
+                      (real**)calloc(layer->num_aux_data, sizeof(real*));
+  space_cpu += layer->num_aux_data * sizeof(real*);
 
   return space_cpu;
 }
@@ -31,14 +40,14 @@ long int malloc_load_layer_data(Layer* const layer,
 
   for (int i = 0; i < layer->num_tops; ++i) {
     if (layer->allocate_top_data[i]) {
-      space += malloc_tensor(&layer->tops[i]);
+      space += malloc_tensor_data(&layer->tops[i]);
     }
   }
 
   for (int i = 0; i < layer->num_params; ++i) {
     char path[1024];
     //printf("malloc param %d\n", i);
-    space += malloc_tensor(&layer->params[i]);
+    space += malloc_tensor_data(&layer->params[i]);
     sprintf(path, "params/%s_param%d.bin", name, i);
     //printf("load param %s\n", path);
     load_tensor(path, &layer->params[i], temp_cpu_space);
@@ -51,42 +60,44 @@ void free_layer(Layer* const layer)
 {
   if (layer->p_bottoms) {
     free(layer->p_bottoms);
-    layer->p_bottoms = NULL;
   }
 
   if (layer->tops) {
     for (int i = 0; i < layer->num_tops; ++i) {
       if (layer->allocate_top_data[i]) {
-        #ifdef GPU
-        cudaFree(layer->tops[i].data);
-        layer->tops[i].data = NULL;
-        #else
-        free(layer->tops[i].data);
-        layer->tops[i].data = NULL;
-        #endif
+        free_tensor_data(&layer->tops[i]);
       }
     }
     free(layer->tops);
-    layer->tops = NULL;
     free(layer->allocate_top_data);
-    layer->allocate_top_data = NULL;
   }
 
   if (layer->params) {
     for (int i = 0; i < layer->num_params; ++i) {
-      #ifdef GPU
-      cudaFree(layer->params[i].data);
-      layer->params[i].data = NULL;
-      #else
-      free(layer->params[i].data);
-      layer->params[i].data = NULL;
-      #endif
+      free_tensor_data(&layer->params[i]);
     }
     free(layer->params);
-    layer->params = NULL;
   }
 
+  if (layer->p_aux_data) {
+    for (int i = 0; i < layer->num_aux_data; ++i) {
+      #ifdef GPU
+      cudaFree(layer->p_aux_data[i]);
+      #else
+      free(layer->p_aux_data[i]);
+      #endif
+      layer->p_aux_data[i] = NULL;
+    }
+    free(layer->p_aux_data);
+  }
+
+  memset(layer, 0, sizeof(Layer));
   free(layer);
+}
+
+void init_net(Net* const net)
+{
+  memset(net, 0, sizeof(Net));
 }
 
 void malloc_net(Net* const net)
@@ -121,6 +132,7 @@ void malloc_net(Net* const net)
     net->param_cpu_data = (real*)malloc(net->param_size * sizeof(real));
     net->temp_cpu_data = (real*)malloc(net->temp_size * sizeof(real));
     net->tempint_cpu_data = (int*)malloc(net->tempint_size * sizeof(int));
+
   }
   #else
   {
@@ -162,9 +174,12 @@ void malloc_net(Net* const net)
                                     net->param_cpu_data);
   }
 
-  net->img_info->data
-      = (real*)malloc(flatten_size(net->img_info) * sizeof(real));
-  space_cpu += sizeof(real) * flatten_size(net->img_info);
+  {
+    const int img_info_size = net->layers[0]->tops[0].num_items * 4;
+    net->img_info->data
+        = (real*)malloc(img_info_size * sizeof(real));
+    space_cpu += sizeof(real) * img_info_size;
+  }
 
   // acquire CuBLAS handle
   #ifdef GPU
@@ -175,8 +190,8 @@ void malloc_net(Net* const net)
   }
   #endif
 
-  net->space_cpu = space_cpu;
-  net->space = space;
+  net->space_cpu += space_cpu;
+  net->space += space;
 
   net->initialized = 1;
 }
@@ -201,20 +216,24 @@ void free_net(Net* const net)
     cudaFree(net->temp_data);
     cudaFree(net->tempint_data);
     cudaFree(net->const_data);
-    cudaFree(net->anchors);
-
+/*
     cudaFreeHost(net->input_cpu_data);
     cudaFreeHost(net->output_cpu_data);
     cudaFreeHost(net->param_cpu_data);
     cudaFreeHost(net->temp_cpu_data);
     cudaFreeHost(net->tempint_cpu_data);
+*/
+    free(net->input_cpu_data);
+    free(net->output_cpu_data);
+    free(net->param_cpu_data);
+    free(net->temp_cpu_data);
+    free(net->tempint_cpu_data);
   }
   #else
   {
     free(net->temp_data);
     free(net->tempint_data);
     free(net->const_data);
-    free(net->anchors);
 
     free(net->input_cpu_data);
     free(net->output_cpu_data);
@@ -236,7 +255,6 @@ void free_net(Net* const net)
   net->param_cpu_data = NULL;
   net->temp_cpu_data = NULL;
   net->tempint_cpu_data = NULL;
-  net->anchors = NULL;
   net->img_info = NULL;
 
   #ifdef GPU
@@ -248,6 +266,39 @@ void free_net(Net* const net)
   #endif
 
   net->initialized = 0;
+}
+
+void init_layers(Net* const net)
+{
+  for (int i = 0; i < net->num_layers; ++i) {
+    for (int j = 0; j < MAX_NUM_OPS_PER_LAYER; ++j) {
+      if (net->layers[i]->f_init[j]) {
+        (*net->layers[i]->f_init[j])(net, net->layers[i]);
+      }
+    }
+  }
+}
+
+void forward_net(Net* const net)
+{
+  for (int i = 0; i < net->num_layers; ++i) {
+    for (int j = 0; j < MAX_NUM_OPS_PER_LAYER; ++j) {
+      if (net->layers[i]->f_forward[j]) {
+        (*net->layers[i]->f_forward[j])(net, net->layers[i]);
+      }
+    }
+  }
+}
+
+void shape_net(Net* const net)
+{
+  for (int i = 0; i < net->num_layers; ++i) {
+    for (int j = 0; j < MAX_NUM_OPS_PER_LAYER; ++j) {
+      if (net->layers[i]->f_shape[j]) {
+        (*net->layers[i]->f_shape[j])(net, net->layers[i]);
+      }
+    }
+  }
 }
 
 void update_net_size(Net* const net,

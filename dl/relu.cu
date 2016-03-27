@@ -219,20 +219,26 @@ void relu_shape(const Tensor* const bottom,
 // API code
 // --------------------------------------------------------------------------
 
-void forward_relu_layer(Net* const net, Layer* const layer)
+void forward_relu_layer(void* const net_, void* const layer_)
 {
+  Layer* const layer = (Layer*)layer_;
+
   relu_forward(layer->p_bottoms[0], &layer->tops[0], &layer->option);
   print_tensor_info(layer->name, &layer->tops[0]);
 }
 
-void forward_inplace_relu_layer(Net* const net, Layer* const layer)
+void forward_inplace_relu_layer(void* const net_, void* const layer_)
 {
+  Layer* const layer = (Layer*)layer_;
+
   relu_forward_inplace(&layer->tops[0], &layer->option);
   print_tensor_info(layer->name, &layer->tops[0]);
 }
 
-void shape_relu_layer(Net* const net, Layer* const layer)
+void shape_relu_layer(void* const net_, void* const layer_)
 {
+  Layer* const layer = (Layer*)layer_;
+
   relu_shape(layer->p_bottoms[0], &layer->tops[0]);
 }
 

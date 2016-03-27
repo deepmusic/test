@@ -1,5 +1,5 @@
 CC := g++
-CFLAGS := -O3 -Wall -std=c99
+CFLAGS := -O3 -Wall
 LDFLAGS := -lcblas -lm -lopencv_core -lopencv_highgui
 NVCC := /usr/local/cuda/bin/nvcc
 NVCCFLAGS := -O3 -use_fast_math -Xcompiler -Wall -DGPU

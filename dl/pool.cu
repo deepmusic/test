@@ -255,16 +255,22 @@ void pool_shape(const Tensor* const bottom3d,
 // API code
 // --------------------------------------------------------------------------
 
-void forward_pool_layer(Net* const net, Layer* const layer)
+void forward_pool_layer(void* const net_, void* const layer_)
 {
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+
   pool_forward(layer->p_bottoms[0], &layer->tops[0],
                net->tempint_data, &layer->option);
 
   print_tensor_info(layer->name, &layer->tops[0]);
 }
 
-void shape_pool_layer(Net* const net, Layer* const layer)
+void shape_pool_layer(void* const net_, void* const layer_)
 {
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+
   int tempint_size;
 
   pool_shape(layer->p_bottoms[0], &layer->tops[0],

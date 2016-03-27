@@ -1,48 +1,16 @@
 #include "layer.h"
 #include <stdio.h>
+#include <string.h>
 
-// total number of elements in a tensor
-long int flatten_size(const Tensor* const tensor)
+// initialize: set all values to 0
+void init_tensor(Tensor* const tensor)
 {
-  long int total_size = 0;
-  for (int n = 0; n < tensor->num_items; ++n) {
-    long int size = 1;
-    for (int d = 0; d < tensor->ndim; ++d) {
-      size *= tensor->shape[n][d];
-    }
-    total_size += size;
-  }
-  return total_size;
-}
-
-// print shapes for all batch items in tensor
-void print_tensor_info(const char* const name,
-                       const Tensor* const tensor)
-{
-  return;
-  printf("%s: ", name);
-  if (tensor->num_items > 1) {
-    printf("batch size = %d\n", tensor->num_items);
-    for (int n = 0; n < tensor->num_items; ++n) {
-      printf("  ");
-      for (int i = 0; i < tensor->ndim - 1; ++i) {
-        printf("%d x ", tensor->shape[n][i]);
-      }
-      printf("%d, ", tensor->shape[n][tensor->ndim - 1]);
-      printf("start = %d\n", tensor->start[n]);
-    }
-  }
-  else {
-    for (int i = 0; i < tensor->ndim - 1; ++i) {
-      printf("%d x ", tensor->shape[0][i]);
-    }
-    printf("%d\n", tensor->shape[0][tensor->ndim - 1]);
-  }
+  memset(tensor, 0, sizeof(Tensor));
 }
 
 // allocate memory for tensor
 //   allocate GPU memory in GPU mode, or CPU memory in CPU mode
-long int malloc_tensor(Tensor* const tensor)
+long int malloc_tensor_data(Tensor* const tensor)
 {
   const long int data_size = flatten_size(tensor);
 
@@ -53,6 +21,18 @@ long int malloc_tensor(Tensor* const tensor)
   #endif
 
   return data_size * sizeof(real);
+}
+
+// deallocate memory & set all values to 0
+void free_tensor_data(Tensor* const tensor)
+{
+  #ifdef GPU
+  cudaFree(tensor->data);
+  #else
+  free(tensor->data);
+  #endif
+
+  memset(tensor, 0, sizeof(Tensor));
 }
 
 // load binary data from file & store to CPU memory
@@ -127,5 +107,44 @@ void load_tensor(const char* const filename,
   #else
     load_data(filename, &ndim, shape, tensor->data);
   #endif
+  }
+}
+
+// total number of elements in a tensor
+long int flatten_size(const Tensor* const tensor)
+{
+  long int total_size = 0;
+  for (int n = 0; n < tensor->num_items; ++n) {
+    long int size = 1;
+    for (int d = 0; d < tensor->ndim; ++d) {
+      size *= tensor->shape[n][d];
+    }
+    total_size += size;
+  }
+  return total_size;
+}
+
+// print shapes for all batch items in tensor
+void print_tensor_info(const char* const name,
+                       const Tensor* const tensor)
+{
+  return;
+  printf("%s: ", name);
+  if (tensor->num_items > 1) {
+    printf("batch size = %d\n", tensor->num_items);
+    for (int n = 0; n < tensor->num_items; ++n) {
+      printf("  ");
+      for (int i = 0; i < tensor->ndim - 1; ++i) {
+        printf("%d x ", tensor->shape[n][i]);
+      }
+      printf("%d, ", tensor->shape[n][tensor->ndim - 1]);
+      printf("start = %d\n", tensor->start[n]);
+    }
+  }
+  else {
+    for (int i = 0; i < tensor->ndim - 1; ++i) {
+      printf("%d x ", tensor->shape[0][i]);
+    }
+    printf("%d\n", tensor->shape[0][tensor->ndim - 1]);
   }
 }

@@ -1,4 +1,5 @@
 #include "layer.h"
+#include <stdio.h>
 
 // --------------------------------------------------------------------------
 // layer operator code
@@ -172,8 +173,11 @@ void fc_shape(const Tensor* const bottom2d,
 // API code
 // --------------------------------------------------------------------------
 
-void forward_fc_layer(Net* const net, Layer* const layer)
+void forward_fc_layer(void* const net_, void* const layer_)
 {
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+
   Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
 
   fc_forward(layer->p_bottoms[0], &layer->tops[0],
@@ -182,8 +186,11 @@ void forward_fc_layer(Net* const net, Layer* const layer)
   print_tensor_info(layer->name, &layer->tops[0]);
 }
 
-void shape_fc_layer(Net* const net, Layer* const layer)
+void shape_fc_layer(void* const net_, void* const layer_)
 {
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+
   int const_size;
   Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
 
