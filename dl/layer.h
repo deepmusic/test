@@ -82,6 +82,13 @@ void load_tensor(const char* const filename,
                  Tensor* const tensor,
                  real* const temp_data);
 
+// save tensor data to binary file
+//   temp_data: pointer to CPU memory for storing data temporarily
+//              not used (i.e., can be NULL) if tensor occupies CPU memory
+void save_tensor_data(const char* const filename,
+                      const Tensor* const tensor,
+                      real* const temp_data);
+
 // total number of elements in a tensor
 long int flatten_size(const Tensor* const tensor);
 
@@ -240,6 +247,8 @@ void update_net_size(Net* const net,
                      const int temp_size,
                      const int tempint_size,
                      const int const_size);
+
+void save_layer_tops(void* const net_, void* const layer_);
 
 void print_layer_tops(const Net* const net,
                       const Layer* const layer);

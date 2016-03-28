@@ -11,7 +11,7 @@
 using namespace cv;
 
 #ifdef GPU
-#define PASS
+//#define PASS
 #endif
 
 #ifdef PASS
@@ -44,13 +44,13 @@ void bilinear_resize_gpu(const unsigned char* const img,
     const real ax = x - x0;
     const real bx = 1 - ax;
 
-    real val = -gs_mean[c];
-    val += (ax > 0) * (ay > 0) * ax * ay * img[y1 * stride + x1 * 3 + c];
-    val += (ax > 0) * (by > 0) * ax * by * img[y0 * stride + x1 * 3 + c];
-    val += (bx > 0) * (ay > 0) * bx * ay * img[y1 * stride + x0 * 3 + c];
-    val += (bx > 0) * (by > 0) * bx * by * img[y0 * stride + x0 * 3 + c];
+    real val = 0;
+    val += (ax > 0 && ay > 0) ? ax * ay * img[y1 * stride + x1 * 3 + c] : 0;
+    val += (ax > 0 && by > 0) ? ax * by * img[y0 * stride + x1 * 3 + c] : 0;
+    val += (bx > 0 && ay > 0) ? bx * ay * img[y1 * stride + x0 * 3 + c] : 0;
+    val += (bx > 0 && by > 0) ? bx * by * img[y0 * stride + x0 * 3 + c] : 0;
 
-    input3d[index] = val;
+    input3d[index] = val - gs_mean[c];
   }
 }
 #else

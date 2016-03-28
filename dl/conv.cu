@@ -47,8 +47,8 @@ void convert_bottom_gpu(const real* const bottom3d,
       for (int kw = 0; kw < kernel_w; ++kw) {
         const int h = h_start + kh;
         const int w = w_start + kw;
-        p_bottom5d[(kh * kernel_w + kw) * H5W5] = p_bottom3d[kh * W + kw]
-            * (h >= 0) * (h < H) * (w >= 0) * (w < W);
+        p_bottom5d[(kh * kernel_w + kw) * H5W5] =
+          (h >= 0 && h < H && w >= 0 && w < W) ? p_bottom3d[kh * W + kw] : 0;
       }
     }
   }

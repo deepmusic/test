@@ -194,9 +194,9 @@ void setup_frcnn_7_1_1(Net* const net)
     net->layers[37]->option.out_channels = 21;
     net->layers[39]->option.out_channels = 84;
 
-    net->layers[40]->option.min_size = -1;
-    net->layers[40]->option.score_thresh = -1; //0.7f;
-    net->layers[40]->option.nms_thresh = 2; //0.3f;
+    net->layers[40]->option.min_size = 16;
+    net->layers[40]->option.score_thresh = 0.7f;
+    net->layers[40]->option.nms_thresh = 0.3f;
   }
 
   {
@@ -255,7 +255,7 @@ void setup_frcnn_7_1_1(Net* const net)
 
   {
     Tensor* input = &net->layers[0]->tops[0];
-    input->num_items = 1;
+    input->num_items = 4;
     input->ndim = 3;
     for (int n = 0; n < input->num_items; ++n) {
       input->shape[n][0] = 3;
@@ -395,6 +395,7 @@ void connect_frcnn_7_1_1(Net* const net)
     // score
     net->layers[37]->p_bottoms[0] = &net->layers[36]->tops[0];
     net->layers[37]->f_forward[0] = forward_fc_layer;
+    net->layers[37]->f_forward[1] = save_layer_tops;
     net->layers[37]->f_shape[0] = shape_fc_layer;
 
     // pred
@@ -492,7 +493,7 @@ void prepare_input(Net* net,
                    const int num_images)
 {
   Tensor* input = &net->layers[0]->tops[0];
-  //input->data = net->input_cpu_data;
+  input->data = net->input_cpu_data;
   input->ndim = 3;
   input->num_items = 0;
   input->start[0] = 0;
@@ -503,7 +504,7 @@ void prepare_input(Net* net,
   for (int i = 0; i < num_images; ++i) {
     load_image(filename[i], input, net->img_info, net->temp_data);
   }
-/*
+
   #ifdef GPU
   cudaMemcpyAsync(net->layer_data[0], input->data,
                   flatten_size(input) * sizeof(real),
@@ -513,7 +514,7 @@ void prepare_input(Net* net,
          flatten_size(input) * sizeof(real));
   #endif
   input->data = net->layer_data[0];
-*/
+
   // network reshape
   shape_net(net);
 
@@ -545,8 +546,7 @@ void get_output(Net* net, const int image_start_index, FILE* fp)
       const int image_index = image_start_index + n;
       const real* const p_out_item = net->output_cpu_data + out->start[n];
 
-      //for (int i = 0; i < out->shape[n][0]; ++i) {
-      for (int i = 0; i < 3; ++i) {
+      for (int i = 0; i < out->shape[n][0]; ++i) {
         const int class_index = (int)p_out_item[i * 6 + 0];
         printf("Image %d / Box %d: ", image_index, i);
         printf("class %d, score %f, p1 = (%.2f, %.2f), p2 = (%.2f, %.2f)\n",

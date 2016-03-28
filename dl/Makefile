@@ -21,7 +21,7 @@ $(BUILD_DIR)/libdlcpu.a: tensor.cpu.o net.cpu.o nms.cpu.o softmax.cpu.o conv.cpu
 $(BUILD_DIR)/libdlgpu.a: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o image.gpu.o
 	mkdir -p $(BUILD_DIR)
 	ar rcs $@ $^
-	rm $^
+	#rm $^
 
 clean:
 	rm -rf $(BUILD_DIR)

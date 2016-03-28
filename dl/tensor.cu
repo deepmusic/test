@@ -110,6 +110,43 @@ void load_tensor(const char* const filename,
   }
 }
 
+// save tensor data to binary file
+//   temp_data: pointer to CPU memory for storing data temporarily
+//              not used (i.e., can be NULL) if tensor occupies CPU memory
+void save_tensor_data(const char* const filename,
+                      const Tensor* const tensor,
+                      real* const temp_data)
+{
+  FILE* fp = fopen(filename, "wb");
+  real* p_temp_data;
+
+  {
+  #ifdef GPU
+    p_temp_data = temp_data;
+    cudaMemcpyAsync(p_temp_data, tensor->data,
+                    flatten_size(tensor) * sizeof(real),
+                    cudaMemcpyDeviceToHost);
+  #else
+    p_temp_data = tensor->data;
+  #endif
+  }
+
+  for (int n = 0; n < tensor->num_items; ++n)
+  {
+    int item_size = 1;
+    for (int i = 0; i < tensor->ndim; ++i) {
+      item_size *= tensor->shape[n][i];
+    }
+
+    fwrite(&tensor->ndim, sizeof(int), 1, fp);
+    fwrite(tensor->shape[n], sizeof(int), tensor->ndim, fp);
+    fwrite(p_temp_data, sizeof(real), item_size, fp);
+    p_temp_data += item_size;
+  }
+
+  fclose(fp);
+}
+
 // total number of elements in a tensor
 long int flatten_size(const Tensor* const tensor)
 {
