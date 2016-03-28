@@ -175,7 +175,7 @@ void malloc_net(Net* const net)
   }
 
   {
-    const int img_info_size = net->layers[0]->tops[0].num_items * 4;
+    const int img_info_size = net->layers[0]->tops[0].num_items * 6;
     net->img_info->data
         = (real*)malloc(img_info_size * sizeof(real));
     space_cpu += sizeof(real) * img_info_size;
@@ -243,19 +243,8 @@ void free_net(Net* const net)
   }
   #endif
 
-
-  free(net->img_info->data);
+  free_tensor_data(net->img_info);
   free(net->img_info);
-
-  net->temp_data = NULL;
-  net->tempint_data = NULL;
-  net->const_data = NULL;
-  net->input_cpu_data = NULL;
-  net->output_cpu_data = NULL;
-  net->param_cpu_data = NULL;
-  net->temp_cpu_data = NULL;
-  net->tempint_cpu_data = NULL;
-  net->img_info = NULL;
 
   #ifdef GPU
   {
@@ -265,7 +254,7 @@ void free_net(Net* const net)
   }
   #endif
 
-  net->initialized = 0;
+  memset(net, 0, sizeof(Net));
 }
 
 void init_layers(Net* const net)

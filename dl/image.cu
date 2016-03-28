@@ -137,22 +137,24 @@ void img2input(const unsigned char* const img,
   }
 
   const int gs_scale_base = 32;
-  const real img_scale_x
-      = (real)((int)(width * img_scale / gs_scale_base) * gs_scale_base)
-        / width;
   const real img_scale_y
       = (real)((int)(height * img_scale / gs_scale_base) * gs_scale_base)
         / height;
+  const real img_scale_x
+      = (real)((int)(width * img_scale / gs_scale_base) * gs_scale_base)
+        / width;
 
   const int resized_height = ROUND(height * img_scale_y);
   const int resized_width = ROUND(width * img_scale_x);
 
   const int n = img_info1d->num_items;
-  real* const p_img_info1d = img_info1d->data + n * 4;
+  real* const p_img_info1d = img_info1d->data + n * 6;
   p_img_info1d[0] = resized_height;
   p_img_info1d[1] = resized_width;
-  p_img_info1d[2] = img_scale_x;
-  p_img_info1d[3] = img_scale_y;
+  p_img_info1d[2] = img_scale_y;
+  p_img_info1d[3] = img_scale_x;
+  p_img_info1d[4] = height;
+  p_img_info1d[5] = width;
 
   #ifdef PASS
   {
@@ -184,7 +186,7 @@ void img2input(const unsigned char* const img,
   input3d->start[n + 1] = input3d->start[n] + input_size;
   ++input3d->num_items;
 
-  img_info1d->shape[n][0] = 4;
+  img_info1d->shape[n][0] = 6;
   ++img_info1d->num_items;
 }
 

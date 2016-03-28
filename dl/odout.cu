@@ -133,6 +133,7 @@ void enumerate_output_gpu(const real* const bottom2d,
                           const int num_rois, const int num_classes,
                           const real img_H, const real img_W,
                           const real min_box_H, const real min_box_W,
+                          const real y_scale, const real x_scale,
                           real* const proposals)
 {
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -167,7 +168,7 @@ void retrieve_output_gpu(const real* const proposals,
                          const int* const keep,
                          real* const top2d,
                          const int num_output, const int num_rois,
-                         const real x_scale, const real y_scale)
+                         const real y_scale, const real x_scale)
 {
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < num_output) {
@@ -206,9 +207,9 @@ void filter_output_gpu(const real* const bottom2d,
     // input image height & width
     const real img_H = img_info1d[0];
     const real img_W = img_info1d[1];
-    // minimum box width & height
-    const real min_box_W = min_size * img_info1d[2];
-    const real min_box_H = min_size * img_info1d[3];
+    // minimum box height & width (w.r.t. input image size)
+    const real min_box_H = min_size * img_info1d[2];
+    const real min_box_W = min_size * img_info1d[3];
 
     const int num_threads = num_rois * num_classes;
     const int threads_per_block = 256;
@@ -216,7 +217,7 @@ void filter_output_gpu(const real* const bottom2d,
     enumerate_output_gpu<<<num_blocks, threads_per_block>>>(
         bottom2d,  d_anchor3d,  roi2d,  num_rois,  num_classes,
         img_H,  img_W,  min_box_H,  min_box_W,
-        proposals_dev);
+        img_info1d[2],  img_info1d[3],  proposals_dev);
 
     cudaMemcpyAsync(proposals, proposals_dev,
                     num_threads * 5 * sizeof(real),
@@ -401,7 +402,7 @@ void odout_forward(const Tensor* const bottom2d,
       const int bottom_size = num_rois * num_classes;
       const int d_anchor_size = bottom_size * 4;
       const int roi_size = num_rois * 4;
-      const int img_info_size = 4;
+      const int img_info_size = 6;
       const int top_size = num_output * 6;
       p_bottom_item += bottom_size;
       p_d_anchor_item += d_anchor_size;

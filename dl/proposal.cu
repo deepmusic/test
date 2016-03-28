@@ -408,10 +408,13 @@ void retrieve_rois_cpu(const real* const proposals,
 //   d_anchor: num_anchors x 4 x H x W tensor
 //     d_anchor[k, :, h, w] = gradient (dx, dy, d(log w), d(log h))
 //                            of anchor k at center location (h, w)
-//   img_info: 4 x 1 tensor,  (img_H, img_W, min_box_W, min_box_H)
+//   img_info: 6 x 1 tensor,  (img_H, img_W, scale_H, scale_W, raw_H, raw_W)
 //     img_H, img_W: scaled image height & width
-//     min_box_W: minimum box width in raw image
-//     min_box_H: minimum box height in raw image
+//     scale_H: height scale factor
+//              img_H = raw image height * scale_H
+//     scale_W: width scale factor
+//              img_W = raw image width * scale_W
+//     raw_H, raw_W: raw image height & width
 //   top: num_RoIs x 4 tensor,  (x1, y1, x2, y2) of each RoI
 //   anchors: num_anchors * 4 array,  (x1, y1, x2, y2) for each anchor
 //   4 temporary arrays
@@ -456,8 +459,8 @@ void proposal_forward(const Tensor* const bottom4d,
     const real img_H = p_img_info[0];
     const real img_W = p_img_info[1];
     // minimum box width & height
-    const real min_box_W = option->min_size * p_img_info[2];
-    const real min_box_H = option->min_size * p_img_info[3];
+    const real min_box_H = option->min_size * p_img_info[2];
+    const real min_box_W = option->min_size * p_img_info[3];
 
     // enumerate all proposals
     //   num_proposals = num_anchors * H * W
@@ -560,7 +563,7 @@ void proposal_forward(const Tensor* const bottom4d,
     {
       const int bottom_size = 2 * num_anchors * bottom_area;
       const int d_anchor_size = 4 * num_anchors * bottom_area;
-      const int img_info_size = 4;
+      const int img_info_size = 6;
       const int top_size = 4 * top2d->shape[n][0];
       p_bottom_item += bottom_size;
       p_d_anchor_item += d_anchor_size;
@@ -760,7 +763,7 @@ int main(int argc, char* argv[])
       total_size += num_anchors * 4 * shape[2] * shape[3];
     }
 
-    // img_info: 4 x 1 tensor
+    // img_info: 6 x 1 tensor
     img_info_data = load_data("../data/temp/proposal_bottom2.bin",
                               &ndim, shape, NULL);
     img_info.num_items = 1;
