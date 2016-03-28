@@ -1,3 +1,2 @@
 #!/bin/bash
-./frcnn_cpu.bin list.txt detections.bin
-./eval.py detections.bin
+./frcnn_gpu.bin list2.txt detections.bin

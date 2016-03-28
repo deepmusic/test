@@ -17,11 +17,11 @@ test_gpu: conv.gpu.test.bin deconv.gpu.test.bin dropout.gpu.test.bin fc.gpu.test
 $(BUILD_DIR)/libdlcpu.a: tensor.cpu.o net.cpu.o nms.cpu.o softmax.cpu.o conv.cpu.o deconv.cpu.o fc.cpu.o dropout.cpu.o relu.cpu.o roipool.cpu.o pool.cpu.o proposal.cpu.o concat.cpu.o odout.cpu.o image.cpp.cpu.o
 	mkdir -p $(BUILD_DIR)
 	ar rcs $@ $^
-	#rm $^
+	rm $^
 $(BUILD_DIR)/libdlgpu.a: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o image.gpu.o
 	mkdir -p $(BUILD_DIR)
 	ar rcs $@ $^
-	#rm $^
+	rm $^
 
 clean:
 	rm -rf $(BUILD_DIR)
