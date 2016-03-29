@@ -133,7 +133,7 @@ void enumerate_output_gpu(const real* const bottom2d,
                           const int num_rois, const int num_classes,
                           const real img_H, const real img_W,
                           const real min_box_H, const real min_box_W,
-                          const real y_scale, const real x_scale,
+                          const real scale_H, const real scale_W,
                           real* const proposals)
 {
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -168,7 +168,7 @@ void retrieve_output_gpu(const real* const proposals,
                          const int* const keep,
                          real* const top2d,
                          const int num_output, const int num_rois,
-                         const real y_scale, const real x_scale)
+                         const real scale_H, const real scale_W)
 {
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < num_output) {
@@ -177,10 +177,10 @@ void retrieve_output_gpu(const real* const proposals,
     const int c = keep[index] / num_rois;
 
     p_top2d[0] = c;
-    p_top2d[1] = p_proposals[0] / x_scale;
-    p_top2d[2] = p_proposals[1] / y_scale;
-    p_top2d[3] = p_proposals[2] / x_scale;
-    p_top2d[4] = p_proposals[3] / y_scale;
+    p_top2d[1] = p_proposals[0] / scale_W;
+    p_top2d[2] = p_proposals[1] / scale_H;
+    p_top2d[3] = p_proposals[2] / scale_W;
+    p_top2d[4] = p_proposals[3] / scale_H;
     p_top2d[5] = p_proposals[4];
   }
 }
@@ -285,8 +285,8 @@ void filter_output_cpu(const real* const bottom2d,
   const real img_H = img_info1d[0];
   const real img_W = img_info1d[1];
   // minimum box width & height
-  const real min_box_W = min_size * img_info1d[2];
-  const real min_box_H = min_size * img_info1d[3];
+  const real min_box_H = min_size * img_info1d[2];
+  const real min_box_W = min_size * img_info1d[3];
 
   // do for each object class (skip background class)
   real* p_top2d = top2d;
@@ -331,10 +331,10 @@ void filter_output_cpu(const real* const bottom2d,
       // retrieve final outputs & resize box to raw image size
       for (int r = 0; r < num_post_nms; ++r) {
         p_top2d[r * 6 + 0] = c;
-        p_top2d[r * 6 + 1] = proposals[keep[r] * 5 + 0] / img_info1d[2];
-        p_top2d[r * 6 + 2] = proposals[keep[r] * 5 + 1] / img_info1d[3];
-        p_top2d[r * 6 + 3] = proposals[keep[r] * 5 + 2] / img_info1d[2];
-        p_top2d[r * 6 + 4] = proposals[keep[r] * 5 + 3] / img_info1d[3];
+        p_top2d[r * 6 + 1] = proposals[keep[r] * 5 + 0] / img_info1d[3];
+        p_top2d[r * 6 + 2] = proposals[keep[r] * 5 + 1] / img_info1d[2];
+        p_top2d[r * 6 + 3] = proposals[keep[r] * 5 + 2] / img_info1d[3];
+        p_top2d[r * 6 + 4] = proposals[keep[r] * 5 + 3] / img_info1d[2];
         p_top2d[r * 6 + 5] = proposals[keep[r] * 5 + 4];
       }
 

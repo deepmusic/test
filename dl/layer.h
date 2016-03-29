@@ -114,7 +114,7 @@ void load_image(const char* const filename,
 // layer data structure & some functions
 // --------------------------------------------------------------------------
 
-# define MAX_NUM_OPS_PER_LAYER 3
+# define MAX_NUM_OPS_PER_LAYER 5
 
 // layer options
 typedef struct LayerOption_

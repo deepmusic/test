@@ -11,7 +11,7 @@
 using namespace cv;
 
 #ifdef GPU
-//#define PASS
+#define PASS
 #endif
 
 #ifdef PASS
