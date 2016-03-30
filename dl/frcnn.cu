@@ -255,7 +255,7 @@ void setup_frcnn_7_1_1(Net* const net)
 
   {
     Tensor* input = &net->layers[0]->tops[0];
-    input->num_items = 1;
+    input->num_items = 4;
     input->ndim = 3;
     for (int n = 0; n < input->num_items; ++n) {
       input->shape[n][0] = 3;

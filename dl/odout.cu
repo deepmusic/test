@@ -442,16 +442,18 @@ void odout_shape(const Tensor* const bottom2d,
   top2d->ndim = 2;
   top2d->num_items = bottom2d->num_items;
   for (int n = 0; n < bottom2d->num_items; ++n) {
-    // calculate total number of RoIs for determining temporary space size
     const int num_rois = bottom2d->shape[n][0];
-    total_num_rois += num_rois;
+    const int num_classes = bottom2d->shape[n][1];
+
+    // calculate total number of RoIs for determining temporary space size
+    total_num_rois += num_rois * num_classes;
 
     // top shape <= num_rois x 6
     //   (class index, x1, y1, x2, y2, score) for each output
     //   exact number of outputs will be determined after forward-pass
-    top2d->shape[n][0] = num_rois;
+    top2d->shape[n][0] = num_rois * num_classes;
     top2d->shape[n][1] = 6;
-    top2d->start[n] = num_rois * 6;
+    top2d->start[n] = total_num_rois * 6;
   }
 
   // temporary space size
