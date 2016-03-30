@@ -101,12 +101,19 @@ void print_tensor_info(const char* name,
 // --------------------------------------------------------------------------
 // load image & transform into network input
 //   load_image
+//   img2input
 // --------------------------------------------------------------------------
 
 void load_image(const char* const filename,
                 Tensor* const input3d,
                 Tensor* const img_info1d,
                 real* const temp_data);
+
+void img2input(const unsigned char* const img,
+               Tensor* const input3d,
+               Tensor* const img_info1d,
+               unsigned char* const temp_data,
+               const int height, const int width, const int stride);
 
 
 
@@ -252,6 +259,14 @@ void save_layer_tops(void* const net_, void* const layer_);
 
 void print_layer_tops(const Net* const net,
                       const Layer* const layer);
+
+
+
+// --------------------------------------------------------------------------
+// PVANET 7.1.1
+// --------------------------------------------------------------------------
+
+void construct_frcnn_7_1_1(Net* net);
 
 
 

@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+static
 void setup_frcnn_7_1_1(Net* const net)
 {
   const char* names[] = {
@@ -23,7 +24,7 @@ void setup_frcnn_7_1_1(Net* const net)
 
     // R-CNN: 10 layers
     "rcnn_roipool", "rcnn_roipool_flat",
-    "fc6_null", "fc6", "fc7_null", "fc7",
+    "fc6_L", "fc6_U", "fc7_L", "fc7_U",
     "cls_score", "cls_pred", "bbox_pred",
     "out", "test"
   };
@@ -237,12 +238,8 @@ void setup_frcnn_7_1_1(Net* const net)
       net->layers[i]->num_tops = 1;
       net->layers[i]->num_params = 2;
     }
-    net->layers[33]->num_params = 0;
-    net->layers[33]->num_bottoms = 0;
-    net->layers[33]->num_tops = 0;
-    net->layers[35]->num_params = 0;
-    net->layers[35]->num_bottoms = 0;
-    net->layers[35]->num_tops = 0;
+    net->layers[33]->num_params = 1;
+    net->layers[35]->num_params = 1;
 
     net->layers[38]->num_bottoms = 2;
     net->layers[38]->num_params = 0;
@@ -284,6 +281,7 @@ void setup_frcnn_7_1_1(Net* const net)
   }
 }
 
+static
 void connect_frcnn_7_1_1(Net* const net)
 {
   // PVANET
@@ -386,14 +384,18 @@ void connect_frcnn_7_1_1(Net* const net)
     net->layers[31]->f_shape[0] = shape_roipool_layer;
 
     // fc6_L, 6_U, 7_L, 7_U
-    for (int i = 34; i <= 36; i += 2) {
+    for (int i = 33; i <= 36; i += 2) {
+      net->layers[i]->p_bottoms[0] = &net->layers[i - 1]->tops[0];
       net->layers[i]->f_forward[0] = forward_fc_layer;
-      net->layers[i]->f_forward[1] = forward_inplace_relu_layer;
-      net->layers[i]->f_forward[2] = forward_inplace_dropout_layer;
       net->layers[i]->f_shape[0] = shape_fc_layer;
+
+      net->layers[i + 1]->p_bottoms[0] = &net->layers[i]->tops[0];
+      net->layers[i + 1]->f_forward[0] = forward_fc_layer;
+      net->layers[i + 1]->f_forward[1] = forward_inplace_relu_layer;
+      net->layers[i + 1]->f_forward[2] = forward_inplace_dropout_layer;
+      net->layers[i + 1]->f_shape[0] = shape_fc_layer;
     }
-    net->layers[34]->p_bottoms[0] = &net->layers[31]->tops[0];
-    net->layers[36]->p_bottoms[0] = &net->layers[34]->tops[0];
+    net->layers[33]->p_bottoms[0] = &net->layers[31]->tops[0];
 
     // score
     net->layers[37]->p_bottoms[0] = &net->layers[36]->tops[0];
@@ -477,7 +479,7 @@ void construct_frcnn_7_1_1(Net* net)
     net->layers[27]->tops[0].data = net->layer_data[0];
     net->layers[29]->tops[0].data = net->layer_data[2];
     net->layers[31]->tops[0].data = net->layer_data[2];
-    net->layers[34]->tops[0].data = net->layer_data[0];
+    net->layers[34]->tops[0].data = net->layer_data[1];
     net->layers[36]->tops[0].data = net->layer_data[1];
     net->layers[37]->tops[0].data = net->layer_data[0];
     net->layers[38]->tops[0].data = net->layers[37]->tops[0].data;
@@ -502,6 +504,7 @@ void construct_frcnn_7_1_1(Net* net)
   }
 }
 
+static
 void prepare_input(Net* net,
                    const char* const filename[],
                    const int num_images)
@@ -536,6 +539,7 @@ void prepare_input(Net* net,
   print_tensor_info("img_info", net->img_info);
 }
 
+static
 void get_output(Net* net, const int image_start_index, FILE* fp)
 {
   // retrieve & print output
@@ -590,6 +594,7 @@ void get_output(Net* net, const int image_start_index, FILE* fp)
   }
 }
 
+#ifdef TEST
 int main(int argc, char* argv[])
 {
   // CUDA initialization
@@ -658,3 +663,4 @@ int main(int argc, char* argv[])
 
   return 0;
 }
+#endif

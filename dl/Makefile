@@ -7,11 +7,16 @@ NVCCFLAGS := -O3 -use_fast_math -Xcompiler -Wall -DGPU
 NVLDFLAGS := -lcuda -lcublas -lopencv_core -lopencv_highgui
 BUILD_DIR := build
 
-all: frcnn_cpu.bin frcnn_gpu.bin
+all: demo_cpu.bin demo_gpu.bin frcnn_cpu.bin frcnn_gpu.bin
 
-frcnn_cpu.bin: frcnn.cpp.cpu.o $(BUILD_DIR)/libdlcpu.a
+demo_cpu.bin: demo.cpp.cpu.o frcnn.cpu.o $(BUILD_DIR)/libdlcpu.a
+	$(CC) -o $@ $^ $(LDFLAGS) -lgflags
+demo_gpu.bin: demo.gpu.o frcnn.gpu.o $(BUILD_DIR)/libdlgpu.a
+	$(NVCC) -o $@ $^ $(NVLDFLAGS) -lgflags
+
+frcnn_cpu.bin: frcnn.cpp.cpu.test.o $(BUILD_DIR)/libdlcpu.a
 	$(CC) -o $@ $^ $(LDFLAGS)
-frcnn_gpu.bin: frcnn.gpu.o $(BUILD_DIR)/libdlgpu.a
+frcnn_gpu.bin: frcnn.gpu.test.o $(BUILD_DIR)/libdlgpu.a
 	$(NVCC) -o $@ $^ $(NVLDFLAGS)
 
 test_cpu: conv.cpu.test.bin deconv.cpu.test.bin dropout.cpu.test.bin fc.cpu.test.bin pool.cpu.test.bin proposal.nms.cpu.test.bin relu.cpu.test.bin roipool.cpu.test.bin
@@ -42,6 +47,10 @@ clean:
 	cp $< $*.c
 	$(CC) $(CFLAGS) -DTEST -c $*.c -o $@
 	rm $*.c
+%.cpp.cpu.test.o: %.cu layer.h
+	cp $< $*.cpp
+	$(CC) $(CFLAGS) -DTEST -c $*.cpp -o $@
+	rm $*.cpp
 
 %.gpu.o: %.cu layer.h cuda_settings.h
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
