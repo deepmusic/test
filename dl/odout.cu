@@ -1,6 +1,5 @@
 #include "layer.h"
 #include <math.h>
-#include <stdio.h>
 
 // --------------------------------------------------------------------------
 // kernel code
@@ -125,8 +124,10 @@ int filter_box(real* const list, const int num_boxes, const real threshold)
   return left;
 }
 
+// enumerate all output boxes for each object class
 #ifdef GPU
 __global__
+static
 void enumerate_output_gpu(const real* const bottom2d,
                           const real* const d_anchor3d,
                           const real* const roi2d,
@@ -136,10 +137,12 @@ void enumerate_output_gpu(const real* const bottom2d,
                           const real scale_H, const real scale_W,
                           real* const proposals)
 {
+  // index = c * num_rois + r
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
-  const int c = index / num_rois;
-  const int r = index % num_rois;
   if (index < num_rois * num_classes) {
+    const int c = index / num_rois;
+    const int r = index % num_rois;
+
     const real* const p_d_anchor3d = d_anchor3d + (r * num_classes + c) * 4;
     const real dx = p_d_anchor3d[0];
     const real dy = p_d_anchor3d[1];
@@ -160,10 +163,48 @@ void enumerate_output_gpu(const real* const bottom2d,
           * bottom2d[r * num_classes + c];
   }
 }
+#else
+static
+void enumerate_output_cpu(const real* const bottom2d,
+                          const real* const d_anchor3d,
+                          const real* const roi2d,
+                          const int num_rois, const int num_classes,
+                          const real img_H, const real img_W,
+                          const real min_box_H, const real min_box_W,
+                          const real scale_H, const real scale_W,
+                          real* const proposals)
+{
+  // skip background class (c = 0)
+  for (int c = 1; c < num_classes; ++c) {
+    for (int r = 0; r < num_rois; ++r) {
+      const real* const p_d_anchor3d
+          = d_anchor3d + (r * num_classes + c) * 4;
+      const real dx = p_d_anchor3d[0];
+      const real dy = p_d_anchor3d[1];
+      const real d_log_w = p_d_anchor3d[2];
+      const real d_log_h = p_d_anchor3d[3];
+
+      const real* const p_roi2d = roi2d + r * 4;
+      real* const p_proposals = proposals + (c * num_rois + r) * 5;
+      p_proposals[0] = p_roi2d[0];
+      p_proposals[1] = p_roi2d[1];
+      p_proposals[2] = p_roi2d[2];
+      p_proposals[3] = p_roi2d[3];
+
+      p_proposals[4]
+          = transform_box(p_proposals,
+                          dx, dy, d_log_w, d_log_h,
+                          img_W, img_H, min_box_W, min_box_H)
+            * bottom2d[r * num_classes + c];
+    } // endfor n
+  } // endfor c
+}
 #endif
 
+// retrieve boxes that are determined to be kept by NMS
 #ifdef GPU
 __global__
+static
 void retrieve_output_gpu(const real* const proposals,
                          const int* const keep,
                          real* const top2d,
@@ -184,49 +225,85 @@ void retrieve_output_gpu(const real* const proposals,
     p_top2d[5] = p_proposals[4];
   }
 }
+#else
+static
+void retrieve_output_cpu(const real* const proposals,
+                         const int* const keep,
+                         real* const top2d,
+                         const int num_output, const int num_rois,
+                         const real scale_H, const real scale_W)
+{
+  for (int index = 0; index < num_output; ++index) {
+    const real* const p_proposals = proposals + keep[index] * 5;
+    real* const p_top2d = top2d + index * 6;
+    const int c = keep[index] / num_rois;
+
+    p_top2d[0] = c;
+    p_top2d[1] = p_proposals[0] / scale_W;
+    p_top2d[2] = p_proposals[1] / scale_H;
+    p_top2d[3] = p_proposals[2] / scale_W;
+    p_top2d[4] = p_proposals[3] / scale_H;
+    p_top2d[5] = p_proposals[4];
+  }
+}
 #endif
 
 // remove duplicated boxes, and select final output boxes
-#ifdef GPU
-void filter_output_gpu(const real* const bottom2d,
-                       const real* const d_anchor3d,
-                       const real* const roi2d,
-                       const real* const img_info1d,
-                       real* const top2d,
-                       int* num_output,
-                       real* const proposals,
-                       int* const keep,
-                       real* const proposals_dev,
-                       int* const keep_dev,
-                       const int num_rois, const int num_classes,
-                       const int min_size,
-                       const real score_thresh, const real nms_thresh)
+static
+void filter_output(const real* const bottom2d,
+                   const real* const d_anchor3d,
+                   const real* const roi2d,
+                   const real* const img_info1d,
+                   real* const top2d,
+                   int* num_output,
+                   real* const proposals,
+                   int* const keep,
+                   real* const proposals_dev,
+                   int* const keep_dev,
+                   const int num_rois, const int num_classes,
+                   const int min_size,
+                   const real score_thresh, const real nms_thresh)
 {
-  // enumerate all RCNN box outputs ("num_rois * num_classes" outputs)
-  {
-    // input image height & width
-    const real img_H = img_info1d[0];
-    const real img_W = img_info1d[1];
-    // minimum box height & width (w.r.t. input image size)
-    const real min_box_H = min_size * img_info1d[2];
-    const real min_box_W = min_size * img_info1d[3];
+  // input image height & width
+  const real img_H = img_info1d[0];
+  const real img_W = img_info1d[1];
+  // scale factor for height & width
+  const real scale_H = img_info1d[2];
+  const real scale_W = img_info1d[3];
+  // minimum box height & width (w.r.t. input image size)
+  const real min_box_H = min_size * scale_H;
+  const real min_box_W = min_size * scale_W;
 
+  // enumerate all RCNN box outputs ("num_rois * num_classes" outputs)
+  #ifdef GPU
+  {
     const int num_threads = num_rois * num_classes;
     const int threads_per_block = 256;
     const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
+
     enumerate_output_gpu<<<num_blocks, threads_per_block>>>(
         bottom2d,  d_anchor3d,  roi2d,  num_rois,  num_classes,
-        img_H,  img_W,  min_box_H,  min_box_W,
-        img_info1d[2],  img_info1d[3],  proposals_dev);
+        img_H,  img_W,  min_box_H,  min_box_W,  scale_H,  scale_W,
+        proposals_dev);
 
     cudaMemcpyAsync(proposals, proposals_dev,
                     num_threads * 5 * sizeof(real),
                     cudaMemcpyDeviceToHost);
   }
+  #else
+  {
+    enumerate_output_cpu(
+        bottom2d,  d_anchor3d,  roi2d,  num_rois,  num_classes,
+        img_H,  img_W,  min_box_H,  min_box_W,  scale_H,  scale_W,
+        proposals);
+  }
+  #endif
 
   // for each class, choose outputs according to scores & overlap
+  // TODO: GPU-side implementation
   {
     int num_out = 0;
+    // skip background class (c = 0)
     for (int c = 1; c < num_classes; ++c) {
       const int base = c * num_rois;
       real* const p_proposals = proposals + base * 5;
@@ -250,6 +327,13 @@ void filter_output_gpu(const real* const bottom2d,
       }
     }
     *num_output = num_out;
+  }
+
+  // retrieve final outputs & resize box to raw image size
+  #ifdef GPU
+  {
+    const int threads_per_block = 16;
+    const int num_blocks = DIV_THEN_CEIL(*num_output,  threads_per_block);
 
     cudaMemcpyAsync(proposals_dev, proposals,
                     num_rois * num_classes * 5 * sizeof(real),
@@ -257,93 +341,19 @@ void filter_output_gpu(const real* const bottom2d,
     cudaMemcpyAsync(keep_dev, keep,
                     (*num_output) * sizeof(int),
                     cudaMemcpyHostToDevice);
-  }
 
-  // retrieve final outputs & resize box to raw image size
-  {
-    const int threads_per_block = 16;
-    const int num_blocks = DIV_THEN_CEIL(*num_output,  threads_per_block);
     retrieve_output_gpu<<<num_blocks, threads_per_block>>>(
         proposals_dev,  keep_dev,  top2d,  *num_output,  num_rois,
-        img_info1d[2], img_info1d[3]);
+        scale_H, scale_W);
   }
+  #else
+  {
+    retrieve_output_cpu(
+        proposals,  keep,  top2d,  *num_output,  num_rois,
+        scale_H, scale_W);
+  }
+  #endif
 }
-#else
-void filter_output_cpu(const real* const bottom2d,
-                       const real* const d_anchor3d,
-                       const real* const roi2d,
-                       const real* const img_info1d,
-                       real* const top2d,
-                       int* num_output,
-                       real* const proposals,
-                       int* const keep,
-                       const int num_rois, const int num_classes,
-                       const int min_size,
-                       const real score_thresh, const real nms_thresh)
-{
-  // input image height & width
-  const real img_H = img_info1d[0];
-  const real img_W = img_info1d[1];
-  // minimum box width & height
-  const real min_box_H = min_size * img_info1d[2];
-  const real min_box_W = min_size * img_info1d[3];
-
-  // do for each object class (skip background class)
-  real* p_top2d = top2d;
-  for (int c = 1; c < num_classes; ++c) {
-    // enumerate all RCNN box outputs ("num_rois" outputs for each class)
-    for (int r = 0; r < num_rois; ++r) {
-      const int index = r * num_classes + c;
-      const real dx = d_anchor3d[index * 4 + 0];
-      const real dy = d_anchor3d[index * 4 + 1];
-      const real d_log_w = d_anchor3d[index * 4 + 2];
-      const real d_log_h = d_anchor3d[index * 4 + 3];
-
-      proposals[r * 5 + 0] = roi2d[r * 4 + 0];
-      proposals[r * 5 + 1] = roi2d[r * 4 + 1];
-      proposals[r * 5 + 2] = roi2d[r * 4 + 2];
-      proposals[r * 5 + 3] = roi2d[r * 4 + 3];
-
-      proposals[r * 5 + 4]
-          = transform_box(&proposals[r * 5],
-                          dx, dy, d_log_w, d_log_h,
-                          img_W, img_H, min_box_W, min_box_H)
-            * bottom2d[index];
-    }
-
-    // choose outputs according to scores & overlap
-    {
-      // filter-out boxes whose scores less than threshold
-      const int num_pre_nms = filter_box(proposals, num_rois, score_thresh);
-      int num_post_nms = 0;
-
-      // sort & NMS
-      if (num_pre_nms > 1) {
-        sort_box(proposals, 0, num_pre_nms - 1);
-        nms(num_pre_nms,  proposals,  &num_post_nms,  keep,  0,
-            nms_thresh,  num_pre_nms);
-      }
-      else {
-        num_post_nms = num_pre_nms;
-        keep[0] = 0;
-      }
-
-      // retrieve final outputs & resize box to raw image size
-      for (int r = 0; r < num_post_nms; ++r) {
-        p_top2d[r * 6 + 0] = c;
-        p_top2d[r * 6 + 1] = proposals[keep[r] * 5 + 0] / img_info1d[3];
-        p_top2d[r * 6 + 2] = proposals[keep[r] * 5 + 1] / img_info1d[2];
-        p_top2d[r * 6 + 3] = proposals[keep[r] * 5 + 2] / img_info1d[3];
-        p_top2d[r * 6 + 4] = proposals[keep[r] * 5 + 3] / img_info1d[2];
-        p_top2d[r * 6 + 5] = proposals[keep[r] * 5 + 4];
-      }
-
-      *num_output += num_post_nms;
-      p_top2d += num_post_nms * 6;
-    }
-  } // endfor class
-}
-#endif
 
 
 
@@ -374,22 +384,14 @@ void odout_forward(const Tensor* const bottom2d,
     const int num_classes = bottom2d->shape[n][1];
     int num_output = 0;
 
+    // remove duplicated boxes, and select final output boxes
     {
-    #ifdef GPU
-      filter_output_gpu(
+      filter_output(
           p_bottom_item,  p_d_anchor_item,  p_roi_item,  p_img_info,
           p_top_item,  &num_output,
           proposals,  keep,  proposals_dev,  keep_dev,
           num_rois,  num_classes,
           option->min_size,  option->score_thresh,  option->nms_thresh);
-    #else
-      filter_output_cpu(
-          p_bottom_item,  p_d_anchor_item,  p_roi_item,  p_img_info,
-          p_top_item,  &num_output,
-          proposals,  keep,
-          num_rois,  num_classes,
-          option->min_size,  option->score_thresh,  option->nms_thresh);
-    #endif
 
       // set top shape: num_output x 6
       //   (class index, x1, y1, x2, y2, score) for each output
@@ -448,7 +450,7 @@ void odout_shape(const Tensor* const bottom2d,
     // calculate total number of RoIs for determining temporary space size
     total_num_rois += num_rois * num_classes;
 
-    // top shape <= num_rois x 6
+    // top shape <= (num_rois * num_classes) x 6
     //   (class index, x1, y1, x2, y2, score) for each output
     //   exact number of outputs will be determined after forward-pass
     top2d->shape[n][0] = num_rois * num_classes;

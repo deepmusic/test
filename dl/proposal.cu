@@ -458,9 +458,12 @@ void proposal_forward(const Tensor* const bottom4d,
     // input image height & width
     const real img_H = p_img_info[0];
     const real img_W = p_img_info[1];
+    // scale factor for height & width
+    const real scale_H = p_img_info[2];
+    const real scale_W = p_img_info[3];
     // minimum box width & height
-    const real min_box_H = option->min_size * p_img_info[2];
-    const real min_box_W = option->min_size * p_img_info[3];
+    const real min_box_H = option->min_size * scale_H;
+    const real min_box_W = option->min_size * scale_W;
 
     // enumerate all proposals
     //   num_proposals = num_anchors * H * W

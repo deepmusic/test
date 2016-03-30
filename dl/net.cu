@@ -334,7 +334,6 @@ void save_layer_tops(void* const net_, void* const layer_)
   Layer* layer = (Layer*)layer_;
 
   for (int i = 0; i < layer->num_tops; ++i) {
-    const long int size = flatten_size(&layer->tops[i]);
     char path[1024];
     sprintf(path, "params/%s_top%d.rt.bin", layer->name, i);
     save_tensor_data(path, &layer->tops[i], net->output_cpu_data);

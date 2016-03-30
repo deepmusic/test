@@ -1,5 +1,4 @@
 #include "layer.h"
-#include <stdio.h>
 
 // --------------------------------------------------------------------------
 // layer operator code

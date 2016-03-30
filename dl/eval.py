@@ -42,17 +42,17 @@ def test_net(filename, **kwargs):
   for i in xrange(num_images):
     ndim = unpack("i", f.read(4))[0]
     shape = np.frombuffer(f.read(ndim * 4), dtype=np.int32, count=-1)
-    num_boxes = shape[0] / (imdb.num_classes - 1)
+    num_boxes = shape[0] / imdb.num_classes
     data = np.frombuffer(f.read(np.prod(shape) * 4), dtype=np.float32, count=-1) \
-             .reshape((imdb.num_classes-1, num_boxes, 6))
-    scores = data[:,:,5].swapaxes(0, 1)
-    boxes = data[:,:,1:5].swapaxes(0, 1).reshape(num_boxes, -1)
+             .reshape((num_boxes, imdb.num_classes, 6))
+    scores = data[:,:,5]
+    boxes = data[:,:,1:5].reshape(num_boxes, -1)
     print [i, scores.shape, boxes.shape]
 
     for j in xrange(1, imdb.num_classes):
-      inds = np.where(scores[:, j-1] > thresh[j])[0]
-      cls_scores = scores[inds, j-1]
-      cls_boxes = boxes[inds, (j-1)*4:j*4]
+      inds = np.where(scores[:, j] > thresh[j])[0]
+      cls_scores = scores[inds, j]
+      cls_boxes = boxes[inds, j*4:(j+1)*4]
       top_inds = np.argsort(-cls_scores)[:max_per_image]
       cls_scores = cls_scores[top_inds]
       cls_boxes = cls_boxes[top_inds, :]

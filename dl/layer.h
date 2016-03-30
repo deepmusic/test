@@ -343,6 +343,15 @@ void shape_odout_layer(void* const net_, void* const layer_);
 
 
 // --------------------------------------------------------------------------
+// object detection test output (for measuring MAP performance)
+// --------------------------------------------------------------------------
+
+void forward_odtest_layer(void* const net_, void* const layer_);
+void shape_odtest_layer(void* const net_, void* const layer_);
+
+
+
+// --------------------------------------------------------------------------
 // softmax
 //   softmax_forward
 //   softmax_inplace_forward
