@@ -188,6 +188,8 @@ int test(const char* const args[], const int num_args)
   Net frcnn;
   const char* const command = args[0];
 
+  cv::imshow("faster-rcnn", 0);
+
   #ifdef GPU
   cudaSetDevice(0);
   #endif
@@ -200,8 +202,8 @@ int test(const char* const args[], const int num_args)
       printf("Cannot open camera(0)\n");
       return -1;
     }
-    vc.set(CV_CAP_PROP_FRAME_WIDTH, 640);
-    vc.set(CV_CAP_PROP_FRAME_HEIGHT, 480);
+    vc.set(CV_CAP_PROP_FRAME_WIDTH, 1920);
+    vc.set(CV_CAP_PROP_FRAME_HEIGHT, 1080);
     test_stream(&frcnn, vc);
   }
 
