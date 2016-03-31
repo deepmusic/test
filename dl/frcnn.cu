@@ -39,10 +39,12 @@ void setup_frcnn_7_1_1(Net* const net)
 
   net->img_info = (Tensor*)malloc(sizeof(Tensor));
 
-  real anchor_scales[5] = { 3.0f, 6.0f, 9.0f, 16.0f, 32.0f };
-  real anchor_ratios[5] = { 0.5f, 0.666f, 1.0f, 1.5f, 2.0f };
-  memcpy(net->anchor_scales, anchor_scales, 5 * sizeof(real));
-  memcpy(net->anchor_ratios, anchor_ratios, 5 * sizeof(real));
+  real anchor_scales[9] = { 3.0f, 6.0f, 9.0f,
+                            4.0f, 8.0f, 16.0f,
+                            7.0f, 13.0f, 32.0f };
+  real anchor_ratios[3] = { 0.5f, 1.0f, 2.0f };
+  memcpy(net->anchor_scales, anchor_scales, 9 * sizeof(real));
+  memcpy(net->anchor_ratios, anchor_ratios, 3 * sizeof(real));
 
   net->num_layer_data = 4;
 
@@ -149,20 +151,20 @@ void setup_frcnn_7_1_1(Net* const net)
     net->layers[15]->option.out_channels = 512;
     net->layers[17]->option.out_channels = 512;
     net->layers[18]->option.out_channels = 128;
-    net->layers[19]->option.out_channels = 50;
-    net->layers[20]->option.out_channels = 100;
+    net->layers[19]->option.out_channels = 18;
+    net->layers[20]->option.out_channels = 36;
     net->layers[21]->option.out_channels = 256;
-    net->layers[22]->option.out_channels = 50;
-    net->layers[23]->option.out_channels = 100;
+    net->layers[22]->option.out_channels = 18;
+    net->layers[23]->option.out_channels = 36;
     net->layers[24]->option.out_channels = 128;
-    net->layers[25]->option.out_channels = 50;
-    net->layers[26]->option.out_channels = 100;
+    net->layers[25]->option.out_channels = 18;
+    net->layers[26]->option.out_channels = 36;
 
     net->layers[30]->option.scales = &net->anchor_scales[0];
     net->layers[30]->option.ratios = &net->anchor_ratios[0];
-    net->layers[30]->option.num_scales = 5;
-    net->layers[30]->option.num_ratios = 5;
-    net->layers[30]->option.num_concats = 3;
+    net->layers[30]->option.num_scales = 9;
+    net->layers[30]->option.num_ratios = 3;
+    net->layers[30]->option.num_concats = 1;
     net->layers[30]->option.base_size = 16;
     net->layers[30]->option.feat_stride = 16;
     net->layers[30]->option.min_size = 16;
@@ -191,8 +193,8 @@ void setup_frcnn_7_1_1(Net* const net)
     net->layers[34]->option.out_channels = 4096;
     net->layers[35]->option.out_channels = 128;
     net->layers[36]->option.out_channels = 4096;
-    net->layers[37]->option.out_channels = 21;
-    net->layers[39]->option.out_channels = 84;
+    net->layers[37]->option.out_channels = 22;
+    net->layers[39]->option.out_channels = 88;
 
     net->layers[40]->option.min_size = 16;
     net->layers[40]->option.score_thresh = 0.7f;

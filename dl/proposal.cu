@@ -69,19 +69,21 @@ void generate_anchors(real* const anchors,
   {
     real* p_anchors = anchors;
     for (int c = 0; c < option->num_concats; ++c) {
-      for (int i = 0; i < option->num_ratios; ++i) {
-        for (int j = 0; j < option->num_scales; ++j) {
-          // transformed width & height for given ratios & scales
-          const real ws = 0.5f * (wr[i] * option->scales[j] - 1.0f);
-          const real hs = 0.5f * (hr[i] * option->scales[j] - 1.0f);
-          // (x1, y1, x2, y2) for transformed box
-          p_anchors[0] = ctr - ws;
-          p_anchors[1] = ctr - hs;
-          p_anchors[2] = ctr + ws;
-          p_anchors[3] = ctr + hs;
-          p_anchors += 4;
-        } // endfor j
-      } // endfor i
+      for (int j0 = 0; j0 < option->num_scales; j0 += option->num_ratios) {
+        for (int i = 0; i < option->num_ratios; ++i) {
+          for (int j = 0; j < option->num_ratios; ++j) {
+            // transformed width & height for given ratios & scales
+            const real ws = 0.5f * (wr[i] * option->scales[j0 + j] - 1.0f);
+            const real hs = 0.5f * (hr[i] * option->scales[j0 + j] - 1.0f);
+            // (x1, y1, x2, y2) for transformed box
+            p_anchors[0] = ctr - ws;
+            p_anchors[1] = ctr - hs;
+            p_anchors[2] = ctr + ws;
+            p_anchors[3] = ctr + hs;
+            p_anchors += 4;
+          } // endfor j
+        } // endfor i
+      } // endfor j0
     } // endfor c
   }
 }

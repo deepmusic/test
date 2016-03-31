@@ -333,20 +333,6 @@ void init_proposal_layer(void* const net_, void* const layer_);
 void forward_proposal_layer(void* const net_, void* const layer_);
 void shape_proposal_layer(void* const net_, void* const layer_);
 
-// given a base box, enumerate transformed boxes of varying sizes and ratios
-//   option->base_size: base box's width & height (i.e., base box is square)
-//   option->scales: "option->num_scales x 1" array
-//                   varying scale factor for base box
-//   option->ratios: "option->num_ratios x 1" array
-//                   varying height-width ratio
-//   option->num_concats: repeat count of anchor set generation
-//                        (required for separated RPN)
-//   anchors: "num_boxes x 4" array,  (x1, y1, x2, y2) for each box
-//     num_boxes = total number of transformations
-//         = option->num_scales * option->num_ratios * option->num_concats
-void generate_anchors(real* const anchors,
-                      const LayerOption* const option);
-
 
 
 // --------------------------------------------------------------------------
