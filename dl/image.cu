@@ -1,14 +1,8 @@
 #include "layer.h"
-#include <cstring>
-#include <map>
-#include <string>
-#include <vector>
+#include <string.h>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
-#include <stdio.h>
-
-using namespace cv;
 
 #ifdef GPU
 #define PASS
@@ -149,12 +143,12 @@ void img2input(const unsigned char* const img,
 
   const int n = img_info1d->num_items;
   real* const p_img_info1d = img_info1d->data + n * 6;
-  p_img_info1d[0] = resized_height;
-  p_img_info1d[1] = resized_width;
+  p_img_info1d[0] = (real)resized_height;
+  p_img_info1d[1] = (real)resized_width;
   p_img_info1d[2] = img_scale_y;
   p_img_info1d[3] = img_scale_x;
-  p_img_info1d[4] = height;
-  p_img_info1d[5] = width;
+  p_img_info1d[4] = (real)height;
+  p_img_info1d[5] = (real)width;
 
   #ifdef PASS
   {
@@ -195,14 +189,14 @@ void load_image(const char* const filename,
                 Tensor* const img_info1d,
                 real* const temp_data)
 {
-  Mat image = imread(filename);
+  cv::Mat image = cv::imread(filename);
   if (!image.data) {
     printf("[ERROR] Cannot open image: %s\n", image.data);
   }
 
   const int height = image.rows;
   const int width = image.cols;
-  const int stride = image.step.p[0];
+  const int stride = (int)image.step.p[0];
 /*
   printf("Image %s: %d x %d, stride=%d\n", filename, height, width, stride);
   char path[1024];

@@ -426,7 +426,6 @@ void shape_conv_layer(void* const net_, void* const layer_)
 // --------------------------------------------------------------------------
 
 #ifdef TEST
-#include <stdio.h>
 
 int main(int argc, char* argv[])
 {

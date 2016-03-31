@@ -1,5 +1,5 @@
 #include "layer.h"
-#include "limits.h"
+#include <limits.h>
 
 // --------------------------------------------------------------------------
 // kernel code
@@ -305,16 +305,17 @@ void dropout_forward_inplace(Tensor* const bottom,
     else {
       // TODO: random number generation
 
+      unsigned int uint_thresh = (unsigned int)option->threshold * UINT_MAX;
       if (option->scaled) {
         // scaled dropout
         dropout_scaled_inplace_gpu<<<num_blocks, threads_per_block>>>(
-            bottom->data,  mask,  data_size,  option->threshold,
+            bottom->data,  mask,  data_size,  uint_thresh,
             1.0f / (1.0f - option->threshold));
       }
       else {
         // dropout
         dropout_inplace_gpu<<<num_blocks, threads_per_block>>>(
-            bottom->data,  mask,  data_size,  option->threshold);
+            bottom->data,  mask,  data_size,  uint_thresh);
       }
     }
   }
@@ -334,16 +335,17 @@ void dropout_forward_inplace(Tensor* const bottom,
     else {
       // TODO: random number generation
 
+      unsigned int uint_thresh = (unsigned int)option->threshold * UINT_MAX;
       if (option->scaled) {
         // scaled dropout
         dropout_scaled_inplace_cpu(
-            bottom->data,  mask,  data_size,  option->threshold,
+            bottom->data,  mask,  data_size,  uint_thresh,
             1.0f / (1.0f - option->threshold));
       }
       else {
         // dropout
         dropout_inplace_cpu(
-            bottom->data, mask, data_size, option->threshold);
+            bottom->data,  mask,  data_size,  uint_thresh);
       }
     }
   }
@@ -409,7 +411,6 @@ void shape_dropout_layer(void* const net_, void* const layer_)
 // --------------------------------------------------------------------------
 
 #ifdef TEST
-#include <stdio.h>
 
 int main(int argc, char* argv[])
 {

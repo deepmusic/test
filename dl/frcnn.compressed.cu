@@ -1,5 +1,4 @@
 #include "layer.h"
-#include <stdio.h>
 #include <string.h>
 
 static
@@ -504,10 +503,9 @@ void construct_frcnn_7_1_1(Net* net)
   }
 }
 
-static
-void prepare_input(Net* net,
-                   const char* const filename[],
-                   const int num_images)
+void get_input_frcnn_7_1_1(Net* net,
+                           const char* const filename[],
+                           const int num_images)
 {
   Tensor* input = &net->layers[0]->tops[0];
   //input->data = net->input_cpu_data;
@@ -539,8 +537,9 @@ void prepare_input(Net* net,
   print_tensor_info("img_info", net->img_info);
 }
 
-static
-void get_output(Net* net, const int image_start_index, FILE* fp)
+void get_output_frcnn_7_1_1(Net* net,
+                            const int image_start_index,
+                            FILE* fp)
 {
   // retrieve & print output
   {
@@ -633,13 +632,13 @@ int main(int argc, char* argv[])
       buf_count += len;
       if (count == input->num_items) {
         // input data loading
-        prepare_input(&frcnn, (const char * const *)&line, count);
+        get_input_frcnn_7_1_1(&frcnn, (const char * const *)&line, count);
 
         // forward-pass
         forward_net(&frcnn);
 
         // retrieve output & save to file
-        get_output(&frcnn, total_count, fp_out);
+        get_output_frcnn_7_1_1(&frcnn, total_count, fp_out);
 
         total_count += count;
         count = 0;
@@ -648,9 +647,9 @@ int main(int argc, char* argv[])
     }
 
     if (count > 0) {
-      prepare_input(&frcnn, (const char * const *)&line, count);
+      get_input_frcnn_7_1_1(&frcnn, (const char * const *)&line, count);
       forward_net(&frcnn);
-      get_output(&frcnn, total_count, fp_out);
+      get_output_frcnn_7_1_1(&frcnn, total_count, fp_out);
     }
 
     fclose(fp_list);

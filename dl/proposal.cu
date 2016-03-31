@@ -28,7 +28,6 @@
 */
 
 #include "layer.h"
-#include <math.h>
 
 // --------------------------------------------------------------------------
 // kernel code
@@ -55,15 +54,15 @@ void generate_anchors(real* const anchors,
                       const LayerOption* const option)
 {
   // base box's width & height & center location
-  const real base_area = option->base_size * option->base_size;
+  const real base_area = (real)(option->base_size * option->base_size);
   const real ctr = 0.5f * (option->base_size - 1.0f);
 
   // transformed width & height for given ratios
   real wr[MAX_NUM_RATIO_SCALE];
   real hr[MAX_NUM_RATIO_SCALE];
   for (int i = 0; i < option->num_ratios; ++i) {
-    wr[i] = ROUND(sqrt(base_area / option->ratios[i]));
-    hr[i] = ROUND(wr[i] * option->ratios[i]);
+    wr[i] = (real)ROUND(sqrt(base_area / option->ratios[i]));
+    hr[i] = (real)ROUND(wr[i] * option->ratios[i]);
   }
 
   // enumerate all transformed boxes
@@ -691,7 +690,6 @@ void shape_proposal_layer(void* const net_, void* const layer_)
 // --------------------------------------------------------------------------
 
 #ifdef TEST
-#include <stdio.h>
 
 int main(int argc, char* argv[])
 {

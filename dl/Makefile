@@ -10,9 +10,9 @@ BUILD_DIR := build
 all: demo_cpu.bin demo_gpu.bin frcnn_cpu.bin frcnn_gpu.bin
 
 demo_cpu.bin: demo.cpp.cpu.o frcnn.cpu.o $(BUILD_DIR)/libdlcpu.a
-	$(CC) -o $@ $^ $(LDFLAGS) -lgflags
+	$(CC) -o $@ $^ $(LDFLAGS)
 demo_gpu.bin: demo.gpu.o frcnn.gpu.o $(BUILD_DIR)/libdlgpu.a
-	$(NVCC) -o $@ $^ $(NVLDFLAGS) -lgflags
+	$(NVCC) -o $@ $^ $(NVLDFLAGS)
 
 frcnn_cpu.bin: frcnn.cpp.cpu.test.o $(BUILD_DIR)/libdlcpu.a
 	$(CC) -o $@ $^ $(LDFLAGS)
@@ -33,7 +33,7 @@ $(BUILD_DIR)/libdlgpu.a: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu
 
 clean:
 	rm -rf $(BUILD_DIR)
-	rm *.cpu.o *.gpu.o *.bin
+	rm *.cpu.o *.gpu.o *.bin *.test.o
 
 %.cpu.o: %.cu layer.h
 	cp $< $*.c

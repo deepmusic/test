@@ -9,8 +9,10 @@
   #include "cuda_settings.h"
 #else
   #include <cblas.h>
+  #include <math.h>
 #endif
 
+#include <stdio.h>
 #include <stdlib.h>
 
 
@@ -267,6 +269,14 @@ void print_layer_tops(const Net* const net,
 // --------------------------------------------------------------------------
 
 void construct_frcnn_7_1_1(Net* net);
+
+void get_input_frcnn_7_1_1(Net* net,
+                           const char* const filename[],
+                           const int num_images);
+
+void get_output_frcnn_7_1_1(Net* net,
+                            const int image_start_index,
+                            FILE* fp);
 
 
 

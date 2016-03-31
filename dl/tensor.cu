@@ -1,5 +1,4 @@
 #include "layer.h"
-#include <stdio.h>
 #include <string.h>
 
 // initialize: set all values to 0
@@ -165,23 +164,28 @@ long int flatten_size(const Tensor* const tensor)
 void print_tensor_info(const char* const name,
                        const Tensor* const tensor)
 {
-  return;
-  printf("%s: ", name);
-  if (tensor->num_items > 1) {
-    printf("batch size = %d\n", tensor->num_items);
-    for (int n = 0; n < tensor->num_items; ++n) {
-      printf("  ");
-      for (int i = 0; i < tensor->ndim - 1; ++i) {
-        printf("%d x ", tensor->shape[n][i]);
+  #ifdef DEBUG
+  {
+    printf("%s: ", name);
+    if (tensor->num_items > 1) {
+      printf("batch size = %d\n", tensor->num_items);
+      for (int n = 0; n < tensor->num_items; ++n) {
+        printf("  ");
+        for (int i = 0; i < tensor->ndim - 1; ++i) {
+          printf("%d x ", tensor->shape[n][i]);
+        }
+        printf("%d, ", tensor->shape[n][tensor->ndim - 1]);
+        printf("start = %d\n", tensor->start[n]);
       }
-      printf("%d, ", tensor->shape[n][tensor->ndim - 1]);
-      printf("start = %d\n", tensor->start[n]);
+    }
+    else {
+      for (int i = 0; i < tensor->ndim - 1; ++i) {
+        printf("%d x ", tensor->shape[0][i]);
+      }
+      printf("%d\n", tensor->shape[0][tensor->ndim - 1]);
     }
   }
-  else {
-    for (int i = 0; i < tensor->ndim - 1; ++i) {
-      printf("%d x ", tensor->shape[0][i]);
-    }
-    printf("%d\n", tensor->shape[0][tensor->ndim - 1]);
-  }
+  #endif
+
+  return;
 }

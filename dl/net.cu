@@ -1,6 +1,5 @@
 #include "layer.h"
 #include <string.h>
-#include <stdio.h>
 
 void init_layer(Layer* const layer)
 {

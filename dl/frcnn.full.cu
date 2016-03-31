@@ -1,5 +1,4 @@
 #include "layer.h"
-#include <stdio.h>
 #include <string.h>
 
 static
@@ -504,10 +503,9 @@ void construct_frcnn_7_1_1(Net* net)
   }
 }
 
-static
-void prepare_input(Net* net,
-                   const char* const filename[],
-                   const int num_images)
+void get_input_frcnn_7_1_1(Net* net,
+                           const char* const filename[],
+                           const int num_images)
 {
   Tensor* input = &net->layers[0]->tops[0];
   //input->data = net->input_cpu_data;
@@ -539,8 +537,9 @@ void prepare_input(Net* net,
   print_tensor_info("img_info", net->img_info);
 }
 
-static
-void get_output(Net* net, const int image_start_index, FILE* fp)
+void get_output_frcnn_7_1_1(Net* net,
+                            const int image_start_index,
+                            FILE* fp)
 {
   // retrieve & print output
   {
