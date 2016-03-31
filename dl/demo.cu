@@ -5,7 +5,11 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
-#include "boost/date_time/posix_time/posix_time.hpp"
+#ifdef _MSC_VER
+  #include <time.h>
+#else
+  #include "boost/date_time/posix_time/posix_time.hpp"
+#endif
 
 using std::ostringstream;
 
@@ -127,7 +131,7 @@ void detect_frame(Net* const net,
         time = (real)(tick1 - tick0) / CLOCKS_PER_SEC;
       }
       else {
-        time = time * 0.9f + (real)(tick1 - tick0) / CLOCKS_PER_SEC * 0.1;
+        time = time * 0.9f + (real)(tick1 - tick0) / CLOCKS_PER_SEC * 0.1f;
       }
     }
 
