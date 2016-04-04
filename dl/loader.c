@@ -17,18 +17,18 @@ const static char* gs_types[MAX_NUM_TYPES] = {
   0,
 };
 
-const static int UNKNOWN_TYPE = 0;
-const static int INT_VAL = 1;
-const static int REAL_VAL = 2;
-const static int CONST_VAL = 3;
-const static int NAME = 4;
-const static int OPTION = 5;
-const static int BLOCK = 6;
-const static int BLOCK_BEGIN = 7;
-const static int BLOCK_END = 8;
+#define UNKNOWN_TYPE 0
+#define INT_VAL 1
+#define REAL_VAL 2
+#define CONST_VAL 3
+#define NAME 4
+#define OPTION 5
+#define BLOCK 6
+#define BLOCK_BEGIN 7
+#define BLOCK_END 8
 
 
-#define MAX_NUM_WORDS 1024
+#define MAX_NUM_ENTRIES 1024
 
 typedef struct HashEntry_
 {
@@ -36,7 +36,7 @@ typedef struct HashEntry_
   int type;
 } HashEntry;
 
-static HashEntry gs_reserved[MAX_NUM_WORDS] = {
+static HashEntry gs_reserved[MAX_NUM_ENTRIES] = {
   { "__UNDEFINED__", UNKNOWN_TYPE },
   //-----------------------------------
   { "param", BLOCK },
@@ -125,7 +125,11 @@ static HashEntry gs_reserved[MAX_NUM_WORDS] = {
   { 0, 0 },
 };
 
-static int gs_reserved_indices[MAX_NUM_WORDS] = { 0, };
+static int gs_reserved_indices[MAX_NUM_ENTRIES] = { 0, };
+
+
+static HashEntry gs_runtime[MAX_NUM_ENTRIES] = { { 0, 0 }, };
+static int gs_runtime_indices[MAX_NUM_ENTRIES] = { 0, };
 
 
 static
@@ -144,18 +148,40 @@ unsigned int str2hash(const char* const str)
   return hash;
 }
 
+
 static
-int find_hash_table(const char* const key,
-                    const HashEntry* const entries,
-                    const int* const indices)
+int add_hash_entry(const char* const key,
+                   HashEntry* const entries,
+                   int* const indices,
+                   const int num_entries)
 {
-  unsigned int hash = str2hash(key) % MAX_NUM_WORDS;
+  unsigned int hash = str2hash(key) % MAX_NUM_ENTRIES;
 
   while (indices[hash]) {
     if (strcmp(key, entries[indices[hash]].key) == 0) {
       return indices[hash];
     }
-    hash = (hash == MAX_NUM_WORDS - 1) ? 0 : hash + 1;
+    hash = (hash == MAX_NUM_ENTRIES - 1) ? 0 : hash + 1;
+  }
+
+  indices[hash] = num_entries + 1;
+  entries[indices[hash]].key = key;
+
+  return indices[hash];
+}
+
+static
+int find_hash_entry(const char* const key,
+                    const HashEntry* const entries,
+                    const int* const indices)
+{
+  unsigned int hash = str2hash(key) % MAX_NUM_ENTRIES;
+
+  while (indices[hash]) {
+    if (strcmp(key, entries[indices[hash]].key) == 0) {
+      return indices[hash];
+    }
+    hash = (hash == MAX_NUM_ENTRIES - 1) ? 0 : hash + 1;
   }
 
   return 0;
@@ -165,17 +191,17 @@ static
 int str2type(const char* const word)
 {
   {
-    int index = find_hash_table(word, gs_reserved, gs_reserved_indices);
+    int index = find_hash_entry(word, gs_reserved, gs_reserved_indices);
     if (index) {
       return gs_reserved[index].type;
     }
   }
 
   {
-    if (word[0] == '"' || word[0] == '\'') {
+    if (word[0] == '"') {
       const char* p_word = word;
       while (*(++p_word));
-      if (*(p_word - 1) == '"' || *(p_word - 1) == '\'') {
+      if (*(p_word - 1) == '"') {
         return CONST_VAL;
       }
     }
@@ -219,20 +245,20 @@ void init_hash_table(const HashEntry* const entries,
 {
   int num_collisions = 0;
 
-  for (int i = 0; i < MAX_NUM_WORDS; ++i) {
+  for (int i = 0; i < MAX_NUM_ENTRIES; ++i) {
     if (!entries[i].key) {
       break;
     }
 
     {
-      unsigned int hash = str2hash(entries[i].key) % MAX_NUM_WORDS;
+      unsigned int hash = str2hash(entries[i].key) % MAX_NUM_ENTRIES;
       while (indices[hash]) {
-        hash = (hash == MAX_NUM_WORDS - 1) ? 0 : hash + 1;
+        hash = (hash == MAX_NUM_ENTRIES - 1) ? 0 : hash + 1;
         ++num_collisions;
       }
       indices[hash] = i;
       printf("%s: %u, %d\n",
-             entries[i].key, str2hash(entries[i].key) % MAX_NUM_WORDS, hash);
+             entries[i].key, str2hash(entries[i].key) % MAX_NUM_ENTRIES, hash);
     }
   }
 
@@ -275,10 +301,14 @@ int read_str(FILE* fp, char* const buf)
       }
     }
 
-    if (ch == ' ' || ch == '\n' || ch == '\r' || ch == '\t' ||
+    else if (ch == ' ' || ch == '\n' || ch == '\r' || ch == '\t' ||
         ch == '#' || ch == ':') {
       ungetc(ch, fp);
       break;
+    }
+
+    else if (ch == '\'') {
+      ch = '"';
     }
 
     p_buf[len++] = ch;
@@ -288,16 +318,40 @@ int read_str(FILE* fp, char* const buf)
   return len;
 }
 
-void layer_begin(Net* net)
+void layer_begin(Net* const net)
 {
   net->layers[net->num_layers] = (Layer*)malloc(sizeof(Layer));
   printf("Layer %d creation started\n", net->num_layers);
 }
 
-void layer_end(Net* net)
+void layer_end(Net* const net)
 {
   printf("Layer %d creation finished\n", net->num_layers);
   ++net->num_layers;
+}
+
+void layer_name(Net* const net, const char* const name)
+{
+  const int index = add_hash_entry(name, gs_runtime,
+                                   gs_runtime_indices, net->num_layers);
+  Layer* const p_layer = net->layers[net->num_layers];
+  char* p_layer_name = p_layer->name;
+  const char* p_name = name + 1;
+
+  while (*(p_layer_name++) = (*p_name++));
+  *(p_layer_name - 2) = 0;
+
+  if (index != net->num_layers + 1) {
+    printf("[ERROR] Du\n");
+  }
+}
+
+void layer_option(Net* const net,
+                  const char* const arg,
+                  const char* const val,
+                  const int type)
+{
+  if (strcmp(arg
 }
 
 int main(int argc, char* argv[])
@@ -320,7 +374,7 @@ int main(int argc, char* argv[])
       switch (type) {
         case BLOCK:
         case OPTION:
-          args[level] = find_hash_table(buf, gs_reserved, gs_reserved_indices);
+          args[level] = find_hash_entry(buf, gs_reserved, gs_reserved_indices);
           break;
         case BLOCK_BEGIN:
           if (gs_reserved[args[level]].type != BLOCK) {
@@ -347,7 +401,7 @@ int main(int argc, char* argv[])
           break;
         case NAME:
         case CONST_VAL:
-          word_idx = find_hash_table(buf, gs_reserved, gs_reserved_indices);
+          word_idx = find_hash_entry(buf, gs_reserved, gs_reserved_indices);
           line_idx += sprintf(line + line_idx, "%s:%s(%s,%d) ", gs_reserved[args[level]].key, buf, gs_types[type], word_idx);
           break;
         case INT_VAL:
