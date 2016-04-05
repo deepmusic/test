@@ -8,137 +8,48 @@ const static char* gs_types[MAX_NUM_TYPES] = {
   "__UNKNOWN_TYPE__",
   "INT_VAL",
   "REAL_VAL",
-  "CONST_VAL",
-  "NAME",
-  "OPTION",
-  "BLOCK",
-  "{",
-  "}",
+  "STRING_VAL",
+  "TENSOR_VAL",
+  "ENTRY_VAL",
+  "LAYER",
+  "OPERATOR",
   0,
 };
 
 #define UNKNOWN_TYPE 0
 #define INT_VAL 1
 #define REAL_VAL 2
-#define CONST_VAL 3
-#define NAME 4
-#define OPTION 5
-#define BLOCK 6
-#define BLOCK_BEGIN 7
-#define BLOCK_END 8
+#define STRING_VAL 3
+#define TENSOR_VAL 4
+#define ENTRY_VAL 5
+#define LAYER 6
+#define OPERATOR 7
 
 
-#define MAX_NUM_ENTRIES 1024
+#define MAX_NUM_ENTRIES 65536
 
 typedef struct HashEntry_
 {
-  const char* const key;
+  char* key;
   int type;
+  int num_values;
+  void** values;
 } HashEntry;
 
-static HashEntry gs_reserved[MAX_NUM_ENTRIES] = {
-  { "__UNDEFINED__", UNKNOWN_TYPE },
-  //-----------------------------------
-  { "param", BLOCK },
-  { "std", OPTION },
-  //-----------------------------------
-  { "bias_filler", BLOCK },
-  { "concat_param", BLOCK },
-  { "convolution_param", BLOCK },
-  { "dropout_param", BLOCK },
-  { "inner_product_param", BLOCK },
-  { "input", BLOCK },
-  { "input_shape", BLOCK },
-  { "layer", BLOCK },
-  { "loss_param", BLOCK },
-  { "pooling_param", BLOCK },
-  { "proposal_param", BLOCK },
-  { "reshape_param", BLOCK },
-  { "roi_pooling_param", BLOCK },
-  { "shape", BLOCK },
-  { "weight_filler", BLOCK },
-  //-----------------------------------
-  { "{", BLOCK_BEGIN },
-  { "}", BLOCK_END },
-  //-----------------------------------
-  { "axis", OPTION },
-  { "base_size", OPTION },
-  { "bias_term", OPTION },
-  { "bottom", OPTION },
-  { "class_name", OPTION },
-  { "conf_thresh", OPTION },
-  { "copys", OPTION },
-  { "decay_mult", OPTION },
-  { "dim", OPTION },
-  { "dropout_ratio", OPTION },
-  { "feat_stride", OPTION },
-  { "group", OPTION },
-  { "ignore_label", OPTION },
-  { "kernel_h", OPTION },
-  { "kernel_w", OPTION },
-  { "kernel_size", OPTION },
-  { "lr_mult", OPTION },
-  { "max_size", OPTION },
-  { "mean_value", OPTION },
-  { "min_size", OPTION },
-  { "multiple", OPTION },
-  { "name", OPTION },
-  { "nms_thresh", OPTION },
-  { "normalize", OPTION },
-  { "num_output", OPTION },
-  { "pad", OPTION },
-  { "pad_h", OPTION },
-  { "pad_w", OPTION },
-  { "pool", OPTION },
-  { "pooled_h", OPTION },
-  { "pooled_w", OPTION },
-  { "post_nms_topn", OPTION },
-  { "pre_nms_topn", OPTION },
-  { "ratio", OPTION },
-  { "scale", OPTION },
-  { "scale_train", OPTION },
-  { "spatial_scale", OPTION },
-  { "stride", OPTION },
-  { "stride_h", OPTION },
-  { "stride_w", OPTION },
-  { "top", OPTION },
-  { "type", OPTION },
-  { "value", OPTION },
-  //-----------------------------------
-  { "\"ReLU\"", NAME },
-  //-----------------------------------
-  { "\"Concat\"", NAME },
-  { "\"Convolution\"", NAME },
-  { "\"Deconvolution\"", NAME },
-  { "\"Dropout\"", NAME },
-  { "\"InnerProduct\"", NAME },
-  { "\"Pooling\"", NAME },
-  { "\"Proposal\"", NAME },
-  { "\"Reshape\"", NAME },
-  { "\"ROIPooling\"", NAME },
-  { "\"Softmax\"", NAME },
-  //-----------------------------------
-  { "false", CONST_VAL },
-  { "true", CONST_VAL },
-  { "MAX", CONST_VAL },
-  //-----------------------------------
-  { 0, 0 },
+
+static HashEntry gs_all_entries[MAX_NUM_ENTRIES] = {
+  { 0, 0, 0, 0 },
 };
 
-static int gs_reserved_indices[MAX_NUM_ENTRIES] = { 0, };
 
-
-static HashEntry gs_runtime[MAX_NUM_ENTRIES] = { { 0, 0 }, };
-static int gs_runtime_indices[MAX_NUM_ENTRIES] = { 0, };
-
-
-static
-unsigned int str2hash(const char* const str)
+unsigned int entry2hash(const char* const str,
+                        const int type)
 {
   const unsigned char* p_str = (unsigned char*)str;
   unsigned short hash = 5381;
   unsigned short ch;
 
+  hash = ((hash << 5) + hash) + (unsigned short)type;
   // for ch = 0, ..., strlen(str)-1
   while (ch = *(p_str++)) {
     // hash = hash * 33 + ch
@@ -148,61 +59,140 @@ unsigned int str2hash(const char* const str)
   return hash;
 }
 
-
-static
-int add_hash_entry(const char* const key,
-                   HashEntry* const entries,
-                   int* const indices,
-                   const int num_entries)
+int is_two_to_the_n(const unsigned int val)
 {
-  unsigned int hash = str2hash(key) % MAX_NUM_ENTRIES;
+  unsigned int i = 1;
+  while (i < val) {
+    i *= 2;
+  }
+  return (i == val);
+}
 
-  while (indices[hash]) {
-    if (strcmp(key, entries[indices[hash]].key) == 0) {
-      return indices[hash];
+HashEntry* find_hash_entry(HashEntry* const entries,
+                           const char* const key,
+                           const int type)
+{
+  unsigned int hash = entry2hash(key, type) % MAX_NUM_ENTRIES;
+
+  while (entries[hash].key) {
+    if (strcmp(key, entries[hash].key) == 0) {
+      return &entries[hash];
     }
     hash = (hash == MAX_NUM_ENTRIES - 1) ? 0 : hash + 1;
   }
 
-  indices[hash] = num_entries + 1;
-  entries[indices[hash]].key = key;
+  entries[hash].key = (char*)malloc((strlen(key) + 1) * sizeof(char));
+  strcpy(entries[hash].key, key);
+  entries[hash].type = type;
+  entries[hash].values = NULL;
+  entries[hash].num_values = 0;
+  //printf("[INFO] Create Entry %s(%s)\n",
+  //       entries[hash].key, gs_types[type]);
 
-  return indices[hash];
+  return &entries[hash];
 }
 
-static
-int find_hash_entry(const char* const key,
-                    const HashEntry* const entries,
-                    const int* const indices)
+void set_hash_entry(HashEntry* const entries,
+                    const char* const key,
+                    const int type,
+                    void* const value)
 {
-  unsigned int hash = str2hash(key) % MAX_NUM_ENTRIES;
+  HashEntry* entry = find_hash_entry(entries, key, type);
 
-  while (indices[hash]) {
-    if (strcmp(key, entries[indices[hash]].key) == 0) {
-      return indices[hash];
-    }
-    hash = (hash == MAX_NUM_ENTRIES - 1) ? 0 : hash + 1;
+  if (!entry->values) {
+    entry->values = (void**)malloc(sizeof(void*));
+    entry->values[0] = value;
+    entry->num_values = 1;
+    //printf("[INFO] Memory allocation for Entry %s: %d values\n",
+    //       entry->key, entry->num_values);
   }
 
-  return 0;
+  else if (is_two_to_the_n(entry->num_values)) {
+    void** temp = (void**)calloc(entry->num_values * 2, sizeof(void*));
+    memcpy(temp, entry->values, entry->num_values * sizeof(void*));
+    free(entry->values);
+    entry->values = temp;
+    entry->values[entry->num_values++] = value;
+    //printf("[INFO] Memory reallocation for Entry %s: %d values\n",
+    //       entry->key, entry->num_values);
+  }
+
+  else {
+    entry->values[entry->num_values++] = value;
+    //printf("[INFO] New value for Entry %s: %d values\n",
+    //       entry->key, entry->num_values);
+  }
 }
 
-static
+void print_hash_entry(const HashEntry* const entry, const int level)
+{
+  for (int i = 0; i < level; ++i) {
+    printf("  ");
+  }
+  printf("Entry %s(%s): ", entry->key, gs_types[entry->type]);
+  switch (entry->type) {
+    case INT_VAL:
+      printf("[");
+      for (int i = 0; i < entry->num_values - 1; ++i) {
+        printf("%d, ", *(((int**)entry->values)[i]));
+      }
+      printf("%d]\n", *(((int**)entry->values)[entry->num_values - 1]));
+      break;
+    case REAL_VAL:
+      printf("[");
+      for (int i = 0; i < entry->num_values - 1; ++i) {
+        printf("%f, ", *(((real**)entry->values)[i]));
+      }
+      printf("%f]\n", *(((real**)entry->values)[entry->num_values - 1]));
+      break;
+    case STRING_VAL:
+      printf("[");
+      for (int i = 0; i < entry->num_values - 1; ++i) {
+        printf("%s, ", ((const char**)entry->values)[i]);
+      }
+      printf("%s]\n", ((const char**)entry->values)[entry->num_values - 1]);
+      break;
+    case TENSOR_VAL:
+      printf("[");
+      for (int i = 0; i < entry->num_values - 1; ++i) {
+        printf("%s, ", ((const Tensor**)entry->values)[i]->name);
+      }
+      printf("%s]\n", ((const Tensor**)entry->values)[entry->num_values - 1]->name);
+      break;
+    case ENTRY_VAL:
+      for (int i = 0; i < entry->num_values - 1; ++i) {
+        printf("\n");
+        print_hash_entry(((const HashEntry**)entry->values)[i], level + 1);
+      }
+      break;
+    case LAYER:
+      printf("[");
+      for (int i = 0; i < entry->num_values - 1; ++i) {
+        printf("%s, ", ((const Layer**)entry->values)[i]->name);
+      }
+      printf("%s]\n", ((const Layer**)entry->values)[entry->num_values - 1]->name);
+      break;
+    case OPERATOR:
+      printf("[");
+      for (int i = 0; i < entry->num_values - 1; ++i) {
+        printf("%s, ", ((const char**)entry->values)[i]);
+      }
+      printf("%s]\n", ((const char**)entry->values)[entry->num_values - 1]);
+      break;
+    default:
+      printf("%d values of unknown types\n", entry->num_values);
+      break;
+  }
+}
+
 int str2type(const char* const word)
 {
-  {
-    int index = find_hash_entry(word, gs_reserved, gs_reserved_indices);
-    if (index) {
-      return gs_reserved[index].type;
-    }
-  }
-
   {
     if (word[0] == '"') {
       const char* p_word = word;
       while (*(++p_word));
       if (*(p_word - 1) == '"') {
-        return CONST_VAL;
+        return STRING_VAL;
       }
     }
   }
@@ -239,33 +229,6 @@ int str2type(const char* const word)
   return UNKNOWN_TYPE;
 }
 
-static
-void init_hash_table(const HashEntry* const entries,
-                     int* const indices)
-{
-  int num_collisions = 0;
-
-  for (int i = 0; i < MAX_NUM_ENTRIES; ++i) {
-    if (!entries[i].key) {
-      break;
-    }
-
-    {
-      unsigned int hash = str2hash(entries[i].key) % MAX_NUM_ENTRIES;
-      while (indices[hash]) {
-        hash = (hash == MAX_NUM_ENTRIES - 1) ? 0 : hash + 1;
-        ++num_collisions;
-      }
-      indices[hash] = i;
-      printf("%s: %u, %d\n",
-             entries[i].key, str2hash(entries[i].key) % MAX_NUM_ENTRIES, hash);
-    }
-  }
-
-  printf("# collisions = %d\n", num_collisions);
-}
-
-static
 void pop_spaces(FILE* fp)
 {
   while (!feof(fp)) {
@@ -273,15 +236,13 @@ void pop_spaces(FILE* fp)
     if (ch == '#') {
       while (!feof(fp) && fgetc(fp) != '\n');
     }
-    else if (ch != ' ' && ch != '\n' && ch != '\r' && ch != '\t' &&
-             ch != ':') {
+    else if (ch != ' ' && ch != '\n' && ch != '\r' && ch != '\t') {
       ungetc(ch, fp);
       break;
     }
   }
 }
 
-static
 int read_str(FILE* fp, char* const buf)
 {
   char* p_buf = buf;
@@ -290,7 +251,7 @@ int read_str(FILE* fp, char* const buf)
   while (!feof(fp)) {
     char ch = (char)fgetc(fp);
 
-    if (ch == '{' || ch == '}') {
+    if (ch == '{' || ch == '}' || ch == ':') {
       if (len == 0) {
         p_buf[len++] = ch;
         break;
@@ -302,7 +263,7 @@ int read_str(FILE* fp, char* const buf)
     }
 
     else if (ch == ' ' || ch == '\n' || ch == '\r' || ch == '\t' ||
-        ch == '#' || ch == ':') {
+             ch == '#') {
       ungetc(ch, fp);
       break;
     }
@@ -318,104 +279,115 @@ int read_str(FILE* fp, char* const buf)
   return len;
 }
 
-void layer_begin(Net* const net)
+void free_hash_entry(HashEntry* entry)
 {
-  net->layers[net->num_layers] = (Layer*)malloc(sizeof(Layer));
-  printf("Layer %d creation started\n", net->num_layers);
+  if (entry->key) {
+    //print_hash_entry(entry, 0);
+    free(entry->key);
+  }
+  if (entry->values) {
+    if (entry->type != ENTRY_VAL) {
+      for (int i = 0; i < entry->num_values; ++i) {
+        if (entry->values[i]) {
+          //printf("  free value %d\n", i);
+          free(entry->values[i]);
+        }
+      }
+    }
+    free(entry->values);
+  }
+  memset(entry, 0, sizeof(HashEntry));
 }
 
-void layer_end(Net* const net)
+void free_hash_table(HashEntry* entries)
 {
-  printf("Layer %d creation finished\n", net->num_layers);
-  ++net->num_layers;
-}
-
-void layer_name(Net* const net, const char* const name)
-{
-  const int index = add_hash_entry(name, gs_runtime,
-                                   gs_runtime_indices, net->num_layers);
-  Layer* const p_layer = net->layers[net->num_layers];
-  char* p_layer_name = p_layer->name;
-  const char* p_name = name + 1;
-
-  while (*(p_layer_name++) = (*p_name++));
-  *(p_layer_name - 2) = 0;
-
-  if (index != net->num_layers + 1) {
-    printf("[ERROR] Du\n");
+  for (int i = 0; i < MAX_NUM_ENTRIES; ++i) {
+    free_hash_entry(&entries[i]);
   }
 }
 
-void layer_option(Net* const net,
-                  const char* const arg,
-                  const char* const val,
-                  const int type)
+void generate_key(char (*keys)[32],
+                  const int* const block_ids,
+                  const int block_level,
+                  char* const key)
 {
-  if (strcmp(arg
+  int total_len = 0;
+  for (int i = 0; i < block_level; ++i) {
+    int len = sprintf(key + total_len, "%s%02d/", keys[i], block_ids[i]);
+    total_len += len;
+  }
+  sprintf(key + total_len, "%s", keys[block_level]);
 }
+
+#define KEY_WORD 1
+#define VAL_WORD 2
 
 int main(int argc, char* argv[])
 {
   FILE* fp = fopen(argv[1], "r");
-  char buf[32];
-  int args[50];
-  char line[4096];
-  int level = 0;
-  int line_idx = 0;
-  int word_idx = 0;
 
-  init_hash_table(gs_reserved, gs_reserved_indices);
+  char buf[32];
+  char keys[10][32];
+  int block_ids[10] = { 0, };
+  int block_level = 0;
+  char key_full[4096];
+  int word_type = KEY_WORD;
+  void* val = NULL;
+  int len = 0;
 
   while (!feof(fp)) {
     pop_spaces(fp);
-    int len = read_str(fp, buf);
-    if (len > 0) {
-      int type = str2type(buf);
-      switch (type) {
-        case BLOCK:
-        case OPTION:
-          args[level] = find_hash_entry(buf, gs_reserved, gs_reserved_indices);
-          break;
-        case BLOCK_BEGIN:
-          if (gs_reserved[args[level]].type != BLOCK) {
-            printf("[TYPE ERROR] %s(%s) is not BLOCK!\n", gs_reserved[args[level]].key, gs_types[gs_reserved[args[level]].type]);
-          }
-          else if (level == 0) {
-            line_idx = 0;
-            line_idx += sprintf(line + line_idx, "\n%s { ", gs_reserved[args[level]].key);
-          }
-          else {
-            line_idx += sprintf(line + line_idx, "\n");
-            for (int i = 0; i < level; ++i)
-              line_idx += sprintf(line + line_idx, "  ");
-            line_idx += sprintf(line + line_idx, "%s { ", gs_reserved[args[level]].key);
-          }
-          ++level;
-          break;
-        case BLOCK_END:
-          --level;
-          line_idx += sprintf(line + line_idx, "} ");
-          if (level == 0) {
-            printf("%s", line);
-          }
-          break;
-        case NAME:
-        case CONST_VAL:
-          word_idx = find_hash_entry(buf, gs_reserved, gs_reserved_indices);
-          line_idx += sprintf(line + line_idx, "%s:%s(%s,%d) ", gs_reserved[args[level]].key, buf, gs_types[type], word_idx);
-          break;
-        case INT_VAL:
-          line_idx += sprintf(line + line_idx, "%s:%d(%s) ", gs_reserved[args[level]].key, atoi(buf), gs_types[type]);
-          break;
-        case REAL_VAL:
-          line_idx += sprintf(line + line_idx, "%s:%f(%s) ", gs_reserved[args[level]].key, (float)atof(buf), gs_types[type]);
-          break;
-        default:
-          printf("Unknown command: %s\n", buf);
-          break;
-      }
+    len = read_str(fp, buf);
+
+    if (buf[0] == '{') {
+      ++block_ids[block_level];
+      ++block_level;
+      block_ids[block_level] = 0;
+      word_type = KEY_WORD;
+
+      generate_key(keys, block_ids, block_level, key_full);
+      HashEntry* entry =
+          find_hash_entry(gs_all_entries, key_full, ENTRY_VAL);
+
+      generate_key(keys, block_ids, block_level - 1, key_full);
+      set_hash_entry(gs_all_entries, key_full, ENTRY_VAL, entry);
+      //printf("block opened, level = %d\n", block_level);
+    }
+    else if (buf[0] == '}') {
+      word_type = KEY_WORD;
+      --block_level;
+      //printf("block closed, level = %d\n", block_level);
+    }
+    else if (buf[0] == ':') {
+      word_type = VAL_WORD;
+      //printf("change to value mode\n");
+    }
+    else if (word_type == KEY_WORD) {
+      strcpy(keys[block_level], buf);
+      //printf("load keyword %s\n", buf);
+    }
+
+    else {
+      val = (void*)malloc(strlen(buf) * sizeof(char));
+      strcpy(val, buf);
+      generate_key(keys, block_ids, block_level, key_full);
+      set_hash_entry(gs_all_entries, key_full, STRING_VAL, val);
+      HashEntry* entry =
+          find_hash_entry(gs_all_entries, key_full, STRING_VAL);
+
+      word_type = KEY_WORD;
+
+      print_hash_entry(entry, block_level);
     }
   }
+
+  for (int i = 0; i < MAX_NUM_ENTRIES; ++i) {
+    if (gs_all_entries[i].key) {
+      print_hash_entry(&gs_all_entries[i], 0);
+    }
+  }
+
+  free_hash_table(gs_all_entries);
 
   return 0;
 }

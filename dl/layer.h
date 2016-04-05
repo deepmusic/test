@@ -51,6 +51,7 @@ typedef float real;
 
 typedef struct Tensor_
 {
+  char name[32];
   int num_items;
   int ndim;
   int shape[g_max_num_items][g_max_ndim];
