@@ -30,28 +30,29 @@ const static char* gs_types[MAX_NUM_TYPES] = {
 
 typedef struct HashEntry_
 {
-  char* key;
+  char* p_name;
+  char* p_key;
   int type;
   int num_values;
-  void** values;
+  void** p_values;
 } HashEntry;
 
 
 static HashEntry gs_all_entries[MAX_NUM_ENTRIES] = {
-  { 0, 0, 0, 0 },
+  { 0, 0, 0, 0, 0 },
 };
 
 
-unsigned int entry2hash(const char* const str,
+unsigned int entry2hash(const char* const p_key,
                         const int type)
 {
-  const unsigned char* p_str = (unsigned char*)str;
+  const unsigned char* p_key_ = (unsigned char*)p_key;
   unsigned short hash = 5381;
   unsigned short ch;
 
   hash = ((hash << 5) + hash) + (unsigned short)type;
-  // for ch = 0, ..., strlen(str)-1
-  while (ch = *(p_str++)) {
+  // for ch = 0, ..., strlen(p_key_)-1
+  while (ch = *(p_key_++)) {
     // hash = hash * 33 + ch
     hash = ((hash << 5) + hash) + ch;
   }
@@ -69,143 +70,164 @@ int is_two_to_the_n(const unsigned int val)
 }
 
 HashEntry* find_hash_entry(HashEntry* const entries,
-                           const char* const key,
+                           const char* const p_key,
                            const int type)
 {
-  unsigned int hash = entry2hash(key, type) % MAX_NUM_ENTRIES;
+  unsigned int hash = entry2hash(p_key, type) % MAX_NUM_ENTRIES;
 
-  while (entries[hash].key) {
-    if (strcmp(key, entries[hash].key) == 0) {
+  while (entries[hash].p_key) {
+    if (strcmp(p_key, entries[hash].p_key) == 0) {
       return &entries[hash];
     }
     hash = (hash == MAX_NUM_ENTRIES - 1) ? 0 : hash + 1;
   }
 
-  entries[hash].key = (char*)malloc((strlen(key) + 1) * sizeof(char));
-  strcpy(entries[hash].key, key);
+  return NULL;
+}
+
+HashEntry* find_or_make_hash_entry(HashEntry* const entries,
+                                   const char* const p_name,
+                                   const char* const p_key,
+                                   const int type)
+{
+  unsigned int hash = entry2hash(p_key, type) % MAX_NUM_ENTRIES;
+
+  while (entries[hash].p_key) {
+    if (strcmp(p_key, entries[hash].p_key) == 0) {
+      return &entries[hash];
+    }
+    hash = (hash == MAX_NUM_ENTRIES - 1) ? 0 : hash + 1;
+  }
+
+  entries[hash].p_name = (char*)malloc((strlen(p_name) + 1) * sizeof(char));
+  strcpy(entries[hash].p_name, p_name);
+  entries[hash].p_key = (char*)malloc((strlen(p_key) + 1) * sizeof(char));
+  strcpy(entries[hash].p_key, p_key);
   entries[hash].type = type;
-  entries[hash].values = NULL;
+  entries[hash].p_values = NULL;
   entries[hash].num_values = 0;
   //printf("[INFO] Create Entry %s(%s)\n",
-  //       entries[hash].key, gs_types[type]);
+  //       entries[hash].p_key, gs_types[type]);
 
   return &entries[hash];
 }
 
-void set_hash_entry(HashEntry* const entries,
-                    const char* const key,
-                    const int type,
-                    void* const value)
+void append_value_to_hash_entry(HashEntry* const p_entry,
+                                void* const p_value)
 {
-  HashEntry* entry = find_hash_entry(entries, key, type);
-
-  if (!entry->values) {
-    entry->values = (void**)malloc(sizeof(void*));
-    entry->values[0] = value;
-    entry->num_values = 1;
+  if (!p_entry->p_values) {
+    p_entry->p_values = (void**)malloc(sizeof(void*));
+    p_entry->p_values[0] = p_value;
+    p_entry->num_values = 1;
     //printf("[INFO] Memory allocation for Entry %s: %d values\n",
-    //       entry->key, entry->num_values);
+    //       p_entry->p_key, p_entry->num_values);
   }
 
-  else if (is_two_to_the_n(entry->num_values)) {
-    void** temp = (void**)calloc(entry->num_values * 2, sizeof(void*));
-    memcpy(temp, entry->values, entry->num_values * sizeof(void*));
-    free(entry->values);
-    entry->values = temp;
-    entry->values[entry->num_values++] = value;
+  else if (is_two_to_the_n(p_entry->num_values)) {
+    void** p_values_new =
+        (void**)calloc(p_entry->num_values * 2, sizeof(void*));
+    memcpy(p_values_new, p_entry->p_values,
+           p_entry->num_values * sizeof(void*));
+    free(p_entry->p_values);
+    p_entry->p_values = p_values_new;
+    p_entry->p_values[p_entry->num_values++] = p_value;
     //printf("[INFO] Memory reallocation for Entry %s: %d values\n",
-    //       entry->key, entry->num_values);
+    //       p_entry->p_key, p_entry->num_values);
   }
 
   else {
-    entry->values[entry->num_values++] = value;
+    p_entry->p_values[p_entry->num_values++] = p_value;
     //printf("[INFO] New value for Entry %s: %d values\n",
-    //       entry->key, entry->num_values);
+    //       p_entry->p_key, p_entry->num_values);
   }
 }
 
-void print_hash_entry(const HashEntry* const entry, const int level)
+void print_hash_entry(const HashEntry* const p_entry, const int level)
 {
   for (int i = 0; i < level; ++i) {
     printf("  ");
   }
-  printf("Entry %s(%s): ", entry->key, gs_types[entry->type]);
-  switch (entry->type) {
+  printf("Entry %s (%s, %s): ",
+         p_entry->p_name, p_entry->p_key, gs_types[p_entry->type]);
+  switch (p_entry->type) {
     case INT_VAL:
       printf("[");
-      for (int i = 0; i < entry->num_values - 1; ++i) {
-        printf("%d, ", *(((int**)entry->values)[i]));
+      for (int i = 0; i < p_entry->num_values - 1; ++i) {
+        printf("%d, ", *(((int**)p_entry->p_values)[i]));
       }
-      printf("%d]\n", *(((int**)entry->values)[entry->num_values - 1]));
+      printf("%d]\n", *(((int**)p_entry->p_values)[p_entry->num_values - 1]));
       break;
     case REAL_VAL:
       printf("[");
-      for (int i = 0; i < entry->num_values - 1; ++i) {
-        printf("%f, ", *(((real**)entry->values)[i]));
+      for (int i = 0; i < p_entry->num_values - 1; ++i) {
+        printf("%f, ", *(((real**)p_entry->p_values)[i]));
       }
-      printf("%f]\n", *(((real**)entry->values)[entry->num_values - 1]));
+      printf("%f]\n", *(((real**)p_entry->p_values)[p_entry->num_values - 1]));
       break;
     case STRING_VAL:
       printf("[");
-      for (int i = 0; i < entry->num_values - 1; ++i) {
-        printf("%s, ", ((const char**)entry->values)[i]);
+      for (int i = 0; i < p_entry->num_values - 1; ++i) {
+        printf("%s, ", ((const char**)p_entry->p_values)[i]);
       }
-      printf("%s]\n", ((const char**)entry->values)[entry->num_values - 1]);
+      printf("%s]\n", ((const char**)p_entry->p_values)[p_entry->num_values - 1]);
       break;
     case TENSOR_VAL:
       printf("[");
-      for (int i = 0; i < entry->num_values - 1; ++i) {
-        printf("%s, ", ((const Tensor**)entry->values)[i]->name);
+      for (int i = 0; i < p_entry->num_values - 1; ++i) {
+        printf("%s, ", ((const Tensor**)p_entry->p_values)[i]->name);
       }
-      printf("%s]\n", ((const Tensor**)entry->values)[entry->num_values - 1]->name);
+      printf("%s]\n", ((const Tensor**)p_entry->p_values)[p_entry->num_values - 1]->name);
       break;
     case ENTRY_VAL:
-      for (int i = 0; i < entry->num_values - 1; ++i) {
-        printf("\n");
-        print_hash_entry(((const HashEntry**)entry->values)[i], level + 1);
+      if (p_entry->num_values == 0) {
+        printf("0 value");
+      }
+      printf("\n");
+      for (int i = 0; i < p_entry->num_values; ++i) {
+        print_hash_entry(((const HashEntry**)p_entry->p_values)[i], level + 1);
       }
       break;
     case LAYER:
       printf("[");
-      for (int i = 0; i < entry->num_values - 1; ++i) {
-        printf("%s, ", ((const Layer**)entry->values)[i]->name);
+      for (int i = 0; i < p_entry->num_values - 1; ++i) {
+        printf("%s, ", ((const Layer**)p_entry->p_values)[i]->name);
       }
-      printf("%s]\n", ((const Layer**)entry->values)[entry->num_values - 1]->name);
+      printf("%s]\n", ((const Layer**)p_entry->p_values)[p_entry->num_values - 1]->name);
       break;
     case OPERATOR:
       printf("[");
-      for (int i = 0; i < entry->num_values - 1; ++i) {
-        printf("%s, ", ((const char**)entry->values)[i]);
+      for (int i = 0; i < p_entry->num_values - 1; ++i) {
+        printf("%s, ", ((const char**)p_entry->p_values)[i]);
       }
-      printf("%s]\n", ((const char**)entry->values)[entry->num_values - 1]);
+      printf("%s]\n", ((const char**)p_entry->p_values)[p_entry->num_values - 1]);
       break;
     default:
-      printf("%d values of unknown types\n", entry->num_values);
+      printf("%d values of unknown types\n", p_entry->num_values);
       break;
   }
 }
 
-int str2type(const char* const word)
+int word2type(const char* const p_word)
 {
   {
-    if (word[0] == '"') {
-      const char* p_word = word;
-      while (*(++p_word));
-      if (*(p_word - 1) == '"') {
+    if (p_word[0] == '"') {
+      const char* p_word_ = p_word;
+      while (*(++p_word_));
+      if (*(p_word_ - 1) == '"') {
         return STRING_VAL;
       }
     }
   }
 
   {
-    const char* p_word = word;
+    const char* p_word_ = p_word;
     int ch;
 
-    if (*p_word == '-') {
-      ++p_word;
+    if (*p_word_ == '-') {
+      ++p_word_;
     }
 
-    while (ch = *(p_word++)) {
+    while (ch = *(p_word_++)) {
       if (ch < '0' || ch > '9') {
         break;
       }
@@ -215,7 +237,7 @@ int str2type(const char* const word)
     }
 
     if (ch == '.') {
-      while (ch = *(p_word++)) {
+      while (ch = *(p_word_++)) {
         if (ch < '0' || ch > '9') {
           break;
         }
@@ -243,9 +265,8 @@ void pop_spaces(FILE* fp)
   }
 }
 
-int read_str(FILE* fp, char* const buf)
+int read_word(FILE* fp, char* const p_buf)
 {
-  char* p_buf = buf;
   int len = 0;
 
   while (!feof(fp)) {
@@ -279,44 +300,49 @@ int read_str(FILE* fp, char* const buf)
   return len;
 }
 
-void free_hash_entry(HashEntry* entry)
+void free_hash_entry(HashEntry* const p_entry)
 {
-  if (entry->key) {
-    //print_hash_entry(entry, 0);
-    free(entry->key);
+  if (p_entry->p_key) {
+    //print_hash_entry(p_entry, 0);
+    free(p_entry->p_key);
   }
-  if (entry->values) {
-    if (entry->type != ENTRY_VAL) {
-      for (int i = 0; i < entry->num_values; ++i) {
-        if (entry->values[i]) {
+  if (p_entry->p_name) {
+    free(p_entry->p_name);
+  }
+  if (p_entry->p_values) {
+    if (p_entry->type != ENTRY_VAL) {
+      for (int i = 0; i < p_entry->num_values; ++i) {
+        if (p_entry->p_values[i]) {
           //printf("  free value %d\n", i);
-          free(entry->values[i]);
+          free(p_entry->p_values[i]);
         }
       }
     }
-    free(entry->values);
+    free(p_entry->p_values);
   }
-  memset(entry, 0, sizeof(HashEntry));
+  memset(p_entry, 0, sizeof(HashEntry));
 }
 
-void free_hash_table(HashEntry* entries)
+void free_hash_table(HashEntry* const entries)
 {
   for (int i = 0; i < MAX_NUM_ENTRIES; ++i) {
     free_hash_entry(&entries[i]);
   }
 }
 
-void generate_key(char (*keys)[32],
+void generate_key(char (*p_block_names)[32],
                   const int* const block_ids,
                   const int block_level,
-                  char* const key)
+                  char* const p_key)
 {
   int total_len = 0;
   for (int i = 0; i < block_level; ++i) {
-    int len = sprintf(key + total_len, "%s%02d/", keys[i], block_ids[i]);
+    int len = sprintf(p_key + total_len, "%s%02d/",
+                      p_block_names[i], block_ids[i]);
     total_len += len;
   }
-  sprintf(key + total_len, "%s", keys[block_level]);
+  sprintf(p_key + total_len, "%s%02d",
+          p_block_names[block_level], block_ids[block_level]);
 }
 
 #define KEY_WORD 1
@@ -326,63 +352,105 @@ int main(int argc, char* argv[])
 {
   FILE* fp = fopen(argv[1], "r");
 
-  char buf[32];
-  char keys[10][32];
+  char a_buf[32];
+  char a_block_names[10][32];
   int block_ids[10] = { 0, };
   int block_level = 0;
-  char key_full[4096];
+  char a_key[4096];
   int word_type = KEY_WORD;
-  void* val = NULL;
+  void* p_value = NULL;
+  int value_type = UNKNOWN_TYPE;
   int len = 0;
 
   while (!feof(fp)) {
     pop_spaces(fp);
-    len = read_str(fp, buf);
+    len = read_word(fp, a_buf);
 
-    if (buf[0] == '{') {
+    if (a_buf[0] == '{') {
       ++block_ids[block_level];
+      generate_key(a_block_names, block_ids, block_level, a_key);
+      HashEntry* p_entry = find_or_make_hash_entry(
+          gs_all_entries, a_block_names[block_level], a_key, ENTRY_VAL);
+
+      if (block_level > 0) {
+        generate_key(a_block_names, block_ids, block_level - 1, a_key);
+        HashEntry* p_entry_parent =
+            find_hash_entry(gs_all_entries, a_key, ENTRY_VAL);
+        if (p_entry_parent) {
+          append_value_to_hash_entry(p_entry_parent, (void*)p_entry);
+        }
+        else {
+          printf("[ERROR] No matching parent for Entry %s at block level %d",
+                 p_entry->p_key, block_level);
+        }
+      }
+
       ++block_level;
       block_ids[block_level] = 0;
       word_type = KEY_WORD;
-
-      generate_key(keys, block_ids, block_level, key_full);
-      HashEntry* entry =
-          find_hash_entry(gs_all_entries, key_full, ENTRY_VAL);
-
-      generate_key(keys, block_ids, block_level - 1, key_full);
-      set_hash_entry(gs_all_entries, key_full, ENTRY_VAL, entry);
       //printf("block opened, level = %d\n", block_level);
     }
-    else if (buf[0] == '}') {
+    else if (a_buf[0] == '}') {
       word_type = KEY_WORD;
       --block_level;
       //printf("block closed, level = %d\n", block_level);
     }
-    else if (buf[0] == ':') {
+    else if (a_buf[0] == ':') {
       word_type = VAL_WORD;
       //printf("change to value mode\n");
     }
     else if (word_type == KEY_WORD) {
-      strcpy(keys[block_level], buf);
-      //printf("load keyword %s\n", buf);
+      strcpy(a_block_names[block_level], a_buf);
+      //printf("load keyword %s\n", a_buf);
     }
 
     else {
-      val = (void*)malloc(strlen(buf) * sizeof(char));
-      strcpy(val, buf);
-      generate_key(keys, block_ids, block_level, key_full);
-      set_hash_entry(gs_all_entries, key_full, STRING_VAL, val);
-      HashEntry* entry =
-          find_hash_entry(gs_all_entries, key_full, STRING_VAL);
+      value_type = word2type(a_buf);
+      switch (value_type) {
+        case INT_VAL:
+          p_value = (int*)malloc(sizeof(int));
+          *((int*)p_value) = atoi(a_buf);
+          break;
+        case REAL_VAL:
+          p_value = (real*)malloc(sizeof(real));
+          *((real*)p_value) = atof(a_buf);
+          break;
+        case STRING_VAL:
+          p_value = (void*)malloc(strlen(a_buf) * sizeof(char));
+          strcpy(p_value, a_buf);
+          break;
+        case TENSOR_VAL:
+        case LAYER:
+        case OPERATOR:
+        default:
+          p_value = NULL;
+      }
+
+      generate_key(a_block_names, block_ids, block_level, a_key);
+      HashEntry* p_entry = find_or_make_hash_entry(
+          gs_all_entries, a_block_names[block_level], a_key, value_type);
+      append_value_to_hash_entry(p_entry, p_value);
+
+      if (block_level > 0 && p_entry->num_values == 1) {
+        generate_key(a_block_names, block_ids, block_level - 1, a_key);
+        HashEntry* p_entry_parent =
+            find_hash_entry(gs_all_entries, a_key, ENTRY_VAL);
+        if (p_entry_parent) {
+          append_value_to_hash_entry(p_entry_parent, (void*)p_entry);
+        }
+        else {
+          printf("[ERROR] No matching parent for Entry %s at block level %d",
+                 p_entry->p_key, block_level);
+        }
+      }
 
       word_type = KEY_WORD;
-
-      print_hash_entry(entry, block_level);
     }
   }
 
   for (int i = 0; i < MAX_NUM_ENTRIES; ++i) {
-    if (gs_all_entries[i].key) {
+    if (gs_all_entries[i].p_key) {
+      printf("[%5d] ", i);
       print_hash_entry(&gs_all_entries[i], 0);
     }
   }
