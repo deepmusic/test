@@ -106,8 +106,6 @@ HashEntry* find_or_make_hash_entry(HashEntry* const entries,
   entries[hash].type = type;
   entries[hash].p_values = NULL;
   entries[hash].num_values = 0;
-  //printf("[INFO] Create Entry %s(%s)\n",
-  //       entries[hash].p_key, gs_types[type]);
 
   return &entries[hash];
 }
@@ -119,8 +117,6 @@ void append_value_to_hash_entry(HashEntry* const p_entry,
     p_entry->p_values = (void**)malloc(sizeof(void*));
     p_entry->p_values[0] = p_value;
     p_entry->num_values = 1;
-    //printf("[INFO] Memory allocation for Entry %s: %d values\n",
-    //       p_entry->p_key, p_entry->num_values);
   }
 
   else if (is_two_to_the_n(p_entry->num_values)) {
@@ -131,14 +127,10 @@ void append_value_to_hash_entry(HashEntry* const p_entry,
     free(p_entry->p_values);
     p_entry->p_values = p_values_new;
     p_entry->p_values[p_entry->num_values++] = p_value;
-    //printf("[INFO] Memory reallocation for Entry %s: %d values\n",
-    //       p_entry->p_key, p_entry->num_values);
   }
 
   else {
     p_entry->p_values[p_entry->num_values++] = p_value;
-    //printf("[INFO] New value for Entry %s: %d values\n",
-    //       p_entry->p_key, p_entry->num_values);
   }
 }
 
@@ -155,28 +147,32 @@ void print_hash_entry(const HashEntry* const p_entry, const int level)
       for (int i = 0; i < p_entry->num_values - 1; ++i) {
         printf("%d, ", *(((int**)p_entry->p_values)[i]));
       }
-      printf("%d]\n", *(((int**)p_entry->p_values)[p_entry->num_values - 1]));
+      printf("%d]\n",
+          *(((int**)p_entry->p_values)[p_entry->num_values - 1]));
       break;
     case REAL_VAL:
       printf("[");
       for (int i = 0; i < p_entry->num_values - 1; ++i) {
         printf("%f, ", *(((real**)p_entry->p_values)[i]));
       }
-      printf("%f]\n", *(((real**)p_entry->p_values)[p_entry->num_values - 1]));
+      printf("%f]\n",
+          *(((real**)p_entry->p_values)[p_entry->num_values - 1]));
       break;
     case STRING_VAL:
       printf("[");
       for (int i = 0; i < p_entry->num_values - 1; ++i) {
         printf("%s, ", ((const char**)p_entry->p_values)[i]);
       }
-      printf("%s]\n", ((const char**)p_entry->p_values)[p_entry->num_values - 1]);
+      printf("%s]\n",
+          ((const char**)p_entry->p_values)[p_entry->num_values - 1]);
       break;
     case TENSOR_VAL:
       printf("[");
       for (int i = 0; i < p_entry->num_values - 1; ++i) {
         printf("%s, ", ((const Tensor**)p_entry->p_values)[i]->name);
       }
-      printf("%s]\n", ((const Tensor**)p_entry->p_values)[p_entry->num_values - 1]->name);
+      printf("%s]\n",
+        ((const Tensor**)p_entry->p_values)[p_entry->num_values - 1]->name);
       break;
     case ENTRY_VAL:
       if (p_entry->num_values == 0) {
@@ -184,7 +180,8 @@ void print_hash_entry(const HashEntry* const p_entry, const int level)
       }
       printf("\n");
       for (int i = 0; i < p_entry->num_values; ++i) {
-        print_hash_entry(((const HashEntry**)p_entry->p_values)[i], level + 1);
+        print_hash_entry(((const HashEntry**)p_entry->p_values)[i],
+                         level + 1);
       }
       break;
     case LAYER:
@@ -192,14 +189,16 @@ void print_hash_entry(const HashEntry* const p_entry, const int level)
       for (int i = 0; i < p_entry->num_values - 1; ++i) {
         printf("%s, ", ((const Layer**)p_entry->p_values)[i]->name);
       }
-      printf("%s]\n", ((const Layer**)p_entry->p_values)[p_entry->num_values - 1]->name);
+      printf("%s]\n",
+        ((const Layer**)p_entry->p_values)[p_entry->num_values - 1]->name);
       break;
     case OPERATOR:
       printf("[");
       for (int i = 0; i < p_entry->num_values - 1; ++i) {
         printf("%s, ", ((const char**)p_entry->p_values)[i]);
       }
-      printf("%s]\n", ((const char**)p_entry->p_values)[p_entry->num_values - 1]);
+      printf("%s]\n",
+          ((const char**)p_entry->p_values)[p_entry->num_values - 1]);
       break;
     default:
       printf("%d values of unknown types\n", p_entry->num_values);
@@ -348,9 +347,9 @@ void generate_key(char (*p_block_names)[32],
 #define KEY_WORD 1
 #define VAL_WORD 2
 
-int main(int argc, char* argv[])
+void parse_prototxt(const char* const filename)
 {
-  FILE* fp = fopen(argv[1], "r");
+  FILE* fp = fopen(filename, "r");
 
   char a_buf[32];
   char a_block_names[10][32];
@@ -358,9 +357,12 @@ int main(int argc, char* argv[])
   int block_level = 0;
   char a_key[4096];
   int word_type = KEY_WORD;
-  void* p_value = NULL;
-  int value_type = UNKNOWN_TYPE;
   int len = 0;
+
+  HashEntry* p_entry = NULL;
+  HashEntry* p_entry_parent = NULL;
+  HashEntry* p_entry_root = find_or_make_hash_entry(
+      gs_all_entries, "__root__", "__root__", ENTRY_VAL);
 
   while (!feof(fp)) {
     pop_spaces(fp);
@@ -369,18 +371,20 @@ int main(int argc, char* argv[])
     if (a_buf[0] == '{') {
       ++block_ids[block_level];
       generate_key(a_block_names, block_ids, block_level, a_key);
-      HashEntry* p_entry = find_or_make_hash_entry(
+      p_entry = find_or_make_hash_entry(
           gs_all_entries, a_block_names[block_level], a_key, ENTRY_VAL);
 
-      if (block_level > 0) {
+      if (block_level == 0) {
+        append_value_to_hash_entry(p_entry_root, (void*)p_entry);
+      }
+      else {
         generate_key(a_block_names, block_ids, block_level - 1, a_key);
-        HashEntry* p_entry_parent =
-            find_hash_entry(gs_all_entries, a_key, ENTRY_VAL);
+        p_entry_parent = find_hash_entry(gs_all_entries, a_key, ENTRY_VAL);
         if (p_entry_parent) {
           append_value_to_hash_entry(p_entry_parent, (void*)p_entry);
         }
         else {
-          printf("[ERROR] No matching parent for Entry %s at block level %d",
+          printf("[ERROR] No parent for Entry %s at block level %d",
                  p_entry->p_key, block_level);
         }
       }
@@ -388,74 +392,58 @@ int main(int argc, char* argv[])
       ++block_level;
       block_ids[block_level] = 0;
       word_type = KEY_WORD;
-      //printf("block opened, level = %d\n", block_level);
     }
     else if (a_buf[0] == '}') {
       word_type = KEY_WORD;
       --block_level;
-      //printf("block closed, level = %d\n", block_level);
     }
     else if (a_buf[0] == ':') {
       word_type = VAL_WORD;
-      //printf("change to value mode\n");
     }
     else if (word_type == KEY_WORD) {
       strcpy(a_block_names[block_level], a_buf);
-      //printf("load keyword %s\n", a_buf);
     }
 
     else {
-      value_type = word2type(a_buf);
-      switch (value_type) {
-        case INT_VAL:
-          p_value = (int*)malloc(sizeof(int));
-          *((int*)p_value) = atoi(a_buf);
-          break;
-        case REAL_VAL:
-          p_value = (real*)malloc(sizeof(real));
-          *((real*)p_value) = atof(a_buf);
-          break;
-        case STRING_VAL:
-          p_value = (void*)malloc(strlen(a_buf) * sizeof(char));
-          strcpy(p_value, a_buf);
-          break;
-        case TENSOR_VAL:
-        case LAYER:
-        case OPERATOR:
-        default:
-          p_value = NULL;
-      }
+      void* p_value = (void*)malloc(strlen(a_buf) * sizeof(char));
+      strcpy(p_value, a_buf);
 
       generate_key(a_block_names, block_ids, block_level, a_key);
-      HashEntry* p_entry = find_or_make_hash_entry(
-          gs_all_entries, a_block_names[block_level], a_key, value_type);
+      p_entry = find_or_make_hash_entry(
+          gs_all_entries, a_block_names[block_level], a_key, STRING_VAL);
       append_value_to_hash_entry(p_entry, p_value);
 
-      if (block_level > 0 && p_entry->num_values == 1) {
-        generate_key(a_block_names, block_ids, block_level - 1, a_key);
-        HashEntry* p_entry_parent =
-            find_hash_entry(gs_all_entries, a_key, ENTRY_VAL);
-        if (p_entry_parent) {
-          append_value_to_hash_entry(p_entry_parent, (void*)p_entry);
+      if (p_entry->num_values == 1) {
+        if (block_level == 0) {
+          append_value_to_hash_entry(p_entry_root, (void*)p_entry);
         }
         else {
-          printf("[ERROR] No matching parent for Entry %s at block level %d",
-                 p_entry->p_key, block_level);
+          generate_key(a_block_names, block_ids, block_level - 1, a_key);
+          p_entry_parent = find_hash_entry(gs_all_entries, a_key, ENTRY_VAL);
+          if (p_entry_parent) {
+            append_value_to_hash_entry(p_entry_parent, (void*)p_entry);
+          }
+          else {
+            printf("[ERROR] No parent for Entry %s at block level %d",
+                   p_entry->p_key, block_level);
+          }
         }
       }
 
       word_type = KEY_WORD;
     }
   }
+}
 
-  for (int i = 0; i < MAX_NUM_ENTRIES; ++i) {
-    if (gs_all_entries[i].p_key) {
-      printf("[%5d] ", i);
-      print_hash_entry(&gs_all_entries[i], 0);
-    }
-  }
+int main(int argc, char* argv[])
+{
+  parse_prototxt(argv[1]);
+
+  HashEntry* p_entry_root =
+      find_hash_entry(gs_all_entries, "__root__", ENTRY_VAL);
+
+  print_hash_entry(p_entry_root, 0);
 
   free_hash_table(gs_all_entries);
-
   return 0;
 }
