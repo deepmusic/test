@@ -406,7 +406,18 @@ void parse_prototxt(const char* const filename)
 
     else {
       void* p_value = (void*)malloc(strlen(a_buf) * sizeof(char));
-      strcpy(p_value, a_buf);
+      if (a_buf[0] == '"') {
+        if (a_buf[len - 1] == '"') {
+          a_buf[len - 1] = 0;
+        }
+        else {
+          printf("[ERROR] Quotation mark mismatching: %s\n", a_buf);
+        }
+        strcpy(p_value, a_buf + 1);
+      }
+      else {
+        strcpy(p_value, a_buf);
+      }
 
       generate_key(a_block_names, block_ids, block_level, a_key);
       p_entry = find_or_make_hash_entry(
@@ -431,6 +442,36 @@ void parse_prototxt(const char* const filename)
       }
 
       word_type = KEY_WORD;
+    }
+  }
+}
+
+void construct_net(void)
+{
+  HashEntry* p_entry_root =
+      find_hash_entry(gs_all_entries, "__root__", ENTRY_VAL);
+
+  for (int n = 0; n < p_entry_root->num_values; ++n) {
+    HashEntry* const p_entry = (HashEntry*)p_entry_root->p_values[n];
+    if (p_entry->type == ENTRY_VAL &&
+        strcmp(p_entry->p_name, "layer") == 0) {
+      Layer* const p_layer = (Layer*)malloc(sizeof(Layer));
+      //init_layer(p_layer);
+      for (int i = 0; i < p_entry->num_values; ++i) {
+        const HashEntry* const p_entry_child =
+            (HashEntry*)p_entry->p_values[i];
+        if (strcmp(p_entry_child->p_name, "name") == 0) {
+          strcpy(p_layer->name, (char*)p_entry_child->p_values[0]);
+        }
+        else if (strcmp(p_entry_child->p_name, "type") == 0) {
+          const char* const p_type = (char*)p_entry_child->p_values[0];
+          if (strcmp(p_type, "Convolution") == 0) {
+            p_layer->num_bottoms = 1;
+            p_layer->num_tops = 1;
+            p_layer->num_params = 2;
+          }
+        }
+      }
     }
   }
 }
