@@ -175,8 +175,8 @@ void test_image(Net* const net, const char* const filename)
 static
 void print_usage(void)
 {
-  printf("[Usage] ./demo_gpu.bin <command> <args>\n\n");
-  printf("  1. [Live demo using WebCam] ./demo_gpu.bin live\n");
+  printf("[Usage] ./demo_gpu.bin <command> <arg1> <arg2> ...\n");
+  printf("  1. [Live demo using WebCam] ./demo_gpu.bin live <camera id> <width> <height>\n");
   printf("  2. [Image file] ./demo_gpu.bin snapshot <filename>\n");
   printf("  3. [Video file] ./demo_gpu.bin video <filename>\n");
   printf("  4. [List of images] ./demo_gpu.bin database <filename>\n");
@@ -197,14 +197,23 @@ int test(const char* const args[], const int num_args)
   construct_frcnn_7_1_1(&frcnn);
 
   if (strcmp(command, "live") == 0) {
-    cv::VideoCapture vc(0);
-    if (!vc.isOpened()) {
-      printf("Cannot open camera(0)\n");
+    if (num_args >= 4) {
+      const int camera_id = atoi(args[1]);
+      const int frame_width = atoi(args[2]);
+      const int frame_height = atoi(args[3]);
+      cv::VideoCapture vc(camera_id);
+      if (!vc.isOpened()) {
+        printf("Cannot open camera(%d)\n", camera_id);
+        return -1;
+      }
+      vc.set(CV_CAP_PROP_FRAME_WIDTH, frame_width);
+      vc.set(CV_CAP_PROP_FRAME_HEIGHT, frame_height);
+      test_stream(&frcnn, vc);
+    }
+    else {
+      print_usage();
       return -1;
     }
-    vc.set(CV_CAP_PROP_FRAME_WIDTH, 1920);
-    vc.set(CV_CAP_PROP_FRAME_HEIGHT, 1080);
-    test_stream(&frcnn, vc);
   }
 
   else if (strcmp(command, "snapshot") == 0) {
