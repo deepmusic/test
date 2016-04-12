@@ -1,0 +1,24 @@
+net: "models/pva7.3.0/pvanet7.3.0.pt"
+#test_iter: 1000
+#test_interval: 10000
+#test_initialization: false
+
+base_lr: 0.01
+lr_policy: "plateau"
+gamma: 0.3165
+stepsize: 3000
+display: 20
+max_iter: 2000000
+momentum: 0.9
+weight_decay: 0.0002
+snapshot: 20000
+snapshot_prefix: "models/pva7.3.0/pvanet7.3.0_train"
+#log_path: "experiments/logs"
+solver_mode: GPU
+#solver_type: SGD
+
+
+plateau_ontest: false	# Not enough memory
+plateau_winsize: 1000	# for BN
+plateau_lossidx: 1	# fixed value for test loss
+plateau_extendstep: 1.414	# not supported yet
