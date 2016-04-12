@@ -15,7 +15,7 @@ layer {
     mirror: true
   }
   data_param {
-    source: "examples/imagenet/ilsvrc12_train_lmdb"
+    source: "data/imagenet/ilsvrc12_train_lmdb"
     batch_size: 128
     backend: LMDB
   }
@@ -36,7 +36,7 @@ layer {
     mirror: true
   }
   data_param {
-    source: "examples/imagenet/ilsvrc12_val_lmdb"
+    source: "data/imagenet/ilsvrc12_val_lmdb"
     batch_size: 64
     backend: LMDB
   }
@@ -180,7 +180,7 @@ layer {
   bottom: "conv3"
   top: "inc3a/pool1"
   pooling_param {
-    kernel_size: 3  stride: 2  pad: 1
+    kernel_size: 3  stride: 2  pad: 0
     pool: MAX
   }
 }
@@ -1390,7 +1390,7 @@ layer {
   bottom: "inc3e"
   top: "inc4a/pool1"
   pooling_param {
-    kernel_size: 3  stride: 2  pad: 1
+    kernel_size: 3  stride: 2  pad: 0
     pool: MAX
   }
 }
