@@ -419,6 +419,87 @@ void shape_conv_layer(void* const net_, void* const layer_)
   update_net_size(net, layer, temp_size, 0, const_size);
 }
 
+void init_conv_layer(void* const net_, void* const layer_,
+                     const void* const entry_)
+{
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+  LayerOption* const option = &layer->option;
+
+  layer->num_params = 2;
+  option->num_groups = 1;
+  option->pad_h = 0;
+  option->pad_w = 0;
+  option->stride_h = 1;
+  option->stride_w = 1;
+  option->bias = 1;
+  #ifdef GPU
+  option->handle = (void*)&net->cublas_handle;
+  #endif
+
+  option->out_channels = 0;
+  option->kernel_h = 0;
+  option->kernel_w = 0;
+
+  {
+    const HashEntry* const p_entry =
+        find_value_from_hash_entry((HashEntry*)entry_, "convolution_param");
+
+    if (p_entry) {
+      for (int n = 0; n < p_entry->num_values; ++n) {
+        HashEntry* p_child = (HashEntry*)p_entry->p_values[n];
+        if (strcmp(p_child->p_name, "num_output") == 0) {
+          option->out_channels = atoi((char*)p_child->p_values[0]);
+        }
+        else if (strcmp(p_child->p_name, "kernel_size") == 0) {
+          option->kernel_h = atoi((char*)p_child->p_values[0]);
+          option->kernel_w = option->kernel_h;
+        }
+        else if (strcmp(p_child->p_name, "stride") == 0) {
+          option->stride_h = atoi((char*)p_child->p_values[0]);
+          option->stride_w = option->stride_h;
+        }
+        else if (strcmp(p_child->p_name, "pad") == 0) {
+          option->pad_h = atoi((char*)p_child->p_values[0]);
+          option->pad_w = option->pad_h;
+        }
+        else if (strcmp(p_child->p_name, "kernel_h") == 0) {
+          option->kernel_h = atoi((char*)p_child->p_values[0]);
+        }
+        else if (strcmp(p_child->p_name, "kernel_w") == 0) {
+          option->kernel_w = atoi((char*)p_child->p_values[0]);
+        }
+        else if (strcmp(p_child->p_name, "stride_h") == 0) {
+          option->stride_h = atoi((char*)p_child->p_values[0]);
+        }
+        else if (strcmp(p_child->p_name, "stride_w") == 0) {
+          option->stride_w = atoi((char*)p_child->p_values[0]);
+        }
+        else if (strcmp(p_child->p_name, "pad_h") == 0) {
+          option->pad_h = atoi((char*)p_child->p_values[0]);
+        }
+        else if (strcmp(p_child->p_name, "pad_w") == 0) {
+          option->pad_w = atoi((char*)p_child->p_values[0]);
+        }
+        else if (strcmp(p_child->p_name, "group") == 0) {
+          option->num_groups = atoi((char*)p_child->p_values[0]);
+        }
+        else if (strcmp(p_child->p_name, "bias_term") == 0) {  
+          if (strcmp((char*)p_child->p_values[0], "false") == 0) {
+            option->bias = 0;
+            layer->num_params = 1;
+          }
+        }
+      }
+    }
+  }
+
+  if (!option->out_channels || !option->kernel_h || !option->kernel_w) {
+    printf("[ERROR] Essential parameters are not given for Layer %s\n",
+           layer->name);
+  }
+}
+
 
 
 // --------------------------------------------------------------------------

@@ -448,8 +448,12 @@ void parse_prototxt(const char* const filename)
 
 void construct_net(void)
 {
+  Net* const p_net = (Net*)malloc(sizeof(Net));
   HashEntry* p_entry_root =
       find_hash_entry(gs_all_entries, "__root__", ENTRY_VAL);
+  long int space = 0, space_cpu = 0;
+
+  init_net(p_net);
 
   for (int n = 0; n < p_entry_root->num_values; ++n) {
     HashEntry* const p_entry = (HashEntry*)p_entry_root->p_values[n];
@@ -457,21 +461,69 @@ void construct_net(void)
         strcmp(p_entry->p_name, "layer") == 0) {
       Layer* const p_layer = (Layer*)malloc(sizeof(Layer));
       //init_layer(p_layer);
+      layer->num_bottoms = 0;
+      layer->num_tops = 0;
+      layer->num_params = 0;
+
       for (int i = 0; i < p_entry->num_values; ++i) {
         const HashEntry* const p_entry_child =
             (HashEntry*)p_entry->p_values[i];
         if (strcmp(p_entry_child->p_name, "name") == 0) {
           strcpy(p_layer->name, (char*)p_entry_child->p_values[0]);
         }
+        else if (strcmp(p_entry_child->p_name, "bottom") == 0) {
+          ++p_layer->num_bottoms;
+        }
+        else if (strcmp(p_entry_child->p_name, "top") == 0) {
+          ++p_layer->num_tops;
+        }
         else if (strcmp(p_entry_child->p_name, "type") == 0) {
           const char* const p_type = (char*)p_entry_child->p_values[0];
           if (strcmp(p_type, "Convolution") == 0) {
-            p_layer->num_bottoms = 1;
-            p_layer->num_tops = 1;
-            p_layer->num_params = 2;
+            init_conv_layer(p_net, p_layer, p_entry);
           }
+          else if (strcmp(p_type, ""
         }
       }
+
+      space_cpu += malloc_layer(p_layer);
+
+      int bottom_index = 0, top_index = 0;
+      for (int i = 0; i < p_entry->num_values; ++i) {
+        const HashEntry* const p_entry_child =
+            (HashEntry*)p_entry->p_values[i];
+        if (strcmp(p_entry_child->p_name, "bottom") == 0) {
+          const char* const p_bottom_name =
+              (char*)p_entry_child->p_values[0];
+          HashEntry* p_entry_tensor =
+              find_hash_entry(gs_all_entries, p_bottom_name, TENSOR_VAL);
+          if (!p_entry_tensor || p_entry_tensor->num_values != 1) {
+            printf("[ERROR] Cannot find bottom: %s for Layer %s\n",
+                   p_bottom_name, p_layer->name);
+          }
+          else {
+            p_layer->p_bottoms[bottom_index] =
+                (Tensor*)p_entry_tensor->p_values[0];
+            ++bottom_index;
+          }
+        }
+        else if (strcmp(p_entry_child->p_name, "top") == 0) {
+          const char* const p_top_name = (char*)p_entry_child->p_values[0];
+          strcpy(p_layer->tops[top_index].name, p_top_name);
+          HashEntry* const p_entry_tensor = find_or_make_hash_entry(
+              gs_all_entries, p_top_name, p_top_name, TENSOR_VAL);
+          if (p_entry_tensor->num_values == 0) {
+            append_value_to_hash(p_entry_tensor,
+                                 (void*)&p_layer->tops[top_index]);
+          }
+          else {
+            
+          }
+          ++top_index;
+        }
+      }
+
+      p_net->layers[p_net->num_layers++] = p_layer;
     }
   }
 }

@@ -135,6 +135,15 @@ void shape_concat_layer(void* const net_, void* const layer_)
   update_net_size(net, layer, 0, 0, 0);
 }
 
+void init_concat_layer(void* const net_, void* const layer_,
+                       const void* const entry_)
+{
+  Layer* const layer = (Layer*)layer_;
+  LayerOption* const option = &layer->option;
+
+  option->num_concats = layer->num_bottoms;
+}
+
 
 
 // --------------------------------------------------------------------------
