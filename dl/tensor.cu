@@ -164,7 +164,7 @@ long int flatten_size(const Tensor* const tensor)
 void print_tensor_info(const char* const name,
                        const Tensor* const tensor)
 {
-  #ifdef DEBUG
+  #ifndef DEBUG
   {
     printf("%s: ", name);
     if (tensor->num_items > 1) {

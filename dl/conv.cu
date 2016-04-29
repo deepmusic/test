@@ -1,4 +1,141 @@
 #include "layer.h"
+#include <string.h>
+
+void conv_str1(const real* const bottom3d,
+               const real* const weight4d,
+               real* const top3d,
+               const int C, const int H, const int W,
+               const int C5, const int H5, const int W5,
+               const int pad_h, const int pad_w)
+{
+  real u[16];
+  real v[16];
+  real d_[4][4];
+
+  if (H != H5 || W != W5) {
+    printf("[ERROR] Size mismatch! bottom:(%d x %d) vs. top:(%d x %d)\n",
+           H, W, H5, W5);
+  }
+
+  memset(top3d, 0, sizeof(real) * C5 * H5 * W5);
+
+  for (int k = 0; k < C5; ++k) {
+    for (int c = 0; c < C; ++c) {
+      const real* const g = weight4d + (k * C + c) * 9;
+      const real g_sum = (g[0] + g[1] + g[2] +
+                          g[3] + g[4] + g[5] +
+                          g[6] + g[7] + g[8]) / 4;
+
+      u[0] = g[0];
+      u[1] = (g[0] + g[1] + g[2]) / 2;
+      u[2] = (g[0] - g[1] + g[2]) / 2;
+      u[3] = g[2];
+      u[4] = g[0] + g[3] + g[6];
+      u[5] = g_sum;
+      u[6] = g_sum - (g[1] + g[4] + g[7]) / 2;
+      u[7] = g[2] + g[5] + g[8];
+      u[8] = g[6];
+      u[9] = g_sum - (g[3] + g[4] + g[5]) / 2;
+      u[10] = g_sum - (g[1] + g[3] + g[5] + g[7]) / 2;
+      u[11] = g[2] - g[5] + g[8];
+      u[12] = g[6];
+      u[13] = (g[6] + g[7] + g[8]) / 2;
+      u[14] = (g[6] - g[7] + g[8]) / 2;
+      u[15] = g[8];
+
+      for (int h = 0; h < H; h += 2) {
+        for (int w = 0; w < W; w += 2) {
+          const real* const d
+              = bottom3d + (c * H + h - pad_h) * W + w - pad_w;
+          for (int j = 0; j < 4; ++j) {
+            for (int i = 0; i < 4; ++i) {
+              const int hh = h - pad_h + j;
+              const int ww = w - pad_w + i;
+              d_[j][i] = (hh >= 0 && hh < H && ww >= 0 && ww < W) ?
+                  d[hh * W + ww] : 0;
+            }
+          }
+
+          v[0] = d_[0][0] - d_[0][2] - d_[2][0] + d_[2][2];
+          v[1] = d_[0][1] + d_[0][2] - d_[2][1] - d_[2][2];
+          v[2] = -d_[0][1] + d_[0][2] + d_[2][1] - d_[2][2];
+          v[3] = d_[0][1] - d_[0][3] - d_[2][1] + d_[2][3];
+          v[4] = d_[1][0] - d_[1][2] + d_[2][0] - d_[2][2];
+          v[5] = d_[1][1] + d_[1][2] + d_[2][1] + d_[2][2];
+          v[6] = -d_[1][1] + d_[1][2] - d_[2][1] + d_[2][2];
+          v[7] = d_[1][1] - d_[1][3] + d_[2][1] - d_[2][3];
+          v[8] = -d_[1][0] + d_[1][2] + d_[2][0] - d_[2][2];
+          v[9] = -d_[1][1] - d_[1][2] + d_[2][1] + d_[2][2];
+          v[10] = d_[1][1] - d_[1][2] - d_[2][1] + d_[2][2];
+          v[11] = -d_[1][1] + d_[1][3] + d_[2][1] - d_[2][3];
+          v[12] = d_[1][0] - d_[1][2] - d_[3][0] + d_[3][2];
+          v[13] = d_[1][1] + d_[1][2] - d_[3][1] - d_[3][2];
+          v[14] = -d_[1][1] + d_[1][2] + d_[3][1] - d_[3][2];
+          v[15] = d_[1][1] - d_[1][3] - d_[3][1] + d_[3][3];
+
+          for (int i = 0; i < 16; ++i) {
+            v[i] *= u[i];
+          }
+
+          real* const y = top3d + (k * H + h) * W + w;
+/*
+          y[0] = v[0] + v[1] + v[2] + v[4] + v[5] + v[6] + v[8] + v[9] + v[10];
+          y[1] = v[1] - v[2] - v[3] + v[5] - v[6] - v[7] + v[9] - v[10] - v[11];
+          y[W] = v[4] + v[5] + v[6] - v[8] - v[9] - v[10] - v[12] - v[13] - v[14];
+          y[W + 1] = v[5] - v[6] - v[7] - v[9] + v[10] + v[11] - v[13] + v[14] + v[15];
+*/
+         y[0] += d_[0][0] * g[0] + d_[0][1] * g[1] + d_[0][2] * g[2] +
+                 d_[1][0] * g[3] + d_[1][1] * g[4] + d_[1][2] * g[5] +
+                 d_[2][0] * g[6] + d_[2][1] * g[7] + d_[2][2] * g[8];
+
+         y[1] += d_[0][1] * g[0] + d_[0][2] * g[1] + d_[0][3] * g[2] +
+                 d_[1][1] * g[3] + d_[1][2] * g[4] + d_[1][3] * g[5] +
+                 d_[2][1] * g[6] + d_[2][2] * g[7] + d_[2][3] * g[8];
+
+         y[W] += d_[1][0] * g[0] + d_[1][1] * g[1] + d_[1][2] * g[2] +
+                 d_[2][0] * g[3] + d_[2][1] * g[4] + d_[2][2] * g[5] +
+                 d_[3][0] * g[6] + d_[3][1] * g[7] + d_[3][2] * g[8];
+
+     y[W + 1] += d_[1][1] * g[0] + d_[1][2] * g[1] + d_[1][3] * g[2] +
+                 d_[2][1] * g[3] + d_[2][2] * g[4] + d_[2][3] * g[5] +
+                 d_[3][1] * g[6] + d_[3][2] * g[7] + d_[3][3] * g[8];
+/*
+          printf("g:\n");
+          printf(" %.2f %.2f %.2f\n %.2f %.2f %.2f\n %.2f %.2f %.2f\n",
+                 g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7], g[8], g[9]);
+          printf("d:\n");
+          printf(" %.2f %.2f %.2f %.2f\n %.2f %.2f %.2f %.2f\n %.2f %.2f %.2f %.2f\n %.2f %.2f %.2f %.2f\n",
+                 d_[0][0], d_[0][1], d_[0][2], d_[0][3],
+                 d_[1][0], d_[1][1], d_[1][2], d_[1][3],
+                 d_[2][0], d_[2][1], d_[2][2], d_[2][3],
+                 d_[3][0], d_[3][1], d_[3][2], d_[3][3]);
+*/
+/*
+          printf("y_direct:\n");
+          printf(" %.2f %.2f\n %.2f %.2f\n",
+                 d_[0][0] * g[0] + d_[0][1] * g[1] + d_[0][2] * g[2] +
+                 d_[1][0] * g[3] + d_[1][1] * g[4] + d_[1][2] * g[5] +
+                 d_[2][0] * g[6] + d_[2][1] * g[7] + d_[2][2] * g[8],
+
+                 d_[0][1] * g[0] + d_[0][2] * g[1] + d_[0][3] * g[2] +
+                 d_[1][1] * g[3] + d_[1][2] * g[4] + d_[1][3] * g[5] +
+                 d_[2][1] * g[6] + d_[2][2] * g[7] + d_[2][3] * g[8],
+
+                 d_[1][0] * g[0] + d_[1][1] * g[1] + d_[1][2] * g[2] +
+                 d_[2][0] * g[3] + d_[2][1] * g[4] + d_[2][2] * g[5] +
+                 d_[3][0] * g[6] + d_[3][1] * g[7] + d_[3][2] * g[8],
+
+                 d_[1][1] * g[0] + d_[1][2] * g[1] + d_[1][3] * g[2] +
+                 d_[2][1] * g[3] + d_[2][2] * g[4] + d_[2][3] * g[5] +
+                 d_[3][1] * g[6] + d_[3][2] * g[7] + d_[3][3] * g[8]);
+          printf("y:\n");
+          printf(" %.2f %.2f\n %.2f %.2f\n", y[0], y[1], y[W], y[W + 1]);
+*/
+        } // endfor w
+      } // endfor h
+    } // endfor c
+  } // endfor k
+}
 
 // --------------------------------------------------------------------------
 // kernel code
@@ -167,6 +304,13 @@ void conv_forward(const Tensor* const bottom3d,
     top3d->shape[n][1] = top_H;
     top3d->shape[n][2] = top_W;
 
+    if (kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1) {
+      conv_str1(p_bottom_item, weight5d->data, p_top_item,
+                bottom_C, bottom_H, bottom_W, top_C, top_H, top_W,
+                pad_h, pad_w);
+    }
+    else {
+
     // convert bottom shape
     //   (G * C) x H x W -> (G * C * kernel_h * kernel_w) x (H' * W')
     {
@@ -243,6 +387,8 @@ void conv_forward(const Tensor* const bottom3d,
                   0.0f,
                   p_top_g,  top_area);
     #endif
+    }
+
     }
 
     // compute top[i][j] = top[i][j] + bias[i]
@@ -419,6 +565,7 @@ void shape_conv_layer(void* const net_, void* const layer_)
   update_net_size(net, layer, temp_size, 0, const_size);
 }
 
+#ifdef PASS
 void init_conv_layer(void* const net_, void* const layer_,
                      const void* const entry_)
 {
@@ -499,6 +646,7 @@ void init_conv_layer(void* const net_, void* const layer_,
            layer->name);
   }
 }
+#endif
 
 
 

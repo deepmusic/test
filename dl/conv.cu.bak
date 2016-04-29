@@ -1,49 +1,5 @@
 #include "layer.h"
 
-void conv_str1(const real* const bottom3d,
-               const real* const weight4d,
-               real* const top3d,
-               const int C, const int H, const int W,
-               const int C5, const int H5, const int W5,
-               const int pad_h, const int pad_w)
-{
-  real u[512 * 16];
-
-  for (int k = 0; k < C5; ++k) {
-    for (int c = 0; c < C; ++c) {
-      const real* const g = weight4d + (k * C5 + c) * 9;
-      const real g_sum = (g[0] + g[1] + g[2] +
-                          g[3] + g[4] + g[5] +
-                          g[6] + g[7] + g[8]) / 4;
-      real* const uc = &u[c * 16];
-
-      u[0] = g[0];
-      u[1] = (g[0] + g[1] + g[2]) / 2;
-      u[2] = (g[0] - g[1] + g[2]) / 2;
-      u[3] = g[2];
-      u[4] = g[0] + g[3] + g[6];
-      u[5] = g_sum;
-      u[6] = g_sum - (g[1] + g[4] + g[7]) / 2;
-      u[7] = g[2] + g[5] + g[8];
-      u[8] = g[6];
-      u[9] = g_sum - (g[3] + g[4] + g[5]) / 2;
-      u[10] = g_sum - (g[1] + g[3] + g[5] + g[7]) / 2;
-      u[11] = g[2] - g[5] + g[8];
-      u[12] = g[6];
-      u[13] = (g[6] + g[7] + g[8]) / 2;
-      u[14] = (g[6] - g[7] + g[8]) / 2;
-      u[15] = g[8];
-    }
-
-    for (int h5 = 0; h5 < H5 / 2; h5 += 2) {
-      for (int w5 = 0; w5 < W5 / 2; w5 += 2) {
-        for (int c = 0; c < C; ++c) {
-        }
-      }
-    }
-  }
-}
-
 // --------------------------------------------------------------------------
 // kernel code
 //   convert_bottom_{gpu, cpu}
