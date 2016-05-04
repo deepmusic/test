@@ -26,7 +26,7 @@ libdlcpu.so: tensor.cpu.o net.cpu.o nms.cpu.o softmax.cpu.o conv.cpu.o deconv.cp
 	rm $^
 
 clean:
-	rm *.o
+	rm -f *.o test_gpu test_cpu libdlgpu.so libdlcpu.so
 
 link.o: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o image.gpu.o frcnn.gpu.o pvanet.o
 	$(NVCC) -Xcompiler '-fPIC' -dlink $^ -o $@
