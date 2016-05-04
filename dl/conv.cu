@@ -3,7 +3,7 @@
 
 #include "boost/date_time/posix_time/posix_time.hpp"
 
-static float a_time[6] = { 0, };
+static float a_time[8] = { 0, };
 
 void conv_str1(const real* const bottom3d,
                const real* const weight4d,
@@ -12,12 +12,12 @@ void conv_str1(const real* const bottom3d,
                const int C5, const int H5, const int W5,
                const int pad_h, const int pad_w)
 {
-  clock_t tick0, tick1;
+  clock_t tick0, tick1, tick00, tick01;
 
-  real u[16];
+  real u_[1024][16];
   real v0[4][4];
-  real v[16];
-  real d_[4][4];
+  real v_[1000][16];
+  real d__[1000][4][4];
 
   if (H != H5 || W != W5) {
     printf("[ERROR] Size mismatch! bottom:(%d x %d) vs. top:(%d x %d)\n",
@@ -32,10 +32,12 @@ void conv_str1(const real* const bottom3d,
   a_time[0] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 
   for (int k = 0; k < C5; ++k) {
-    for (int c = 0; c < C; ++c) {
-      tick0 = clock();
 
+    tick0 = clock();
+
+    for (int c = 0; c < C; ++c) {
       const real* const g = weight4d + (k * C + c) * 9;
+      real* const u = u_[c];
       const real g_sum = (g[0] + g[1] + g[2] +
                           g[3] + g[4] + g[5] +
                           g[6] + g[7] + g[8]) / 4;
@@ -55,18 +57,24 @@ void conv_str1(const real* const bottom3d,
       u[13] = (g[6] + g[7] + g[8]) / 2;
       u[14] = (g[6] - g[7] + g[8]) / 2;
       u[15] = g[8];
+    }
 
-      tick1 = clock();
-      a_time[1] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+    tick1 = clock();
+    a_time[1] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+
+    for (int c = 0; c < C; ++c) {
+      tick00 = clock();
+
+      const real* const u = u_[c];
 
       for (int h = 0; h < H; h += 2) {
-        for (int w = 0; w < W; w += 2) {
-          if (h == H/2) {
-            tick0 = clock();
-          }
+        tick01 = clock();
+        tick0 = clock();
 
+        for (int w = 0; w < W; w += 2) {
           const real* const d
               = bottom3d + (c * H + h - pad_h) * W + w - pad_w;
+          real (*d_)[4] = d__[w];
           for (int j = 0; j < 4; ++j) {
             for (int i = 0; i < 4; ++i) {
               const int hh = h - pad_h + j;
@@ -75,12 +83,15 @@ void conv_str1(const real* const bottom3d,
                   d[j * W + i] : 0;
             }
           }
+        }
 
-          if (h == H/2) {
-            tick1 = clock();
-            a_time[2] += (float)(H/2 * (tick1 - tick0)) / CLOCKS_PER_SEC;
-            tick0 = clock();
-          }
+        tick1 = clock();
+        a_time[2] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+        tick0 = clock();
+
+        for (int w = 0; w < W; w += 2) {
+          const real (*d_)[4] = d__[w];
+          real* const v = v_[w];
 
           v0[0][0] = d_[0][0] - d_[0][2];
           v0[0][1] = d_[0][1] + d_[0][2];
@@ -121,13 +132,6 @@ void conv_str1(const real* const bottom3d,
           v[13] = v0[1][1] - v0[3][1];
           v[14] = v0[1][2] - v0[3][2];
           v[15] = v0[1][3] - v0[3][3];
-
-          if (h == H/2) {
-            tick1 = clock();
-            a_time[3] += (float)(H/2 * (tick1 - tick0)) / CLOCKS_PER_SEC;
-            tick0 = clock();
-          }
-
 /*
           v[0] = d_[0][0] - d_[0][2] - d_[2][0] + d_[2][2];
           v[1] = d_[0][1] + d_[0][2] - d_[2][1] - d_[2][2];
@@ -146,34 +150,47 @@ void conv_str1(const real* const bottom3d,
           v[14] = -d_[1][1] + d_[1][2] + d_[3][1] - d_[3][2];
           v[15] = d_[1][1] - d_[1][3] - d_[3][1] + d_[3][3];
 */
+        }
 
+        tick1 = clock();
+        a_time[3] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+        tick0 = clock();
+
+        for (int w = 0; w < W; w += 2) {
+          real* const v = v_[w];
           for (int i = 0; i < 16; ++i) {
             v[i] *= u[i];
           }
+        }
 
-          if (h == H/2) {
-            tick1 = clock();
-            a_time[4] += (float)(H/2 * (tick1 - tick0)) / CLOCKS_PER_SEC;
-            tick0 = clock();
-          }
+        tick1 = clock();
+        a_time[4] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+        tick0 = clock();
 
+        for (int w = 0; w < W; w += 2) {
           real* const y = top3d + (k * H + h) * W + w;
+          const real* const v = v_[w];
 
           y[0] += v[0] + v[1] + v[2] + v[4] + v[5] + v[6] + v[8] + v[9] + v[10];
           y[1] += v[1] - v[2] - v[3] + v[5] - v[6] - v[7] + v[9] - v[10] - v[11];
-          y[W] += v[4] + v[5] + v[6] - v[8] - v[9] - v[10] - v[12] - v[13] - v[14];
-          y[W + 1] += v[5] - v[6] - v[7] - v[9] + v[10] + v[11] - v[13] + v[14] + v[15];
+        }
+        for (int w = 0; w < W; w += 2) {
+          real* const y = top3d + (k * H + h + 1) * W + w;
+          const real* const v = v_[w];
 
-          if (h == H/2) {
-            tick1 = clock();
-            a_time[5] += (float)(H/2 * (tick1 - tick0)) / CLOCKS_PER_SEC;
-          }
-        } // endfor w
+          y[0] += v[4] + v[5] + v[6] - v[8] - v[9] - v[10] - v[12] - v[13] - v[14];
+          y[1] += v[5] - v[6] - v[7] - v[9] + v[10] + v[11] - v[13] + v[14] + v[15];
+        }
+
+        tick1 = clock();
+        a_time[5] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+        a_time[6] += (float)(tick1 - tick01) / CLOCKS_PER_SEC;
       } // endfor h
+      a_time[7] += (float)(tick1 - tick00) / CLOCKS_PER_SEC;
     } // endfor c
   } // endfor k
 
-  for (int i = 0; i < 6; ++i) {
+  for (int i = 0; i < 8; ++i) {
     printf("%.2f ", a_time[i] * 1000);
   }
   printf("\n");
@@ -346,7 +363,7 @@ void conv_forward(const Tensor* const bottom3d,
     top3d->shape[n][1] = top_H;
     top3d->shape[n][2] = top_W;
 
-    if (0 && kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1) {
+    if (kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1) {
       conv_str1(p_bottom_item, weight5d->data, p_top_item,
                 bottom_C, bottom_H, bottom_W, top_C, top_H, top_W,
                 pad_h, pad_w);
