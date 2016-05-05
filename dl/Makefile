@@ -1,6 +1,6 @@
 CC := g++
 CFLAGS := -O3 -Wall
-LDFLAGS := -lcblas -lm -lopencv_core -lopencv_highgui
+LDFLAGS := -lcblas -lm -lopencv_core -lopencv_highgui -lgomp
 NVCC := /usr/local/cuda/bin/nvcc
 #NVCCFLAGS := -O3 -Xcompiler -Wall -DGPU  # softmax generates exactly same outputs with those produced by caffe
 NVCCFLAGS := -O3 -use_fast_math -Xcompiler -Wall -DGPU
@@ -34,6 +34,11 @@ $(BUILD_DIR)/libdlgpu.a: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu
 clean:
 	rm -rf $(BUILD_DIR)
 	rm *.cpu.o *.gpu.o *.bin *.test.o
+
+conv.cpu.o: conv.cu layer.h
+	cp $< $*.cpp
+	$(CC) $(CFLAGS) -fopenmp -c $*.cpp -o $@
+	rm $*.cpp
 
 %.cpu.o: %.cu layer.h
 	cp $< $*.c

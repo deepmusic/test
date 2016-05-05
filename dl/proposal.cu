@@ -29,6 +29,11 @@
 
 #include "layer.h"
 
+#include "boost/date_time/posix_time/posix_time.hpp"
+
+static float a_time[8] = { 0, };
+static clock_t tick0, tick1, tick00, tick01;
+
 // --------------------------------------------------------------------------
 // kernel code
 //   generate_anchors: generate anchor boxes of varying sizes and ratios
@@ -441,6 +446,8 @@ void proposal_forward(const Tensor* const bottom4d,
                       int* const keep_dev,
                       const LayerOption* const option)
 {
+  tick00 = clock();
+
   // number of anchors  (= number of concats * scales * ratios)
   const int num_anchors
       = option->num_concats * option->num_ratios * option->num_scales;
@@ -466,6 +473,7 @@ void proposal_forward(const Tensor* const bottom4d,
     const real min_box_H = option->min_size * scale_H;
     const real min_box_W = option->min_size * scale_W;
 
+    tick0 = clock();
     // enumerate all proposals
     //   num_proposals = num_anchors * H * W
     //   (x1, y1, x2, y2, score) for each proposal
@@ -499,7 +507,10 @@ void proposal_forward(const Tensor* const bottom4d,
           proposals);
     }
     #endif
+    tick1 = clock();
+    a_time[0] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 
+    tick0 = clock();
     // choose candidates according to scores
     #ifdef GPU
     {
@@ -525,7 +536,10 @@ void proposal_forward(const Tensor* const bottom4d,
       sort_box(proposals, 0, num_proposals - 1, option->pre_nms_topn);
     }
     #endif
+    tick1 = clock();
+    a_time[1] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 
+    tick0 = clock();
     // NMS & RoI retrieval
     {
       // NMS
@@ -562,6 +576,8 @@ void proposal_forward(const Tensor* const bottom4d,
       top2d->start[n] = total_top_size;
       total_top_size += num_rois * 4;
     }
+    tick1 = clock();
+    a_time[2] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 
     // locate next item
     {
@@ -578,6 +594,10 @@ void proposal_forward(const Tensor* const bottom4d,
 
   top2d->ndim = 2;
   top2d->num_items = bottom4d->num_items;
+
+  tick1 = clock();
+  a_time[3] = (float)(tick1 - tick00) / CLOCKS_PER_SEC;
+  a_time[7] += (float)(tick1 - tick00) / CLOCKS_PER_SEC;
 }
 
 
@@ -670,6 +690,10 @@ void forward_proposal_layer(void* const net_, void* const layer_)
                    &layer->option);
 
   print_tensor_info(layer->name, &layer->tops[0]);
+  for (int i = 0; i < 8; ++i) {
+    printf("%4.2f\t", a_time[i] * 1000);
+  }
+  printf("\n");
 }
 
 void shape_proposal_layer(void* const net_, void* const layer_)

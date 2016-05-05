@@ -228,10 +228,10 @@ void deconv_forward(const Tensor* const bottom3d,
         cblas_sgemm(CblasRowMajor,
                     CblasTrans,  CblasNoTrans,
                     kernel_size,  bottom_area,  bottom_C,
-                    1.0f,
+                    1,
                     p_weight_g,  kernel_size,
                     p_bottom_g,  bottom_area,
-                    0.0f,
+                    0,
                     p_temp_g,  bottom_area);
       }
     }
@@ -288,14 +288,22 @@ void deconv_forward(const Tensor* const bottom3d,
       //   do_transpose_X (= false),  do_transpose_Y (= false),
       //   m = G * C,  n = H * W,  p = 1
       //   alpha = 1,  beta = 1
+/*
       cblas_sgemm(CblasRowMajor,
                   CblasNoTrans,  CblasNoTrans,
                   top_channels,  top_area,  1,
-                  1.0f,
+                  1,
                   bias1d->data,  1,
                   const_data,  top_area,
-                  1.0f,
+                  1,
                   p_top_item,  top_area);
+*/
+      cblas_sger(CblasRowMajor,
+                 top_channels,  top_area,
+                 1,
+                 bias1d->data,  1,
+                 const_data,  1,
+                 p_top_item,  top_area);
     #endif
     }
 

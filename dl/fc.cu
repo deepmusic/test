@@ -70,10 +70,10 @@ void fc_forward(const Tensor* const bottom2d,
     cblas_sgemm(CblasRowMajor,
                 CblasNoTrans,  CblasTrans,
                 N,  top_D,  bottom_D,
-                1.0f,
+                1,
                 bottom2d->data,  bottom_D,
                 weight2d->data,  bottom_D,
-                0.0f,
+                0,
                 top2d->data,  top_D);
   #endif
   }
@@ -104,14 +104,22 @@ void fc_forward(const Tensor* const bottom2d,
     //   do_transpose_X (= false),  do_transpose_Y (= false),
     //   m = N,  n = D',  p = 1
     //   alpha = 1,  beta = 1
+/*
     cblas_sgemm(CblasRowMajor,
                 CblasNoTrans,  CblasNoTrans,
                 N,  top_D,  1,
-                1.0f,
+                1,
                 const_data,  1,
                 bias1d->data,  top_D,
-                1.0f,
+                1,
                 top2d->data,  top_D);
+*/
+    cblas_sger(CblasRowMajor,
+               N,  top_D,
+               1,
+               const_data,  1,
+               bias1d->data,  1,
+               top2d->data,  top_D);
   #endif
   }
 }

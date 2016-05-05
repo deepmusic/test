@@ -1,9 +1,161 @@
 #include "layer.h"
 #include <string.h>
+#include <omp.h>
 
 #include "boost/date_time/posix_time/posix_time.hpp"
 
 static float a_time[8] = { 0, };
+static clock_t tick0, tick1, tick00, tick01;
+
+void conv_k3s1p1(const real* const bottom3d,
+                 const real* const weight4d,
+                 real* const temp_data,
+                 real* const top3d,
+                 const int top_C, const int bottom_C,
+                 const int H, const int W)
+{
+  const int H2 = DIV_THEN_CEIL(H,  2);
+  const int W2 = DIV_THEN_CEIL(W,  2);
+  real* const p_weight4x4 = temp_data;
+  real* const p_bottom4x4 = temp_data + top_C * bottom_C * 4 * 4;
+  real* const p_temp4x4 = p_bottom4x4 + bottom_C * H2 * W2 * 4 * 4;
+  real d[4][4];
+  real uv[16];
+
+  tick0 = clock();
+  tick01 = tick0;
+  {
+    const int stride = top_C * bottom_C;
+    for (int k = 0; k < top_C; ++k) {
+      for (int c = 0; c < bottom_C; ++c) {
+        const real* const g = weight4d + (k * bottom_C + c) * 3 * 3;
+        real* const u = p_weight4x4 + k * bottom_C + c;
+        const real g_sum = (g[0] + g[1] + g[2] +
+                            g[3] + g[4] + g[5] +
+                            g[6] + g[7] + g[8]) / 4;
+
+        u[0 * stride] = g[0];
+        u[1 * stride] = (g[0] + g[1] + g[2]) / 2;
+        u[2 * stride] = (g[0] - g[1] + g[2]) / 2;
+        u[3 * stride] = g[2];
+        u[4 * stride] = (g[0] + g[3] + g[6]) / 2;
+        u[5 * stride] = g_sum;
+        u[6 * stride] = g_sum - (g[1] + g[4] + g[7]) / 2;
+        u[7 * stride] = (g[2] + g[5] + g[8]) / 2;
+        u[8 * stride] = (g[0] - g[3] + g[6]) / 2;
+        u[9 * stride] = g_sum - (g[3] + g[4] + g[5]) / 2;
+        u[10 * stride] = g_sum - (g[1] + g[3] + g[5] + g[7]) / 2;
+        u[11 * stride] = (g[2] - g[5] + g[8]) / 2;
+        u[12 * stride] = g[6];
+        u[13 * stride] = (g[6] + g[7] + g[8]) / 2;
+        u[14 * stride] = (g[6] - g[7] + g[8]) / 2;
+        u[15 * stride] = g[8];
+      } // endfor c
+    } // endfor k
+  }
+  tick1 = clock();
+  a_time[0] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+
+  tick0 = clock();
+  {
+    const int stride = bottom_C * H2 * W2;
+    for (int c = 0; c < bottom_C; ++c) {
+    for (int h = 0; h < H; h += 2) {
+    for (int w = 0; w < W; w += 2) {
+      const real* const p_patch = bottom3d + (c * H + h - 1) * W + w - 1;
+      //real* const v = p_bottom4x4 + (h / 2 * W2 + w / 2) * bottom_C + c;
+      real* const v = p_bottom4x4 + (c * H2 + h / 2) * W2 + w / 2;
+
+      for (int j = 0; j < 4; ++j) {
+        for (int i = 0; i < 4; ++i) {
+          const int hh = h - 1 + j;
+          const int ww = w - 1 + i;
+          d[j][i] = (hh >= 0 && hh < H && ww >= 0 && ww < W) ?
+                    p_patch[j * W + i] : 0;
+        }
+      }
+
+      v[0 * stride] = d[0][0] - d[0][2] - d[2][0] + d[2][2];
+      v[1 * stride] = d[0][1] + d[0][2] - d[2][1] - d[2][2];
+      v[2 * stride] = -d[0][1] + d[0][2] + d[2][1] - d[2][2];
+      v[3 * stride] = d[0][1] - d[0][3] - d[2][1] + d[2][3];
+      v[4 * stride] = d[1][0] - d[1][2] + d[2][0] - d[2][2];
+      v[5 * stride] = d[1][1] + d[1][2] + d[2][1] + d[2][2];
+      v[6 * stride] = -d[1][1] + d[1][2] - d[2][1] + d[2][2];
+      v[7 * stride] = d[1][1] - d[1][3] + d[2][1] - d[2][3];
+      v[8 * stride] = -d[1][0] + d[1][2] + d[2][0] - d[2][2];
+      v[9 * stride] = -d[1][1] - d[1][2] + d[2][1] + d[2][2];
+      v[10 * stride] = d[1][1] - d[1][2] - d[2][1] + d[2][2];
+      v[11 * stride] = -d[1][1] + d[1][3] + d[2][1] - d[2][3];
+      v[12 * stride] = d[1][0] - d[1][2] - d[3][0] + d[3][2];
+      v[13 * stride] = d[1][1] + d[1][2] - d[3][1] - d[3][2];
+      v[14 * stride] = -d[1][1] + d[1][2] + d[3][1] - d[3][2];
+      v[15 * stride] = d[1][1] - d[1][3] - d[3][1] + d[3][3];
+    }}} // endfor chw
+  }
+  tick1 = clock();
+  a_time[1] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+
+  tick0 = clock();
+  //#pragma omp parallel num_threads(2)
+  {
+    const int top_area = H2 * W2;
+    //int i;
+    //#pragma omp for nowait
+    for (int i = 0; i < 16; ++i) {
+      const real* const u = p_weight4x4 + i * top_C * bottom_C;
+      const real* const v = p_bottom4x4 + i * bottom_C * top_area;
+      real* const uv_ = p_temp4x4 + i * top_C * top_area;
+      cblas_sgemm(CblasRowMajor,
+                  CblasNoTrans,  CblasNoTrans,
+                  top_C,  top_area,  bottom_C,
+                  1,
+                  u,  bottom_C,
+                  v,  top_area,//bottom_C,
+                  0,
+                  uv_,  top_area);
+    }
+  }
+  tick1 = clock();
+  a_time[2] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+
+  tick0 = clock();
+  {
+    const int stride = top_C * H2 * W2;
+    for (int k = 0; k < top_C; ++k) {
+    for (int h = 0; h < H; h += 2) {
+    for (int w = 0; w < W; w += 2) {
+      const real* const uv_ = p_temp4x4 + k * H2 * W2 + h / 2 * W2 + w / 2;
+      real* const y = top3d + (k * H + h) * W + w;
+
+      for (int i = 0; i < 16; ++i) {
+        uv[i] =  uv_[i * stride];
+      }
+
+      y[0] = uv[0] + uv[1] + uv[2] +
+             uv[4] + uv[5] + uv[6] +
+             uv[8] + uv[9] + uv[10];
+      if (w + 1 < W) {
+        y[1] = uv[1] - uv[2] - uv[3] +
+               uv[5] - uv[6] - uv[7] +
+               uv[9] - uv[10] - uv[11];
+      }
+      if (h + 1 < H) {
+        y[W] = uv[4] + uv[5] + uv[6]
+               - uv[8] - uv[9] - uv[10]
+               - uv[12] - uv[13] - uv[14];
+        if (w + 1 < W) {
+          y[W + 1] = uv[5] - uv[6] - uv[7]
+                     - uv[9] + uv[10] + uv[11]
+                     - uv[13] + uv[14] + uv[15];
+        }
+      }
+    }}} // endfor khw
+  }
+  tick1 = clock();
+  a_time[3] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+  a_time[4] = (float)(tick1 - tick01) / CLOCKS_PER_SEC;
+}
 
 void conv_str1(const real* const bottom3d,
                const real* const weight4d,
@@ -12,12 +164,12 @@ void conv_str1(const real* const bottom3d,
                const int C5, const int H5, const int W5,
                const int pad_h, const int pad_w)
 {
-  clock_t tick0, tick1, tick00, tick01;
+  clock_t tick0, tick1, tick00;
 
   real u_[1024][16];
-  real v0[4][4];
-  real v_[1000][16];
-  real d__[1000][4][4];
+  real d_[4][4];
+  real v[16];
+  real uv[16];
 
   if (H != H5 || W != W5) {
     printf("[ERROR] Size mismatch! bottom:(%d x %d) vs. top:(%d x %d)\n",
@@ -25,175 +177,110 @@ void conv_str1(const real* const bottom3d,
   }
 
   tick0 = clock();
+  tick00 = clock();
 
   memset(top3d, 0, sizeof(real) * C5 * H5 * W5);
 
   tick1 = clock();
   a_time[0] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 
-  for (int k = 0; k < C5; ++k) {
-
+  for (int c = 0; c < C; ++c) {
     tick0 = clock();
-
-    for (int c = 0; c < C; ++c) {
-      const real* const g = weight4d + (k * C + c) * 9;
-      real* const u = u_[c];
-      const real g_sum = (g[0] + g[1] + g[2] +
-                          g[3] + g[4] + g[5] +
-                          g[6] + g[7] + g[8]) / 4;
-      u[0] = g[0];
-      u[1] = (g[0] + g[1] + g[2]) / 2;
-      u[2] = (g[0] - g[1] + g[2]) / 2;
-      u[3] = g[2];
-      u[4] = (g[0] + g[3] + g[6]) / 2;
-      u[5] = g_sum;
-      u[6] = g_sum - (g[1] + g[4] + g[7]) / 2;
-      u[7] = (g[2] + g[5] + g[8]) / 2;
-      u[8] = (g[0] - g[3] + g[6]) / 2;
-      u[9] = g_sum - (g[3] + g[4] + g[5]) / 2;
-      u[10] = g_sum - (g[1] + g[3] + g[5] + g[7]) / 2;
-      u[11] = (g[2] - g[5] + g[8]) / 2;
-      u[12] = g[6];
-      u[13] = (g[6] + g[7] + g[8]) / 2;
-      u[14] = (g[6] - g[7] + g[8]) / 2;
-      u[15] = g[8];
+    {
+      for (int k = 0; k < C5; ++k) {
+        const real* const g = weight4d + (k * C + c) * 9;
+        real* const u = u_[k];
+        const real g_sum = (g[0] + g[1] + g[2] +
+                            g[3] + g[4] + g[5] +
+                            g[6] + g[7] + g[8]) / 4;
+        u[0] = g[0];
+        u[1] = (g[0] + g[1] + g[2]) / 2;
+        u[2] = (g[0] - g[1] + g[2]) / 2;
+        u[3] = g[2];
+        u[4] = (g[0] + g[3] + g[6]) / 2;
+        u[5] = g_sum;
+        u[6] = g_sum - (g[1] + g[4] + g[7]) / 2;
+        u[7] = (g[2] + g[5] + g[8]) / 2;
+        u[8] = (g[0] - g[3] + g[6]) / 2;
+        u[9] = g_sum - (g[3] + g[4] + g[5]) / 2;
+        u[10] = g_sum - (g[1] + g[3] + g[5] + g[7]) / 2;
+        u[11] = (g[2] - g[5] + g[8]) / 2;
+        u[12] = g[6];
+        u[13] = (g[6] + g[7] + g[8]) / 2;
+        u[14] = (g[6] - g[7] + g[8]) / 2;
+        u[15] = g[8];
+      }
     }
-
     tick1 = clock();
     a_time[1] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 
-    for (int c = 0; c < C; ++c) {
-      tick00 = clock();
-
-      const real* const u = u_[c];
-
+    tick0 = clock();
+    {
       for (int h = 0; h < H; h += 2) {
-        tick01 = clock();
-        tick0 = clock();
+      for (int w = 0; w < W; w += 2) {
+        const real* const d
+            = bottom3d + (c * H + h - pad_h) * W + w - pad_w;
+        for (int j = 0; j < 4; ++j) {
+          for (int i = 0; i < 4; ++i) {
+            const int hh = h - pad_h + j;
+            const int ww = w - pad_w + i;
+            d_[j][i] = (hh >= 0 && hh < H && ww >= 0 && ww < W) ?
+                       d[j * W + i] : 0;
+          }
+        }
 
-        for (int w = 0; w < W; w += 2) {
-          const real* const d
-              = bottom3d + (c * H + h - pad_h) * W + w - pad_w;
-          real (*d_)[4] = d__[w];
-          for (int j = 0; j < 4; ++j) {
-            for (int i = 0; i < 4; ++i) {
-              const int hh = h - pad_h + j;
-              const int ww = w - pad_w + i;
-              d_[j][i] = (hh >= 0 && hh < H && ww >= 0 && ww < W) ?
-                  d[j * W + i] : 0;
+        v[0] = d_[0][0] - d_[0][2] - d_[2][0] + d_[2][2];
+        v[1] = d_[0][1] + d_[0][2] - d_[2][1] - d_[2][2];
+        v[2] = -d_[0][1] + d_[0][2] + d_[2][1] - d_[2][2];
+        v[3] = d_[0][1] - d_[0][3] - d_[2][1] + d_[2][3];
+        v[4] = d_[1][0] - d_[1][2] + d_[2][0] - d_[2][2];
+        v[5] = d_[1][1] + d_[1][2] + d_[2][1] + d_[2][2];
+        v[6] = -d_[1][1] + d_[1][2] - d_[2][1] + d_[2][2];
+        v[7] = d_[1][1] - d_[1][3] + d_[2][1] - d_[2][3];
+        v[8] = -d_[1][0] + d_[1][2] + d_[2][0] - d_[2][2];
+        v[9] = -d_[1][1] - d_[1][2] + d_[2][1] + d_[2][2];
+        v[10] = d_[1][1] - d_[1][2] - d_[2][1] + d_[2][2];
+        v[11] = -d_[1][1] + d_[1][3] + d_[2][1] - d_[2][3];
+        v[12] = d_[1][0] - d_[1][2] - d_[3][0] + d_[3][2];
+        v[13] = d_[1][1] + d_[1][2] - d_[3][1] - d_[3][2];
+        v[14] = -d_[1][1] + d_[1][2] + d_[3][1] - d_[3][2];
+        v[15] = d_[1][1] - d_[1][3] - d_[3][1] + d_[3][3];
+
+        for (int k = 0; k < C5; ++k) {
+          const real* const u = u_[k];
+          for (int i = 0; i < 16; ++i) {
+            uv[i] = u[i] * v[i];
+          }
+
+          real* const y = top3d + (k * H + h) * W + w;
+
+          y[0] += uv[0] + uv[1] + uv[2] +
+                  uv[4] + uv[5] + uv[6] +
+                  uv[8] + uv[9] + uv[10];
+          if (w + 1 < W) {
+            y[1] += uv[1] - uv[2] - uv[3] +
+                    uv[5] - uv[6] - uv[7] +
+                    uv[9] - uv[10] - uv[11];
+          }
+          if (h + 1 < H) {
+            y[W] += uv[4] + uv[5] + uv[6]
+                    - uv[8] - uv[9] - uv[10]
+                    - uv[12] - uv[13] - uv[14];
+            if (w + 1 < W) {
+              y[W + 1] += uv[5] - uv[6] - uv[7]
+                          - uv[9] + uv[10] + uv[11]
+                          - uv[13] + uv[14] + uv[15];
             }
           }
         }
-
-        tick1 = clock();
-        a_time[2] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-        tick0 = clock();
-
-        for (int w = 0; w < W; w += 2) {
-          const real (*d_)[4] = d__[w];
-          real* const v = v_[w];
-
-          v0[0][0] = d_[0][0] - d_[0][2];
-          v0[0][1] = d_[0][1] + d_[0][2];
-          v0[0][2] = -d_[0][1] + d_[0][2];
-          v0[0][3] = d_[0][1] - d_[0][3];
-
-          v0[1][0] = d_[1][0] - d_[1][2];
-          v0[1][1] = d_[1][1] + d_[1][2];
-          v0[1][2] = -d_[1][1] + d_[1][2];
-          v0[1][3] = d_[1][1] - d_[1][3];
-
-          v0[2][0] = d_[2][0] - d_[2][2];
-          v0[2][1] = d_[2][1] + d_[2][2];
-          v0[2][2] = -d_[2][1] + d_[2][2];
-          v0[2][3] = d_[2][1] - d_[2][3];
-
-          v0[3][0] = d_[3][0] - d_[3][2];
-          v0[3][1] = d_[3][1] + d_[3][2];
-          v0[3][2] = -d_[3][1] + d_[3][2];
-          v0[3][3] = d_[3][1] - d_[3][3];
-
-          v[0] = v0[0][0] - v0[2][0];
-          v[1] = v0[0][1] - v0[2][1];
-          v[2] = v0[0][2] - v0[2][2];
-          v[3] = v0[0][3] - v0[2][3];
-
-          v[4] = v0[1][0] + v0[2][0];
-          v[5] = v0[1][1] + v0[2][1];
-          v[6] = v0[1][2] + v0[2][2];
-          v[7] = v0[1][3] + v0[2][3];
-
-          v[8] = -v0[1][0] + v0[2][0];
-          v[9] = -v0[1][1] + v0[2][1];
-          v[10] = -v0[1][2] + v0[2][2];
-          v[11] = -v0[1][3] + v0[2][3];
-
-          v[12] = v0[1][0] - v0[3][0];
-          v[13] = v0[1][1] - v0[3][1];
-          v[14] = v0[1][2] - v0[3][2];
-          v[15] = v0[1][3] - v0[3][3];
-/*
-          v[0] = d_[0][0] - d_[0][2] - d_[2][0] + d_[2][2];
-          v[1] = d_[0][1] + d_[0][2] - d_[2][1] - d_[2][2];
-          v[2] = -d_[0][1] + d_[0][2] + d_[2][1] - d_[2][2];
-          v[3] = d_[0][1] - d_[0][3] - d_[2][1] + d_[2][3];
-          v[4] = d_[1][0] - d_[1][2] + d_[2][0] - d_[2][2];
-          v[5] = d_[1][1] + d_[1][2] + d_[2][1] + d_[2][2];
-          v[6] = -d_[1][1] + d_[1][2] - d_[2][1] + d_[2][2];
-          v[7] = d_[1][1] - d_[1][3] + d_[2][1] - d_[2][3];
-          v[8] = -d_[1][0] + d_[1][2] + d_[2][0] - d_[2][2];
-          v[9] = -d_[1][1] - d_[1][2] + d_[2][1] + d_[2][2];
-          v[10] = d_[1][1] - d_[1][2] - d_[2][1] + d_[2][2];
-          v[11] = -d_[1][1] + d_[1][3] + d_[2][1] - d_[2][3];
-          v[12] = d_[1][0] - d_[1][2] - d_[3][0] + d_[3][2];
-          v[13] = d_[1][1] + d_[1][2] - d_[3][1] - d_[3][2];
-          v[14] = -d_[1][1] + d_[1][2] + d_[3][1] - d_[3][2];
-          v[15] = d_[1][1] - d_[1][3] - d_[3][1] + d_[3][3];
-*/
-        }
-
-        tick1 = clock();
-        a_time[3] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-        tick0 = clock();
-
-        for (int w = 0; w < W; w += 2) {
-          real* const v = v_[w];
-          for (int i = 0; i < 16; ++i) {
-            v[i] *= u[i];
-          }
-        }
-
-        tick1 = clock();
-        a_time[4] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-        tick0 = clock();
-
-        for (int w = 0; w < W; w += 2) {
-          real* const y = top3d + (k * H + h) * W + w;
-          const real* const v = v_[w];
-
-          y[0] += v[0] + v[1] + v[2] + v[4] + v[5] + v[6] + v[8] + v[9] + v[10];
-          y[1] += v[1] - v[2] - v[3] + v[5] - v[6] - v[7] + v[9] - v[10] - v[11];
-        }
-        for (int w = 0; w < W; w += 2) {
-          real* const y = top3d + (k * H + h + 1) * W + w;
-          const real* const v = v_[w];
-
-          y[0] += v[4] + v[5] + v[6] - v[8] - v[9] - v[10] - v[12] - v[13] - v[14];
-          y[1] += v[5] - v[6] - v[7] - v[9] + v[10] + v[11] - v[13] + v[14] + v[15];
-        }
-
-        tick1 = clock();
-        a_time[5] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-        a_time[6] += (float)(tick1 - tick01) / CLOCKS_PER_SEC;
-      } // endfor h
-      a_time[7] += (float)(tick1 - tick00) / CLOCKS_PER_SEC;
-    } // endfor c
-  } // endfor k
-
-  for (int i = 0; i < 8; ++i) {
-    printf("%.2f ", a_time[i] * 1000);
+      }}
+    }
+    tick1 = clock();
+    a_time[2] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
   }
-  printf("\n");
+
+  tick1 = clock();
+  a_time[4] += (float)(tick1 - tick00) / CLOCKS_PER_SEC;
 }
 
 // --------------------------------------------------------------------------
@@ -332,6 +419,8 @@ void conv_forward(const Tensor* const bottom3d,
                   const real* const const_data,
                   const LayerOption* const option)
 {
+  tick00 = clock();
+
   // weight shape: G x C' x C x kernel_h x kernel_w
   const int num_groups = weight5d->shape[0][0]; // G
   const int top_C = weight5d->shape[0][1];  // C'
@@ -363,12 +452,19 @@ void conv_forward(const Tensor* const bottom3d,
     top3d->shape[n][1] = top_H;
     top3d->shape[n][2] = top_W;
 
-    if (kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1) {
-      conv_str1(p_bottom_item, weight5d->data, p_top_item,
-                bottom_C, bottom_H, bottom_W, top_C, top_H, top_W,
-                pad_h, pad_w);
+    if (0 && top_C >= 64 && kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1) {
+      //conv_str1(p_bottom_item, weight5d->data, p_top_item,
+      //          bottom_C, bottom_H, bottom_W, top_C, top_H, top_W,
+      //          pad_h, pad_w);
+      conv_k3s1p1(p_bottom_item, weight5d->data, temp_data, p_top_item,
+                  top_C, bottom_C, bottom_H, bottom_W);
     }
     else {
+
+    if (1 || kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1) {
+      a_time[0] = a_time[1] = a_time[2] = a_time[3] = a_time[4] = 0;
+      tick01 = clock();
+    }
 
     // convert bottom shape
     //   (G * C) x H x W -> (G * C * kernel_h * kernel_w) x (H' * W')
@@ -390,6 +486,12 @@ void conv_forward(const Tensor* const bottom3d,
           top_H,  top_W,
           kernel_h,  kernel_w,  pad_h,  pad_w,  stride_h,  stride_w);
     #endif
+    }
+
+    if (1 || kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1) {
+      tick1 = clock();
+      a_time[1] = (float)(tick1 - tick01) / CLOCKS_PER_SEC;
+      tick0 = clock();
     }
 
     // compute top[g] = dot(weight[g], bottom[g])
@@ -440,12 +542,18 @@ void conv_forward(const Tensor* const bottom3d,
       cblas_sgemm(CblasRowMajor,
                   CblasNoTrans,  CblasNoTrans,
                   top_C,  top_area,  kernel_size,
-                  1.0f,
+                  1,
                   p_weight_g,  kernel_size,
                   p_temp_g,  top_area,
-                  0.0f,
+                  0,
                   p_top_g,  top_area);
     #endif
+    }
+
+    if (1 || kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1) {
+      tick1 = clock();
+      a_time[2] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+      a_time[4] = (float)(tick1 - tick01) / CLOCKS_PER_SEC;
     }
 
     }
@@ -479,14 +587,22 @@ void conv_forward(const Tensor* const bottom3d,
       //   do_transpose_X (= false),  do_transpose_Y (= false),
       //   m = G * C',  n = H' * W',  p = 1
       //   alpha = 1,  beta = 1
+/*
       cblas_sgemm(CblasRowMajor,
                   CblasNoTrans,  CblasNoTrans,
                   top_channels,  top_area,  1,
-                  1.0f,
+                  1,
                   bias1d->data,  1,
                   const_data,  top_area,
-                  1.0f,
+                  1,
                   p_top_item,  top_area);
+*/
+      cblas_sger(CblasRowMajor,
+                 top_channels,  top_area,
+                 1,
+                 bias1d->data,  1,
+                 const_data,  1,
+                 p_top_item,  top_area);
     #endif
     }
 
@@ -504,6 +620,9 @@ void conv_forward(const Tensor* const bottom3d,
 
   top3d->ndim = 3;
   top3d->num_items = bottom3d->num_items;
+
+  tick1 = clock();
+  a_time[7] += (float)(tick1 - tick00) / CLOCKS_PER_SEC;
 }
 
 
@@ -583,7 +702,9 @@ void conv_shape(const Tensor* const bottom3d,
   }
 
   // temporary data size: G * C * kernel_h * kernel_w * sum(H' * W')
-  *temp_size = num_groups * bottom_C * kernel_h * kernel_w * max_top_area;
+  *temp_size = num_groups * bottom_C * kernel_h * kernel_w * max_top_area
+               + num_groups * top_C * max_top_area * 4
+               + num_groups * top_C * bottom_C * 4 * 4;
 
   // constant data size: max(H' * W')
   *const_size = max_top_area;
@@ -607,6 +728,10 @@ void forward_conv_layer(void* const net_, void* const layer_)
                net->temp_data, net->const_data, &layer->option);
 
   print_tensor_info(layer->name, &layer->tops[0]);
+  for (int i = 0; i < 8; ++i) {
+    printf("%4.2f\t", a_time[i] * 1000);
+  }
+  printf("\n");
 }
 
 void shape_conv_layer(void* const net_, void* const layer_)
