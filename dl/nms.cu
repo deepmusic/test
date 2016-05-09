@@ -120,6 +120,35 @@ void nms_mask_gpu(const real* const boxes,
   }
 }
 #else
+void nms(const int num_boxes, const real* const boxes,
+         int* const num_out, int* const keep_out, const int base_index,
+         const real nms_thresh, const int max_num_out)
+{
+  unsigned char* const is_dead =
+      (unsigned char*)calloc(num_boxes, sizeof(unsigned char));
+  int num_to_keep = 0;
+  for (int i = 0; i < num_boxes; ++i) {
+    if (is_dead[i]) {
+      continue;
+    }
+
+    keep_out[num_to_keep++] = base_index + i;
+    if (num_to_keep == max_num_out) {
+      break;
+    }
+
+    for (int j = i + 1; j < num_boxes; ++j) {
+      if (iou(&boxes[i * 5], &boxes[j * 5]) > nms_thresh) {
+        is_dead[j] = 1;
+      }
+    }
+  }
+
+  *num_out = num_to_keep;
+
+  free(is_dead);
+}
+
 void nms_mask_cpu(const real* const boxes,
                   uint64* const mask,
                   const int num_boxes, const real nms_thresh)
@@ -194,7 +223,7 @@ void nms_mask_cpu(const real* const boxes,
 //   nms_thresh: threshold for determining "significant overlap"
 //               if "intersection area / union area > nms_thresh",
 //               two boxes are thought of as significantly overlapped
-void nms(const int num_boxes, const real* const boxes,
+void nms_(const int num_boxes, const real* const boxes,
          int* const num_out, int* const keep_out, const int base_index,
          const real nms_thresh, const int max_num_out)
 {

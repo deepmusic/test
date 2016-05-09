@@ -452,7 +452,7 @@ void conv_forward(const Tensor* const bottom3d,
     top3d->shape[n][1] = top_H;
     top3d->shape[n][2] = top_W;
 
-    if (0 && top_C >= 64 && kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1) {
+    if (top_C >= 64 && kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1) {
       //conv_str1(p_bottom_item, weight5d->data, p_top_item,
       //          bottom_C, bottom_H, bottom_W, top_C, top_H, top_W,
       //          pad_h, pad_w);
@@ -461,7 +461,7 @@ void conv_forward(const Tensor* const bottom3d,
     }
     else {
 
-    if (1 || kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1) {
+    if (1 || (kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1)) {
       a_time[0] = a_time[1] = a_time[2] = a_time[3] = a_time[4] = 0;
       tick01 = clock();
     }
@@ -488,7 +488,7 @@ void conv_forward(const Tensor* const bottom3d,
     #endif
     }
 
-    if (1 || kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1) {
+    if (1 || (kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1)) {
       tick1 = clock();
       a_time[1] = (float)(tick1 - tick01) / CLOCKS_PER_SEC;
       tick0 = clock();
@@ -550,10 +550,11 @@ void conv_forward(const Tensor* const bottom3d,
     #endif
     }
 
-    if (1 || kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1) {
+    if (1 || (kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1)) {
       tick1 = clock();
       a_time[2] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
       a_time[4] = (float)(tick1 - tick01) / CLOCKS_PER_SEC;
+      tick0 = clock();
     }
 
     }
@@ -606,6 +607,11 @@ void conv_forward(const Tensor* const bottom3d,
     #endif
     }
 
+    if (1 || (kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1)) {
+      tick1 = clock();
+      a_time[5] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+    }
+
     // locate next item
     {
       const int bottom_size = num_groups * bottom_C * bottom_H * bottom_W;
@@ -622,6 +628,7 @@ void conv_forward(const Tensor* const bottom3d,
   top3d->num_items = bottom3d->num_items;
 
   tick1 = clock();
+  a_time[6] = (float)(tick1 - tick00) / CLOCKS_PER_SEC;
   a_time[7] += (float)(tick1 - tick00) / CLOCKS_PER_SEC;
 }
 

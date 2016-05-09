@@ -1,6 +1,11 @@
 #include "layer.h"
 #include <string.h>
 
+#include "boost/date_time/posix_time/posix_time.hpp"
+
+static float a_time[8] = { 0, };
+static clock_t tick0, tick1;
+
 // --------------------------------------------------------------------------
 // layer operator code
 //   concat_forward
@@ -14,6 +19,8 @@ void concat_forward(const Tensor* const bottom3d[],
                     Tensor* const top3d,
                     const LayerOption* const option)
 {
+  tick0 = clock();
+
   const int num_bottoms = option->num_concats;
 
   const real* * p_bottom_data
@@ -69,6 +76,10 @@ void concat_forward(const Tensor* const bottom3d[],
           top3d->shape[n][0] * top3d->shape[n][1] * top3d->shape[n][2];
     }
   }
+
+  tick1 = clock();
+  a_time[6] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+  a_time[7] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 }
 
 
@@ -122,6 +133,10 @@ void forward_concat_layer(void* const net_, void* const layer_)
   concat_forward(layer->p_bottoms, &layer->tops[0], &layer->option);
 
   print_tensor_info(layer->name, &layer->tops[0]);
+  for (int i = 0; i < 8; ++i) {
+    printf("%4.2f\t", a_time[i] * 1000);
+  }
+  printf("\n");
 }
 
 void shape_concat_layer(void* const net_, void* const layer_)

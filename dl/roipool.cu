@@ -1,5 +1,10 @@
 #include "layer.h"
 
+#include "boost/date_time/posix_time/posix_time.hpp"
+
+static float a_time[8] = { 0, };
+static clock_t tick0, tick1;
+
 // --------------------------------------------------------------------------
 // kernel code
 //   roi_pool_{gpu, cpu}
@@ -159,6 +164,8 @@ void roipool_forward(const Tensor* const bottom3d,
                      int* const argmax_data,
                      const LayerOption* option)
 {
+  tick0 = clock();
+
   // top height & width
   const int top_H = option->pooled_height; // H'
   const int top_W = option->pooled_width; // W'
@@ -243,6 +250,10 @@ void roipool_forward(const Tensor* const bottom3d,
       }
     }
   }
+
+  tick1 = clock();
+  a_time[6] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+  a_time[7] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 }
 
 
@@ -331,6 +342,10 @@ void forward_roipool_layer(void* const net_, void* const layer_)
                   &layer->tops[0],
                   net->tempint_data, &layer->option);
   print_tensor_info(layer->name, &layer->tops[0]);
+  for (int i = 0; i < 8; ++i) {
+    printf("%4.2f\t", a_time[i] * 1000);
+  }
+  printf("\n");
 }
 
 void shape_roipool_layer(void* const net_, void* const layer_)

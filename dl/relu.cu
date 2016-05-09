@@ -1,5 +1,10 @@
 #include "layer.h"
 
+#include "boost/date_time/posix_time/posix_time.hpp"
+
+static float a_time[8] = { 0, };
+static clock_t tick0, tick1;
+
 // --------------------------------------------------------------------------
 // kernel code
 //   relu_{gpu, cpu}
@@ -112,6 +117,8 @@ void relu_forward(const Tensor* const bottom,
                   Tensor* const top,
                   const LayerOption* const option)
 {
+  tick0 = clock();
+
   const long int data_size = flatten_size(bottom);
 
   // perform (soft-)ReLU transform
@@ -153,6 +160,11 @@ void relu_forward(const Tensor* const bottom,
       }
     }
   }
+
+  tick1 = clock();
+  a_time[5] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+  a_time[6] = 0;
+  a_time[7] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 }
 
 // in-place (soft-)ReLU transform: bottom -> bottom
@@ -162,6 +174,8 @@ void relu_forward(const Tensor* const bottom,
 void relu_forward_inplace(Tensor* const bottom,
                           const LayerOption* const option)
 {
+  tick0 = clock();
+
   const long int data_size = flatten_size(bottom);
 
   // perform (soft-)ReLU transform
@@ -192,6 +206,11 @@ void relu_forward_inplace(Tensor* const bottom,
     }
   }
   #endif
+
+  tick1 = clock();
+  a_time[5] = 0;
+  a_time[6] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+  a_time[7] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 }
 
 
@@ -225,6 +244,10 @@ void forward_relu_layer(void* const net_, void* const layer_)
 
   relu_forward(layer->p_bottoms[0], &layer->tops[0], &layer->option);
   print_tensor_info(layer->name, &layer->tops[0]);
+  for (int i = 0; i < 8; ++i) {
+    printf("%4.2f\t", a_time[i] * 1000);
+  }
+  printf("\n");
 }
 
 void forward_inplace_relu_layer(void* const net_, void* const layer_)
@@ -233,6 +256,10 @@ void forward_inplace_relu_layer(void* const net_, void* const layer_)
 
   relu_forward_inplace(&layer->tops[0], &layer->option);
   print_tensor_info(layer->name, &layer->tops[0]);
+  for (int i = 0; i < 8; ++i) {
+    printf("%4.2f\t", a_time[i] * 1000);
+  }
+  printf("\n");
 }
 
 void shape_relu_layer(void* const net_, void* const layer_)

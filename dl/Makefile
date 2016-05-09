@@ -33,7 +33,7 @@ $(BUILD_DIR)/libdlgpu.a: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu
 
 clean:
 	rm -rf $(BUILD_DIR)
-	rm *.cpu.o *.gpu.o *.bin *.test.o
+	rm -f *.cpu.o *.gpu.o *.bin *.test.o
 
 conv.cpu.o: conv.cu layer.h
 	cp $< $*.cpp
