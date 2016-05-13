@@ -4,6 +4,78 @@ import matplotlib.pyplot as plt
 import scipy.ndimage
 import scipy.misc
 
+#param = [(-3, 32), (-3, 16), (-3, 8), (2, 4), (4.5, 2), (3.5, 1), (3.9, .5), (4.01, .25), (4, .125)]
+param = [(19, 10), (14, 4), (7, 2), (2, 2)]
+
+def graph():
+  x = np.array(range(-4000, 4000, 5)) / 100.0
+  y = nested_normal(x)
+  plt.plot(x, y)
+  plt.xlabel('x')
+  plt.ylabel('f(x)')
+  plt.show()
+  y = grad_nested_normal(x)
+  plt.plot(x, y)
+  plt.xlabel('x')
+  plt.ylabel("grad f(x)")
+  plt.show()
+
+def normal(x, mu, var):
+  #return (1.0 / np.sqrt(2 * np.pi * var)) * np.exp((-0.5 / var) * (x - mu) ** 2)
+  x = np.array(x)
+  diff = np.abs(x) - mu
+  val = np.zeros(x.shape)
+  val[diff > 0] = (1.0 / np.sqrt(2 * np.pi * var)) * np.exp((-0.5 / var) * diff[diff > 0] ** 2)
+  val[diff <= 0] = (1.0 / np.sqrt(2 * np.pi * var)) * (1.0 - 0.1 * diff[diff <= 0] / mu)
+  return val
+
+def grad_normal(x, mu, var):
+  #return (1.0 / var) * normal(x, mu, var) * (mu - np.array(x))
+  x = np.array(x)
+  diff = np.abs(x) - mu
+  val = np.zeros(x.shape)
+  r = (diff >= 0) * (x >= 0)
+  val[r] = (1.0 / var) * normal(x[r], mu, var) * (mu - x[r])
+  r = (diff >= 0) * (x < 0)
+  val[r] = (1.0 / var) * normal(x[r], mu, var) * (-mu - x[r])
+  r = (diff < 0) * (x >= 0)
+  val[r] = -(1.0 / np.sqrt(2 * np.pi * var)) * 0.1 / mu
+  r = (diff < 0) * (x < 0)
+  val[r] = +(1.0 / np.sqrt(2 * np.pi * var)) * 0.1 / mu
+  return val
+
+def nested_normal(x):
+  return -np.array([normal(x, m, v) for (m, v) in param]).sum(axis=0)
+
+def grad_nested_normal(x):
+  #return -np.array([grad_normal(x, m, v) + np.random.normal(0, 0.005*np.sqrt(v), x.shape) for (m, v) in param]).sum(axis=0)
+  return -np.array([grad_normal(x, m, v) for (m, v) in param]).sum(axis=0)
+
+def track(x0):
+  x = np.zeros((1000,))
+  fx = np.zeros(x.shape)
+  step = np.zeros(x.shape)
+  x[0] = x0
+  step[:] = 10
+#  step[:100] = 0.23
+#  step[100:200] = 0.22
+#  step[200:300] = 0.21
+#  step[300:400] = 0.20
+#  step[400:500] = 0.19
+#  step[500:600] = 0.18
+#  step[600:700] = 0.17
+#  step[700:800] = 0.16
+#  step[800:900] = 0.15
+#  step[900:1000] = 0.14
+  for i in range(x.shape[0]):
+    fx[i] = nested_normal(x[i])
+    dx = grad_nested_normal(x[i])
+    print "Iter {:4d}: x = {:.2f}, f(x) = {:.6f}, f'(x) = {:.6f}".format(i, x[i], fx[i], dx)
+    if i < x.shape[0] - 1:
+      x[i+1] = x[i] - step[i] * dx
+  plt.plot(fx.reshape(200,5).mean(axis=1))
+  plt.show()
+
 def load_data(filename):
   f = open(filename, 'rb')
   ndim = unpack("i", f.read(4))[0]
