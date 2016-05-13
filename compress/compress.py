@@ -24,8 +24,8 @@ from random import shuffle
 #   num_train_images: Number of training images... 500 is enough for VGG
 #   sample_per_image: Number of output patches (channels x 1 x 1)
 #                     randomly sampled for each image
-num_train_images = 500
-sample_per_image = 96
+num_train_images = 2000
+sample_per_image = 48
 
 
 
@@ -548,8 +548,8 @@ model_ = {
         'layers': [('conv1_2', 11), ('conv2_1', 25), ('conv2_2', 28), \
                    ('conv3_1', 52), ('conv3_2', 46), ('conv3_3', 56), \
                    ('conv4_1', 104), ('conv4_2', 92), ('conv4_3', 100), \
-                   ('conv5_1', 232), ('conv5_2', 224), ('conv5_3', 214), \
-                   ('fc6', 512), ('fc7', 128)], \
+                   ('conv5_1', 232), ('conv5_2', 224), ('conv5_3', 214)], \
+                   #('fc6', 512), ('fc7', 128)], \
         'data': './imagenet/train.txt', \
         'input_size': (224, 224), \
         'mean_bgr': [103.939, 116.779, 123.68], \
@@ -568,6 +568,6 @@ model_ = {
 
 if __name__ == "__main__":
     caffe.set_mode_gpu()
-    caffe.set_device(0)
+    caffe.set_device(1)
 
     Compression(model_['vggnet'])

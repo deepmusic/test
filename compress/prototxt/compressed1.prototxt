@@ -565,10 +565,19 @@ layer {
 }
 
 layer {
-  name: "fc6"
+  name: "fc6_a"
   type: "InnerProduct"
   bottom: "pool5"
-  top: "fc6"
+  top: "fc6_a"
+  inner_product_param {
+    num_output: 512
+  }
+}
+layer {
+  name: "fc6_b"
+  type: "InnerProduct"
+  bottom: "fc6_a"
+  top: "fc6_b"
   inner_product_param {
     num_output: 4096
   }
@@ -576,7 +585,7 @@ layer {
 layer {
   name: "relu6"
   type: "ReLU"
-  bottom: "fc6"
+  bottom: "fc6_b"
   top: "relu6"
 }
 layer {
@@ -590,10 +599,19 @@ layer {
 }
 
 layer {
-  name: "fc7"
+  name: "fc7_a"
   type: "InnerProduct"
   bottom: "relu6"
-  top: "fc7"
+  top: "fc7_a"
+  inner_product_param {
+    num_output: 128
+  }
+}
+layer {
+  name: "fc7_b"
+  type: "InnerProduct"
+  bottom: "fc7_a"
+  top: "fc7_b"
   inner_product_param {
     num_output: 4096
   }
@@ -601,7 +619,7 @@ layer {
 layer {
   name: "relu7"
   type: "ReLU"
-  bottom: "fc7"
+  bottom: "fc7_b"
   top: "relu7"
 }
 layer {

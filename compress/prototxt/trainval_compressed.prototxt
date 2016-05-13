@@ -669,27 +669,10 @@ layer {
 }
 
 layer {
-  name: "fc6_a"
+  name: "fc6"
   type: "InnerProduct"
   bottom: "pool5"
-  top: "fc6_a"
-  inner_product_param {
-    num_output: 512
-  }
-  param {
-    lr_mult: 1.0
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2.0
-    decay_mult: 0
-  }
-}
-layer {
-  name: "fc6_b"
-  type: "InnerProduct"
-  bottom: "fc6_a"
-  top: "fc6_b"
+  top: "fc6"
   inner_product_param {
     num_output: 4096
   }
@@ -705,7 +688,7 @@ layer {
 layer {
   name: "relu6"
   type: "ReLU"
-  bottom: "fc6_b"
+  bottom: "fc6"
   top: "relu6"
 }
 layer {
@@ -719,27 +702,10 @@ layer {
 }
 
 layer {
-  name: "fc7_a"
+  name: "fc7"
   type: "InnerProduct"
   bottom: "relu6"
-  top: "fc7_a"
-  inner_product_param {
-    num_output: 128
-  }
-  param {
-    lr_mult: 1.0
-    decay_mult: 1
-  }
-  param {
-    lr_mult: 2.0
-    decay_mult: 0
-  }
-}
-layer {
-  name: "fc7_b"
-  type: "InnerProduct"
-  bottom: "fc7_a"
-  top: "fc7_b"
+  top: "fc7"
   inner_product_param {
     num_output: 4096
   }
@@ -755,7 +721,7 @@ layer {
 layer {
   name: "relu7"
   type: "ReLU"
-  bottom: "fc7_b"
+  bottom: "fc7"
   top: "relu7"
 }
 layer {
@@ -791,7 +757,23 @@ layer {
 layer {
   bottom: "fc8"
   bottom: "label"
+  top: "accuracy_top5"
+  name: "accuracy_top5"
+  type: "Accuracy"
+  include {
+    phase: TEST
+  }
+  accuracy_param {
+    top_k: 5
+  }
+}
+layer {
+  bottom: "fc8"
+  bottom: "label"
   top: "loss"
   name: "loss"
   type: "SoftmaxWithLoss"
+  include {
+    phase: TRAIN
+  }
 }

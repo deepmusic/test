@@ -1068,7 +1068,23 @@ layer {
 layer {
   bottom: "fc8"
   bottom: "label"
+  top: "accuracy_top5"
+  name: "accuracy_top5"
+  type: "Accuracy"
+  include {
+    phase: TEST
+  }
+  accuracy_param {
+    top_k: 5
+  }
+}
+layer {
+  bottom: "fc8"
+  bottom: "label"
   top: "loss"
   name: "loss"
   type: "SoftmaxWithLoss"
+  include {
+    phase: TRAIN
+  }
 }
