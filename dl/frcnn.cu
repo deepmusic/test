@@ -15,15 +15,22 @@ void setup_frcnn_7_1_1(Net* const net)
     "concat", "convf",
 
     // Multi-scale RPN: 13 layers
+  #ifdef MSRPN
     "rpn_conv1", "rpn_cls_score1", "rpn_bbox_pred1",
     "rpn_conv3", "rpn_cls_score3", "rpn_bbox_pred3",
     "rpn_conv5", "rpn_cls_score5", "rpn_bbox_pred5",
     "rpn_score", "rpn_pred", "rpn_bbox",
+  #else
+    "rpn_conv1", "rpn_cls_score", "rpn_bbox_pred",
+    "null", "null", "null",
+    "null", "null", "null",
+    "null", "null", "null",
+  #endif
     "rpn_roi",
 
     // R-CNN: 10 layers
     "rcnn_roipool", "rcnn_roipool_flat",
-    "fc6_L", "fc6_U", "fc7_L", "fc7_U",
+    "fc6_L", "fc6_U", "fc7__L", "fc7__U",
     "cls_score", "cls_pred", "bbox_pred",
     "out", "test"
   };
@@ -39,12 +46,19 @@ void setup_frcnn_7_1_1(Net* const net)
 
   net->img_info = (Tensor*)malloc(sizeof(Tensor));
 
+#ifdef MSRPN
   real anchor_scales[9] = { 3.0f, 6.0f, 9.0f,
                             4.0f, 8.0f, 16.0f,
                             7.0f, 13.0f, 32.0f };
   real anchor_ratios[3] = { 0.5f, 1.0f, 2.0f };
   memcpy(net->anchor_scales, anchor_scales, 9 * sizeof(real));
   memcpy(net->anchor_ratios, anchor_ratios, 3 * sizeof(real));
+#else
+  real anchor_scales[5] = { 3.0f, 6.0f, 9.0f, 16.0f, 32.0f };
+  real anchor_ratios[5] = { 0.5f, 0.667f, 1.0f, 1.5f, 2.0f };
+  memcpy(net->anchor_scales, anchor_scales, 5 * sizeof(real));
+  memcpy(net->anchor_ratios, anchor_ratios, 5 * sizeof(real));
+#endif
 
   net->num_layer_data = 4;
 
@@ -118,6 +132,7 @@ void setup_frcnn_7_1_1(Net* const net)
       #endif
     }
     {
+    #ifdef MSRPN
       net->layers[21]->option.kernel_h = 3;
       net->layers[21]->option.kernel_w = 3;
       net->layers[21]->option.pad_h = 1;
@@ -127,12 +142,20 @@ void setup_frcnn_7_1_1(Net* const net)
       net->layers[24]->option.kernel_w = 5;
       net->layers[24]->option.pad_h = 2;
       net->layers[24]->option.pad_w = 2;
+    #else
+      net->layers[18]->option.kernel_h = 3;
+      net->layers[18]->option.kernel_w = 3;
+      net->layers[18]->option.pad_h = 1;
+      net->layers[18]->option.pad_w = 1;
+    #endif
     }
 
     {
       net->layers[16]->option.num_concats = 3;
+    #ifdef MSRPN
       net->layers[27]->option.num_concats = 3;
       net->layers[29]->option.num_concats = 3;
+    #endif
     }
 
     net->layers[1]->option.out_channels = 32;
@@ -150,6 +173,7 @@ void setup_frcnn_7_1_1(Net* const net)
     net->layers[14]->option.out_channels = 512;
     net->layers[15]->option.out_channels = 512;
     net->layers[17]->option.out_channels = 512;
+  #ifdef MSRPN
     net->layers[18]->option.out_channels = 128;
     net->layers[19]->option.out_channels = 18;
     net->layers[20]->option.out_channels = 36;
@@ -159,11 +183,21 @@ void setup_frcnn_7_1_1(Net* const net)
     net->layers[24]->option.out_channels = 128;
     net->layers[25]->option.out_channels = 18;
     net->layers[26]->option.out_channels = 36;
+  #else
+    net->layers[18]->option.out_channels = 512;
+    net->layers[19]->option.out_channels = 50;
+    net->layers[20]->option.out_channels = 100;
+  #endif
 
     net->layers[30]->option.scales = &net->anchor_scales[0];
     net->layers[30]->option.ratios = &net->anchor_ratios[0];
+  #ifdef MSRPN
     net->layers[30]->option.num_scales = 9;
     net->layers[30]->option.num_ratios = 3;
+  #else
+    net->layers[30]->option.num_scales = 5;
+    net->layers[30]->option.num_ratios = 5;
+  #endif
     net->layers[30]->option.num_concats = 1;
     net->layers[30]->option.base_size = 16;
     net->layers[30]->option.feat_stride = 16;
@@ -193,8 +227,8 @@ void setup_frcnn_7_1_1(Net* const net)
     net->layers[34]->option.out_channels = 4096;
     net->layers[35]->option.out_channels = 128;
     net->layers[36]->option.out_channels = 4096;
-    net->layers[37]->option.out_channels = 22;
-    net->layers[39]->option.out_channels = 88;
+    net->layers[37]->option.out_channels = 21;
+    net->layers[39]->option.out_channels = 84;
 
     net->layers[40]->option.min_size = 16;
     net->layers[40]->option.score_thresh = 0.7f;
@@ -215,17 +249,23 @@ void setup_frcnn_7_1_1(Net* const net)
     net->layers[16]->num_bottoms = 3;
     net->layers[16]->num_tops = 1;
 
-    for (int i = 17; i <= 26; ++i) {
+    for (int i = 17; i <= 20; ++i) {
       net->layers[i]->num_bottoms = 1;
       net->layers[i]->num_tops = 1;
       net->layers[i]->num_params = 2;
     }
 
+  #ifdef MSRPN
+    for (int i = 21; i <= 26; ++i) {
+      net->layers[i]->num_bottoms = 1;
+      net->layers[i]->num_tops = 1;
+      net->layers[i]->num_params = 2;
+    }
     net->layers[27]->num_bottoms = 3;
     net->layers[27]->num_tops = 1;
-
     net->layers[29]->num_bottoms = 3;
     net->layers[29]->num_tops = 1;
+  #endif
 
     net->layers[30]->num_bottoms = 3;
     net->layers[30]->num_tops = 1;
@@ -274,11 +314,14 @@ void setup_frcnn_7_1_1(Net* const net)
     net->layers[8]->allocate_top_data[0] = 1;
     net->layers[19]->allocate_top_data[0] = 1;
     net->layers[20]->allocate_top_data[0] = 1;
+    net->layers[30]->allocate_top_data[0] = 1;
+
+  #ifdef MSRPN
     net->layers[22]->allocate_top_data[0] = 1;
     net->layers[23]->allocate_top_data[0] = 1;
     net->layers[25]->allocate_top_data[0] = 1;
     net->layers[26]->allocate_top_data[0] = 1;
-    net->layers[30]->allocate_top_data[0] = 1;
+  #endif
   }
 }
 
@@ -331,7 +374,12 @@ void connect_frcnn_7_1_1(Net* const net)
   // Multi-scale RPN
   {
     // rpn_1, 3, 5
-    for (int i = 18; i <= 26; i += 3) {
+  #ifdef MSRPN
+    const int rpn_layer_end = 26;
+  #else
+    const int rpn_layer_end = 20;
+  #endif
+    for (int i = 18; i <= rpn_layer_end; i += 3) {
       // rpn_conv1, 3, 5
       net->layers[i]->p_bottoms[0] = &net->layers[17]->tops[0];
       net->layers[i]->f_forward[0] = forward_conv_layer;
@@ -349,6 +397,7 @@ void connect_frcnn_7_1_1(Net* const net)
       net->layers[i + 2]->f_shape[0] = shape_conv_layer;
     }
 
+  #ifdef MSRPN
     // rpn_score
     net->layers[27]->p_bottoms[0] = &net->layers[19]->tops[0];
     net->layers[27]->p_bottoms[1] = &net->layers[22]->tops[0];
@@ -366,10 +415,21 @@ void connect_frcnn_7_1_1(Net* const net)
     net->layers[29]->f_forward[1] = forward_rpn_bbox_layer;
     net->layers[29]->f_shape[0] = shape_concat_layer;
     net->layers[29]->f_shape[1] = shape_rpn_bbox_layer;
+  #else
+    net->layers[19]->f_forward[1] = forward_rpn_pred_layer;
+    net->layers[19]->f_shape[1] = shape_rpn_pred_layer;
+    net->layers[20]->f_forward[1] = forward_rpn_bbox_layer;
+    net->layers[20]->f_shape[1] = shape_rpn_bbox_layer;
+  #endif
 
     // proposal
+  #ifdef MSRPN
     net->layers[30]->p_bottoms[0] = &net->layers[27]->tops[0];
     net->layers[30]->p_bottoms[1] = &net->layers[29]->tops[0];
+  #else
+    net->layers[30]->p_bottoms[0] = &net->layers[19]->tops[0];
+    net->layers[30]->p_bottoms[1] = &net->layers[20]->tops[0];
+  #endif
     net->layers[30]->p_bottoms[2] = net->img_info;
     net->layers[30]->f_forward[0] = forward_proposal_layer;
     net->layers[30]->f_shape[0] = shape_proposal_layer;
@@ -455,6 +515,8 @@ void construct_frcnn_7_1_1(Net* net)
 
   malloc_net(net);
 
+  printf("malloced\n");
+
   net->space_cpu += space_cpu;
 
   {
@@ -465,6 +527,8 @@ void construct_frcnn_7_1_1(Net* net)
         }
       }
     }
+
+  printf("top allocated\n");
 
     net->layers[1]->tops[0].data = net->layer_data[1];
     net->layers[3]->tops[0].data = net->layer_data[1];
@@ -477,8 +541,10 @@ void construct_frcnn_7_1_1(Net* net)
     net->layers[11]->tops[0].data = net->layer_data[2];
     net->layers[15]->tops[0].data = net->layer_data[3];
     net->layers[17]->tops[0].data = net->layer_data[1];
+  #ifdef MSRPN
     net->layers[27]->tops[0].data = net->layer_data[0];
     net->layers[29]->tops[0].data = net->layer_data[2];
+  #endif
     net->layers[31]->tops[0].data = net->layer_data[2];
     net->layers[34]->tops[0].data = net->layer_data[1];
     net->layers[36]->tops[0].data = net->layer_data[1];
@@ -489,7 +555,11 @@ void construct_frcnn_7_1_1(Net* net)
     net->layers[41]->tops[0].data = net->layer_data[3];
   }
 
+  printf("top allocated2\n");
+
   init_layers(net);
+
+  printf("initialized\n");
 
   // print total memory size required
   {

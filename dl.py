@@ -8,8 +8,10 @@ import scipy.misc
 param = [(19, 10), (14, 4), (7, 2), (2, 2)]
 
 def load_inception():
-  proto = 'pva_inception2_test.pt'
-  model = 'models/pva_inception2/pva_inception2_train_iter_1520000.caffemodel'
+  #proto = 'pva_inception2_test.pt'
+  #model = 'models/pva_inception2/pva_inception2_train_iter_1520000.caffemodel'
+  proto = '../lightcaffe/models/pva7.1.1/faster_rcnn_once/faster_rcnn_test.pt'
+  model = '../new-faster-rcnn/output/faster_rcnn_once_25anc_plus/pvtdb_vocall_20_pva/pva7.1.1_once_iter_1160000.caffemodel'
   import caffe
   caffe.set_mode_cpu()
   #caffe.set_device(1)
@@ -49,16 +51,11 @@ def test_bn_scale(net):
     a[:,i,:,:] = a[:,i,:,:] * alpha[i] + beta[i]
     #a[:,i,:,:] = (a[:,i,:,:] - m[i]) * v[i] * w[i] + c[i]
 
-def bn_scale(net, keyset=None):
+def combine_conv_bn_scale(net, keyset=None):
   def copy_double(data):
     return np.array(data, copy=True, dtype=np.double)
   if keyset is None:
     keyset = [key[:-3] for key in net.params.keys() if key.endswith('/bn')]
-    #keyset = ['conv1', 'conv2', 'conv3', \
-    #    'inc3a/conv1', 'inc3a/conv3_1', 'inc3a/conv3_2', 'inc3a/conv5_1', 'inc3a/conv5_2', 'inc3a/conv5_3', \
-    #    #'inc3b/conv1', 'inc3b/conv3_1', 'inc3b/conv3_2', 'inc3b/conv5_1', 'inc3b/conv5_2', 'inc3b/conv5_3', \
-    #    'fc6', 'fc7'
-    #    ]
 
   for key in keyset:
     weight = copy_double(net.params[key][0].data)
@@ -166,6 +163,32 @@ def save_data(filename, data):
   f.write(pack('i' * ndim, *data.shape))
   data.tofile(f)
   f.close()
+
+def compress_fc(save_dir, layer_name, rank):
+  import sys
+  sys.path.append('compress')
+  import compress
+  layer_path = '{:s}/{:s}'.format(save_dir, layer_name)
+  W = load_data(layer_path + '_param0.bin')
+  b = load_data(layer_path + '_param1.bin')
+  W1, b1, W2, b2 = compress.CompressFCLayer(W, b, rank)
+  save_data(layer_path + '_L_param0.bin', W1)
+  save_data(layer_path + '_L_param1.bin', b1)
+  save_data(layer_path + '_U_param0.bin', W2)
+  save_data(layer_path + '_U_param1.bin', b2)
+
+def convert_net(net, save_dir):
+  combine_conv_bn_scale(net)
+  for layer_name in net.params.keys():
+    if layer_name.endswith('/bn') or layer_name.endswith('/scale'):
+      continue
+    for param_id in range(len(net.params[layer_name])):
+      filename = '{:s}/{:s}_param{:d}.bin'.format(save_dir, layer_name.replace('/', '__slash__'), param_id)
+      save_data(filename, net.params[layer_name][param_id].data)
+    if layer_name.startswith('fc6'):
+      compress_fc(save_dir, layer_name, 512)
+    elif layer_name.startswith('fc7'):
+      compress_fc(save_dir, layer_name, 128)
 
 def load_image(filename):
   img = scipy.ndimage.imread(filename)

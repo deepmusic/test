@@ -204,6 +204,7 @@ void nms_mask_cpu(const real* const boxes,
 
 
 
+#ifdef GPU
 // --------------------------------------------------------------------------
 // operator code
 //   nms: given a set of boxes, discard significantly-overlapped boxes
@@ -223,7 +224,7 @@ void nms_mask_cpu(const real* const boxes,
 //   nms_thresh: threshold for determining "significant overlap"
 //               if "intersection area / union area > nms_thresh",
 //               two boxes are thought of as significantly overlapped
-void nms_(const int num_boxes, const real* const boxes,
+void nms(const int num_boxes, const real* const boxes,
          int* const num_out, int* const keep_out, const int base_index,
          const real nms_thresh, const int max_num_out)
 {
@@ -291,3 +292,4 @@ void nms_(const int num_boxes, const real* const boxes,
 
   free(mask);
 }
+#endif

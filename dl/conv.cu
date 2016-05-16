@@ -7,6 +7,7 @@
 static float a_time[8] = { 0, };
 static clock_t tick0, tick1, tick00, tick01;
 
+#ifndef GPU
 void conv_k3s1p1(const real* const bottom3d,
                  const real* const weight4d,
                  real* const temp_data,
@@ -282,6 +283,7 @@ void conv_str1(const real* const bottom3d,
   tick1 = clock();
   a_time[4] += (float)(tick1 - tick00) / CLOCKS_PER_SEC;
 }
+#endif
 
 // --------------------------------------------------------------------------
 // kernel code
@@ -451,7 +453,7 @@ void conv_forward(const Tensor* const bottom3d,
     top3d->shape[n][0] = num_groups * top_C;
     top3d->shape[n][1] = top_H;
     top3d->shape[n][2] = top_W;
-
+  #ifndef GPU
     if (top_C >= 64 && kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1) {
       //conv_str1(p_bottom_item, weight5d->data, p_top_item,
       //          bottom_C, bottom_H, bottom_W, top_C, top_H, top_W,
@@ -460,6 +462,7 @@ void conv_forward(const Tensor* const bottom3d,
                   top_C, bottom_C, bottom_H, bottom_W);
     }
     else {
+  #endif
 
     if (1 || (kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1)) {
       a_time[0] = a_time[1] = a_time[2] = a_time[3] = a_time[4] = 0;
@@ -557,7 +560,9 @@ void conv_forward(const Tensor* const bottom3d,
       tick0 = clock();
     }
 
+  #ifndef GPU
     }
+  #endif
 
     // compute top[i][j] = top[i][j] + bias[i]
     //   top: (G * C') x (H' * W')
