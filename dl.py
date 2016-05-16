@@ -7,6 +7,81 @@ import scipy.misc
 #param = [(-3, 32), (-3, 16), (-3, 8), (2, 4), (4.5, 2), (3.5, 1), (3.9, .5), (4.01, .25), (4, .125)]
 param = [(19, 10), (14, 4), (7, 2), (2, 2)]
 
+def load_inception():
+  proto = 'pva_inception2_test.pt'
+  model = 'models/pva_inception2/pva_inception2_train_iter_1520000.caffemodel'
+  import caffe
+  caffe.set_mode_cpu()
+  #caffe.set_device(1)
+  net = caffe.Net(proto, model, caffe.TEST)
+  return net
+
+def test_bn(net):
+  a = net.blobs['inc3a/conv5_2'].data.copy()
+  b = net.blobs['inc3a/conv5_2/bn'].data.copy()
+  n = net.params['inc3a/conv5_2/bn'][2].data[0]
+  m = net.params['inc3a/conv5_2/bn'][0].data.copy()
+  v = net.params['inc3a/conv5_2/bn'][1].data.copy()
+  m /= n
+  v = 1 / np.sqrt(v / n)
+  for i in range(m.shape[0]):
+    a[:,i,:,:] = (a[:,i,:,:] - m[i]) * v[i]
+
+def test_scale(net):
+  a = net.blobs['inc3a/conv5_2/bn'].data.copy()
+  b = net.blobs['inc3a/conv5_2/scale'].data.copy()
+  w = net.params['inc3a/conv5_2/scale'][0].data.copy()
+  c = net.params['inc3a/conv5_2/scale'][1].data.copy()
+  for i in range(w.shape[0]):
+    a[:,i,:,:] = w[i] * a[:,i,:,:] + c[i]
+
+def test_bn_scale(net):
+  a = net.blobs['inc3a/conv5_2'].data.copy()
+  b = net.blobs['inc3a/conv5_2/scale'].data.copy()
+  n = net.params['inc3a/conv5_2/bn'][2].data[0]
+  m = net.params['inc3a/conv5_2/bn'][0].data.copy()
+  v = net.params['inc3a/conv5_2/bn'][1].data.copy()
+  w = net.params['inc3a/conv5_2/scale'][0].data.copy()
+  c = net.params['inc3a/conv5_2/scale'][1].data.copy()
+  alpha = w / np.sqrt(v / n)
+  beta = c - (m / n) * alpha
+  for i in range(m.shape[0]):
+    a[:,i,:,:] = a[:,i,:,:] * alpha[i] + beta[i]
+    #a[:,i,:,:] = (a[:,i,:,:] - m[i]) * v[i] * w[i] + c[i]
+
+def bn_scale(net, keyset=None):
+  def copy_double(data):
+    return np.array(data, copy=True, dtype=np.double)
+  if keyset is None:
+    keyset = [key[:-3] for key in net.params.keys() if key.endswith('/bn')]
+    #keyset = ['conv1', 'conv2', 'conv3', \
+    #    'inc3a/conv1', 'inc3a/conv3_1', 'inc3a/conv3_2', 'inc3a/conv5_1', 'inc3a/conv5_2', 'inc3a/conv5_3', \
+    #    #'inc3b/conv1', 'inc3b/conv3_1', 'inc3b/conv3_2', 'inc3b/conv5_1', 'inc3b/conv5_2', 'inc3b/conv5_3', \
+    #    'fc6', 'fc7'
+    #    ]
+
+  for key in keyset:
+    weight = copy_double(net.params[key][0].data)
+    bias = copy_double(net.params[key][1].data)
+    num_bn_samples = copy_double(net.params[key + '/bn'][2].data)
+    bn_mean = copy_double(net.params[key + '/bn'][0].data)
+    bn_variance = copy_double(net.params[key + '/bn'][1].data)
+    scale_weight = copy_double(net.params[key + '/scale'][0].data)
+    scale_bias = copy_double(net.params[key + '/scale'][1].data)
+
+    if num_bn_samples[0] == 0:
+      num_bn_samples[0] = 1
+    alpha = scale_weight / np.sqrt(bn_variance / num_bn_samples[0] + np.finfo(np.double).eps)
+    net.params[key][1].data[:] = bias * alpha + (scale_bias - (bn_mean / num_bn_samples[0]) * alpha)
+    for i in range(len(alpha)):
+      net.params[key][0].data[i] = weight[i] * alpha[i]
+
+    net.params[key + '/bn'][0].data[:] = 0
+    net.params[key + '/bn'][1].data[:] = 1
+    net.params[key + '/bn'][2].data[:] = 1
+    net.params[key + '/scale'][0].data[:] = 1
+    net.params[key + '/scale'][1].data[:] = 0
+
 def graph():
   x = np.array(range(-4000, 4000, 5)) / 100.0
   y = nested_normal(x)
