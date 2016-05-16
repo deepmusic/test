@@ -244,10 +244,14 @@ void forward_relu_layer(void* const net_, void* const layer_)
 
   relu_forward(layer->p_bottoms[0], &layer->tops[0], &layer->option);
   print_tensor_info(layer->name, &layer->tops[0]);
-  for (int i = 0; i < 8; ++i) {
-    printf("%4.2f\t", a_time[i] * 1000);
+  #ifdef DEBUG
+  {
+    for (int i = 0; i < 8; ++i) {
+      printf("%4.2f\t", a_time[i] * 1000);
+    }
+    printf("\n");
   }
-  printf("\n");
+  #endif
 }
 
 void forward_inplace_relu_layer(void* const net_, void* const layer_)
@@ -256,10 +260,14 @@ void forward_inplace_relu_layer(void* const net_, void* const layer_)
 
   relu_forward_inplace(&layer->tops[0], &layer->option);
   print_tensor_info(layer->name, &layer->tops[0]);
-  for (int i = 0; i < 8; ++i) {
-    printf("%4.2f\t", a_time[i] * 1000);
+  #ifdef DEBUG
+  {
+    for (int i = 0; i < 8; ++i) {
+      printf("%4.2f\t", a_time[i] * 1000);
+    }
+    printf("\n");
   }
-  printf("\n");
+  #endif
 }
 
 void shape_relu_layer(void* const net_, void* const layer_)

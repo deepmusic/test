@@ -169,7 +169,6 @@ void malloc_net(Net* const net)
   }
 
   for (int i = 0; i < net->num_layers; ++i) {
-    printf("%s %d\n", net->layers[i]->name, net->layers[i]->num_params);
     space += malloc_load_layer_data(net->layers[i], net->layers[i]->name,
                                     net->param_cpu_data);
   }
@@ -285,9 +284,6 @@ void shape_net(Net* const net)
     for (int j = 0; j < MAX_NUM_OPS_PER_LAYER; ++j) {
       if (net->layers[i]->f_shape[j]) {
         (*net->layers[i]->f_shape[j])(net, net->layers[i]);
-        for (int k = 0; k < net->layers[i]->num_tops; ++k) {
-          print_tensor_info(net->layers[i]->name, &net->layers[i]->tops[k]);
-        }
       }
     }
   }

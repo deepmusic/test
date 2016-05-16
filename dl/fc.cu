@@ -207,10 +207,14 @@ void forward_fc_layer(void* const net_, void* const layer_)
              &layer->params[0], p_bias,
              net->const_data, &layer->option);
   print_tensor_info(layer->name, &layer->tops[0]);
-  for (int i = 0; i < 8; ++i) {
-    printf("%4.2f\t", a_time[i] * 1000);
+  #ifdef DEBUG
+  {
+    for (int i = 0; i < 8; ++i) {
+      printf("%4.2f\t", a_time[i] * 1000);
+    }
+    printf("\n");
   }
-  printf("\n");
+  #endif
 }
 
 void shape_fc_layer(void* const net_, void* const layer_)
