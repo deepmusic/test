@@ -37,6 +37,10 @@ long int malloc_load_layer_data(Layer* const layer,
 {
   long int space = 0;
 
+  #ifdef DEBUG
+  printf("%s %d %d\n", name, layer->num_tops, layer->num_params);
+  #endif
+
   for (int i = 0; i < layer->num_tops; ++i) {
     if (layer->allocate_top_data[i]) {
       space += malloc_tensor_data(&layer->tops[i]);
@@ -104,6 +108,8 @@ void malloc_net(Net* const net)
   long int space_cpu = 0;
   long int space = 0;
 
+  printf("a\n");
+
   for (int i = 0; i < net->num_layer_data; ++i) {
     #ifdef GPU
     cudaMalloc(&net->layer_data[i], net->layer_size * sizeof(real));
@@ -114,6 +120,7 @@ void malloc_net(Net* const net)
   }
   space += net->num_layer_data * net->layer_size * sizeof(real);
 
+  printf("b\n");
   #ifdef GPU
   {
     cudaMalloc(&net->temp_data, net->temp_size * sizeof(real));
@@ -152,6 +159,7 @@ void malloc_net(Net* const net)
                                + net->temp_size)
                + sizeof(int) * (net->tempint_size);
 
+  printf("c\n");
   // data initialization
   {
   #ifdef GPU
@@ -168,18 +176,23 @@ void malloc_net(Net* const net)
   #endif
   }
 
+  printf("d\n");
   for (int i = 0; i < net->num_layers; ++i) {
     space += malloc_load_layer_data(net->layers[i], net->layers[i]->name,
                                     net->param_cpu_data);
   }
 
+  printf("e\n");
   {
-    const int img_info_size = net->layers[0]->tops[0].num_items * 6;
-    net->img_info->data
-        = (real*)malloc(img_info_size * sizeof(real));
-    space_cpu += sizeof(real) * img_info_size;
+    if (net->img_info) {
+      const int img_info_size = net->layers[0]->tops[0].num_items * 6;
+      net->img_info->data
+          = (real*)malloc(img_info_size * sizeof(real));
+      space_cpu += sizeof(real) * img_info_size;
+    }
   }
 
+  printf("f\n");
   // acquire CuBLAS handle
   #ifdef GPU
   {
@@ -242,8 +255,10 @@ void free_net(Net* const net)
   }
   #endif
 
-  free_tensor_data(net->img_info);
-  free(net->img_info);
+  if (net->img_info) {
+    free_tensor_data(net->img_info);
+    free(net->img_info);
+  }
 
   #ifdef GPU
   {
@@ -284,6 +299,11 @@ void shape_net(Net* const net)
     for (int j = 0; j < MAX_NUM_OPS_PER_LAYER; ++j) {
       if (net->layers[i]->f_shape[j]) {
         (*net->layers[i]->f_shape[j])(net, net->layers[i]);
+        #ifdef DEBUG
+        for (int k = 0; k < net->layers[i]->num_tops; ++k) {
+          print_tensor_info(net->layers[i]->name, &net->layers[i]->tops[k]);
+        }
+        #endif
       }
     }
   }
