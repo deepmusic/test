@@ -119,6 +119,61 @@ void nms_mask_gpu(const real* const boxes,
     } // endif dj < dj_end
   }
 }
+
+__global__
+void nms_sub(const int num_boxes, const real* const boxes,
+             const real nms_thresh, unsigned char* const is_dead,
+             int i)
+{
+  const int index = blockIdx.x * blockDim.x + threadIdx.x;
+  if (index > i && index < num_boxes && !is_dead[index]) {
+    const real iou_val = iou(&boxes[i * 5], &boxes[index * 5]);
+    if (iou_val > nms_thresh) {
+      is_dead[index] = 1;
+    }
+  }
+}
+
+void nms(const int num_boxes, const real* const boxes,
+         int* const num_out, int* const keep_out, const int base_index,
+         const real nms_thresh, const int max_num_out)
+{
+  unsigned char *is_dead_dev;
+  unsigned char is_dead;
+  real* boxes_dev;
+  int num_to_keep = 0;
+
+  const int num_threads = num_boxes;
+  const int threads_per_block = 512;
+  const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
+
+  cudaMalloc(&is_dead_dev, num_boxes * sizeof(unsigned char));
+  cudaMemset(is_dead_dev, 0, num_boxes * sizeof(unsigned char));
+  cudaMalloc(&boxes_dev, num_boxes * 5 * sizeof(real));
+  cudaMemcpyAsync(boxes_dev, boxes, num_boxes * 5 * sizeof(real),
+                  cudaMemcpyHostToDevice);
+
+  for (int i = 0; i < num_boxes; ++i) {
+    cudaMemcpy(&is_dead, is_dead_dev + i, sizeof(unsigned char), cudaMemcpyDeviceToHost);
+    if (is_dead) {
+      continue;
+    }
+
+    keep_out[num_to_keep++] = base_index + i;
+    if (num_to_keep == max_num_out) {
+      break;
+    }
+
+    nms_sub<<<num_blocks, threads_per_block>>>(
+      num_boxes,  boxes_dev,  nms_thresh,  is_dead_dev,  i);
+  }
+
+  *num_out = num_to_keep;
+
+  cudaFree(is_dead_dev);
+  cudaFree(boxes_dev);
+}
+
 #else
 void nms(const int num_boxes, const real* const boxes,
          int* const num_out, int* const keep_out, const int base_index,
@@ -138,7 +193,7 @@ void nms(const int num_boxes, const real* const boxes,
     }
 
     for (int j = i + 1; j < num_boxes; ++j) {
-      if (iou(&boxes[i * 5], &boxes[j * 5]) > nms_thresh) {
+      if (!is_dead[j] && iou(&boxes[i * 5], &boxes[j * 5]) > nms_thresh) {
         is_dead[j] = 1;
       }
     }
@@ -224,7 +279,7 @@ void nms_mask_cpu(const real* const boxes,
 //   nms_thresh: threshold for determining "significant overlap"
 //               if "intersection area / union area > nms_thresh",
 //               two boxes are thought of as significantly overlapped
-void nms(const int num_boxes, const real* const boxes,
+void nms_(const int num_boxes, const real* const boxes,
          int* const num_out, int* const keep_out, const int base_index,
          const real nms_thresh, const int max_num_out)
 {

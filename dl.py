@@ -7,6 +7,20 @@ import scipy.misc
 #param = [(-3, 32), (-3, 16), (-3, 8), (2, 4), (4.5, 2), (3.5, 1), (3.9, .5), (4.01, .25), (4, .125)]
 param = [(19, 10), (14, 4), (7, 2), (2, 2)]
 
+def rpn_score_bbox_corr(net):
+  score_names = ['rpn_cls_score1', 'rpn_cls_score3', 'rpn_cls_score5']
+  bbox_names = ['rpn_bbox_pred1', 'rpn_bbox_pred3', 'rpn_bbox_pred5']
+  anchor_nums = [9, 9, 9]
+  for (score_name, bbox_name, anchor_num) in zip(score_names, bbox_names, anchor_nums):
+    score = net.params[score_name][0].data.reshape(2, anchor_num, -1)
+    bbox = net.params[bbox_name][0].data.reshape(anchor_num, 4, -1).swapaxes(0, 1)
+    for s in score:
+      for b in bbox:
+        for i in range(anchor_num):
+          v1 = np.abs(s[i]) / np.sqrt(np.sum(s[i] ** 2))
+          v2 = np.abs(b[i]) / np.sqrt(np.sum(b[i] ** 2))
+          print (np.sqrt((v1 * v2).sum()), np.sqrt((v1 * v1).sum()), np.sqrt((v2 * v2).sum()))
+
 def load_inception():
   #proto = 'pva_inception2_test.pt'
   #model = 'models/pva_inception2/pva_inception2_train_iter_1520000.caffemodel'
