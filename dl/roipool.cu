@@ -71,7 +71,9 @@ void roi_pool_gpu(const real* const bottom3d,
     {
       const int not_empty = (hb_start < hb_end) * (wb_start < wb_end);
       top4d[index] = not_empty * maxval;
+      #ifdef BACKWARD
       argmax4d[index] = not_empty * maxidx + (1 - not_empty) * (-1);
+      #endif
     }
   }
 }
@@ -84,15 +86,10 @@ void roi_pool_cpu(const real* const bottom3d,
                   const int top_H, const int top_W,
                   const real spatial_scale)
 {
-  // thread index: (r, c, h, w) = r*C*H'*W' + c*H'*W' + h*W' + w
-  const int top_size = R * C * top_H * top_W;
-  for (int index = 0; index < top_size; ++index) {
-    // parse thread index -> (r, c, h, w)
-    const int r = index / top_W / top_H / C;
-    const int c = (index / top_W / top_H) % C;
-    const int h = (index / top_W) % top_H;
-    const int w = index % top_W;
+  const int top_area = top_H * top_W;
+  const int top_volume = C * top_H * top_W;
 
+  for (int r = 0; r < R; ++r) {
     // RoI in the bottom plane
     const int x1 = ROUND(roi2d[r * 4 + 0] * spatial_scale);
     const int y1 = ROUND(roi2d[r * 4 + 1] * spatial_scale);
@@ -101,48 +98,51 @@ void roi_pool_cpu(const real* const bottom3d,
     const int roi_W = x2 - x1 + 1;
     const int roi_H = y2 - y1 + 1;
 
-    // pooling region for pixel top[r][c][h][w]
-    const int hb_start = MIN(H,  MAX(0,
-                           y1 + (h * roi_H) / top_H));
-    const int hb_end = MIN(H,  MAX(0,
-                           y1 + DIV_THEN_CEIL((h + 1) * roi_H,  top_H)));
-    const int wb_start = MIN(W,  MAX(0,
-                           x1 + (w * roi_W) / top_W));
-    const int wb_end = MIN(W,  MAX(0,
-                           x1 + DIV_THEN_CEIL((w + 1) * roi_W,  top_W)));
+    for (int h = 0; h < top_H; ++h) {
+    for (int w = 0; w < top_W; ++w) {
+      // pooling region for pixel top[r][c][h][w]
+      const int hb_start = MIN(H,  MAX(0,
+                               y1 + (h * roi_H) / top_H));
+      const int hb_end = MIN(H,  MAX(0,
+                             y1 + DIV_THEN_CEIL((h + 1) * roi_H,  top_H)));
+      const int wb_start = MIN(W,  MAX(0,
+                               x1 + (w * roi_W) / top_W));
+      const int wb_end = MIN(W,  MAX(0,
+                             x1 + DIV_THEN_CEIL((w + 1) * roi_W,  top_W)));
 
-    if (hb_start >= hb_end || wb_start >= wb_end) {
-      top4d[index] = 0;
-      argmax4d[index] = -1;
-      continue;
-    }
+      const int top_index = r * top_volume + h * top_W + w;
 
-    // find maximum in the bottom region
-    const real* p_bottom3d = bottom3d + c * H * W;
-    int maxidx = hb_start * W + wb_start;
-    real maxval = p_bottom3d[maxidx];
-    for (int hb = hb_start; hb < hb_end; ++hb) {
-      for (int wb = wb_start; wb < wb_end; ++wb) {
-        const int bottom_index = hb * W + wb;
-        if (p_bottom3d[bottom_index] > maxval) {
-          maxval = p_bottom3d[bottom_index];
-          maxidx = bottom_index;
+      // if the bottom region is empty,
+      //   top[r][c][h][w] = 0
+      if (hb_start >= hb_end || wb_start >= wb_end) {
+        for (int c = 0; c < C; ++c) {
+          top4d[top_index + c * top_area] = 0;
+          #ifdef BACKWARD
+          argmax4d[top_index + c * top_area] = -1;
+          #endif
         }
+        continue;
       }
-    }
-    top4d[index] = maxval;
-    argmax4d[index] = maxidx;
-    continue;
 
-    // if the bottom region is not empty,
-    //   top[r][c][h][w] = "max in the region"
-    // otherwise, assign 0
-    {
-      const int not_empty = (hb_start < hb_end) * (wb_start < wb_end);
-      top4d[index] = not_empty * maxval;
-      argmax4d[index] = not_empty * maxidx + (1 - not_empty) * (-1);
-    }
-  }
+      // if the bottom region is not empty,
+      //   top[r][c][h][w] = "max in the region"
+      for (int c = 0; c < C; ++c) {
+        // find maximum in the bottom region
+        const real* p_bottom3d = bottom3d + c * H * W;
+        int maxidx = hb_start * W + wb_start;
+        for (int hb = hb_start; hb < hb_end; ++hb) {
+          for (int wb = wb_start; wb < wb_end; ++wb) {
+            maxidx = (p_bottom3d[hb * W + wb] > p_bottom3d[maxidx]) ?
+                      hb * W + wb : maxidx;
+          }
+        }
+        top4d[top_index + c * top_area] = p_bottom3d[maxidx];
+        #ifdef BACKWARD
+        argmax4d[top_index + c * top_area] = maxidx;
+        #endif
+      } // endfor c
+    }} // endfor h, w
+  } // endfor r
 }
 #endif
 
