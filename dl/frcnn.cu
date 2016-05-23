@@ -1,6 +1,9 @@
 #include "layer.h"
 #include <string.h>
 
+//#define MSRPN
+#define FC_COMPRESS
+
 static
 void setup_pva711(Net* const net)
 {
@@ -172,7 +175,11 @@ void setup_frcnn(Net* const net)
 
     // R-CNN: 10 layers
     "rcnn_roipool",
+  #ifdef FC_COMPRESS
     "fc6_L", "fc6_U", "fc7_L", "fc7_U",
+  #else
+    "null", "fc6", "null", "fc7",
+  #endif
     "cls_score", "cls_pred", "bbox_pred",
     "out", "test"
   };
@@ -288,7 +295,7 @@ void setup_frcnn(Net* const net)
       net->layers[i]->option.negative_slope = 0;
       net->layers[i]->option.threshold = 0.5f;
       net->layers[i]->option.test = 1;
-      net->layers[i]->option.scaled = 0;
+      net->layers[i]->option.scaled = 1;
       #ifdef GPU
       net->layers[i]->option.handle = (void*)&net->cublas_handle;
       #endif
@@ -299,8 +306,8 @@ void setup_frcnn(Net* const net)
     net->layers[14]->option.out_channels = 4096;
     net->layers[15]->option.out_channels = 128;
     net->layers[16]->option.out_channels = 4096;
-    net->layers[17]->option.out_channels = 22;
-    net->layers[19]->option.out_channels = 88;
+    net->layers[17]->option.out_channels = 21;
+    net->layers[19]->option.out_channels = 84;
 
     net->layers[20]->option.min_size = 16;
     net->layers[20]->option.score_thresh = 0.7f;
@@ -338,8 +345,17 @@ void setup_frcnn(Net* const net)
       net->layers[i]->num_tops = 1;
       net->layers[i]->num_params = 2;
     }
+  #ifdef FC_COMPRESS
     net->layers[13]->num_params = 1;
     net->layers[15]->num_params = 1;
+  #else
+    net->layers[13]->num_bottoms = 0;
+    net->layers[13]->num_tops = 0;
+    net->layers[13]->num_params = 0;
+    net->layers[15]->num_bottoms = 0;
+    net->layers[15]->num_tops = 0;
+    net->layers[15]->num_params = 0;
+  #endif
 
     net->layers[18]->num_bottoms = 2;
     net->layers[18]->num_params = 0;
@@ -498,11 +514,14 @@ void connect_frcnn(Net* const net,
 
     // fc6_L, 6_U, 7_L, 7_U
     for (int i = 13; i <= 16; i += 2) {
+    #ifdef FC_COMPRESS
       net->layers[i]->p_bottoms[0] = &net->layers[i - 1]->tops[0];
       net->layers[i]->f_forward[0] = forward_fc_layer;
       net->layers[i]->f_shape[0] = shape_fc_layer;
-
       net->layers[i + 1]->p_bottoms[0] = &net->layers[i]->tops[0];
+    #else
+      net->layers[i + 1]->p_bottoms[0] = &net->layers[i - 1]->tops[0];
+    #endif
       net->layers[i + 1]->f_forward[0] = forward_fc_layer;
       net->layers[i + 1]->f_forward[1] = forward_inplace_relu_layer;
       net->layers[i + 1]->f_forward[2] = forward_inplace_dropout_layer;
@@ -614,8 +633,15 @@ void construct_frcnn_7_1_1(Net* const convnet, Net* const frcnn)
     frcnn->layers[10]->tops[0].data = frcnn->layer_data[2];
   #endif
     frcnn->layers[12]->tops[0].data = frcnn->layer_data[2];
+
+  #ifdef FC_COMPRESS
     frcnn->layers[14]->tops[0].data = frcnn->layer_data[1];
     frcnn->layers[16]->tops[0].data = frcnn->layer_data[1];
+  #else
+    frcnn->layers[14]->tops[0].data = frcnn->layer_data[0];
+    frcnn->layers[16]->tops[0].data = frcnn->layer_data[1];
+  #endif
+
     frcnn->layers[17]->tops[0].data = frcnn->layer_data[0];
     frcnn->layers[18]->tops[0].data = frcnn->layers[17]->tops[0].data;
     frcnn->layers[19]->tops[0].data = frcnn->layer_data[2];

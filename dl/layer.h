@@ -1,8 +1,7 @@
 #ifndef PVA_DL_LAYER_H
 #define PVA_DL_LAYER_H
 
-#define DEBUG
-#define MSRPN
+//#define DEBUG
 
 // --------------------------------------------------------------------------
 // include cuda & blas library

@@ -22,10 +22,10 @@ def rpn_score_bbox_corr(net):
           print (np.sqrt((v1 * v2).sum()), np.sqrt((v1 * v1).sum()), np.sqrt((v2 * v2).sum()))
 
 def load_inception():
-  #proto = 'pva_inception2_test.pt'
-  #model = 'models/pva_inception2/pva_inception2_train_iter_1520000.caffemodel'
-  proto = '../lightcaffe/models/pva7.1.1/faster_rcnn_once/faster_rcnn_test.pt'
-  model = '../new-faster-rcnn/output/faster_rcnn_once_25anc_plus/pvtdb_vocall_20_pva/pva7.1.1_once_iter_1160000.caffemodel'
+  proto = '../new-faster-rcnn/pva_inception2_coco.pt'
+  model = '../new-faster-rcnn/output/faster_rcnn_once_25anc_plus/pvtdb_pengo_80_pva/pva_inception2_2_once_iter_4720000.caffemodel'
+  #proto = '../new-faster-rcnn/pva7.1.1_coco.pt'
+  #model = '../new-faster-rcnn/pva7.1.1_coco_once_iter_880000.caffemodel'
   import caffe
   caffe.set_mode_cpu()
   #caffe.set_device(1)
@@ -178,7 +178,7 @@ def save_data(filename, data):
   data.tofile(f)
   f.close()
 
-def compress_fc(save_dir, layer_name, rank):
+def compress_fc(net, save_dir, layer_name, rank):
   import sys
   sys.path.append('compress')
   import compress
@@ -190,6 +190,12 @@ def compress_fc(save_dir, layer_name, rank):
   save_data(layer_path + '_L_param1.bin', b1)
   save_data(layer_path + '_U_param0.bin', W2)
   save_data(layer_path + '_U_param1.bin', b2)
+  if layer_name + '_L' in net.params.keys():
+    net.params[layer_name + '_L'][0].data[:] = W1
+    net.params[layer_name + '_L'][1].data[:] = b1
+  if layer_name + '_U' in net.params.keys():
+    net.params[layer_name + '_U'][0].data[:] = W2
+    net.params[layer_name + '_U'][1].data[:] = b2
 
 def convert_net(net, save_dir):
   combine_conv_bn_scale(net)
@@ -197,12 +203,12 @@ def convert_net(net, save_dir):
     if layer_name.endswith('/bn') or layer_name.endswith('/scale'):
       continue
     for param_id in range(len(net.params[layer_name])):
-      filename = '{:s}/{:s}_param{:d}.bin'.format(save_dir, layer_name.replace('/', '__slash__'), param_id)
+      filename = '{:s}/{:s}_param{:d}.bin'.format(save_dir, layer_name.replace('/', '_'), param_id)
       save_data(filename, net.params[layer_name][param_id].data)
     if layer_name.startswith('fc6'):
-      compress_fc(save_dir, layer_name, 512)
+      compress_fc(net, save_dir, layer_name, 512)
     elif layer_name.startswith('fc7'):
-      compress_fc(save_dir, layer_name, 128)
+      compress_fc(net, save_dir, layer_name, 128)
 
 def load_image(filename):
   img = scipy.ndimage.imread(filename)

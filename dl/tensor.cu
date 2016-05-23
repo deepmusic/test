@@ -87,24 +87,30 @@ void load_tensor(const char* const filename,
                  Tensor* const tensor,
                  real* const temp_data)
 {
-  int ndim;
-  int shape[g_max_ndim];
+  long int data_size = 1;
 
   {
-  #ifdef GPU
-    long int data_size = 1;
+    int ndim;
+    int shape[g_max_ndim];
+
     load_data(filename, &ndim, shape, temp_data);
     for (int i = 0; i < ndim; ++i) {
       data_size *= shape[i];
     }
+  }
+
+  {
     if (data_size != flatten_size(tensor)) {
       printf("[ERROR] Size mismatch: %s (%ld) != tensor (%ld)\n",
              filename, data_size, flatten_size(tensor));
+      data_size = MIN(data_size,  flatten_size(tensor));
     }
+
+  #ifdef GPU
     cudaMemcpyAsync(tensor->data, temp_data, data_size * sizeof(real),
                     cudaMemcpyHostToDevice);
   #else
-    load_data(filename, &ndim, shape, tensor->data);
+    memcpy(tensor->data, temp_data, data_size * sizeof(real));
   #endif
   }
 }
