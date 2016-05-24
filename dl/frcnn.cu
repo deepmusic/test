@@ -1,8 +1,14 @@
 #include "layer.h"
 #include <string.h>
 
+#include "boost/date_time/posix_time/posix_time.hpp"
+
 #define MSRPN
 #define FC_COMPRESS
+#define INCEPTION
+
+static float a_time[2] = { 0, };
+static clock_t tick0, tick1;
 
 static
 void setup_data_layer(Net* const net)
@@ -372,8 +378,6 @@ void assign_inception_tops(Net* const net)
   assign_data_tops(net);
   num_layers = 1;
 
-  printf("%d\n", num_layers);
-
   // conv1, conv2, conv3
   {
     const int sub_size = 3;
@@ -381,8 +385,6 @@ void assign_inception_tops(Net* const net)
     assign_conv_sub_tops(net, &net->layers[num_layers], sub_size);
     num_layers += sub_size;
   }
-
-  printf("%d\n", num_layers);
 
   // inc3
   {
@@ -393,7 +395,6 @@ void assign_inception_tops(Net* const net)
       const int stride = (i == 0) ? 2 : 1;
       assign_inception_sub_tops(net, &net->layers[num_layers], stride);
       num_layers += sub_size;
-      printf("%d\n", num_layers);
     }
   }
 
@@ -406,7 +407,6 @@ void assign_inception_tops(Net* const net)
       const int stride = (i == 0) ? 2 : 1;
       assign_inception_sub_tops(net, &net->layers[num_layers], stride);
       num_layers += sub_size;
-      printf("%d\n", num_layers);
     }
   }
 
@@ -417,8 +417,6 @@ void assign_inception_tops(Net* const net)
     assign_hyper_sub_tops(net, &net->layers[num_layers]);
     num_layers += sub_size;
   }
-
-  printf("%d\n", num_layers);
 }
 
 static
@@ -611,8 +609,6 @@ void assign_pva711_tops(Net* const net)
   assign_data_tops(net);
   num_layers = 1;
 
-  printf("%d\n", num_layers);
-
   // conv1, conv2, conv3
   {
     const int sub_size = 13;
@@ -621,8 +617,6 @@ void assign_pva711_tops(Net* const net)
     num_layers += sub_size;
   }
 
-  printf("%d\n", num_layers);
-
   // hypercolumn
   {
     const int sub_size = 4;
@@ -630,8 +624,6 @@ void assign_pva711_tops(Net* const net)
     assign_hyper_sub_tops(net, &net->layers[num_layers]);
     num_layers += sub_size;
   }
-
-  printf("%d\n", num_layers);
 }
 
 static
@@ -1200,12 +1192,14 @@ void connect_frcnn(Net* const net,
 
 void construct_frcnn_7_1_1(Net* const convnet, Net* const frcnn)
 {
-  //setup_pva711(convnet);
-  //setup_frcnn(frcnn, 512);
+  #ifdef INCEPTION
   setup_inception(convnet);
   setup_frcnn(frcnn, 256);
+  #else
+  setup_pva711(convnet);
+  setup_frcnn(frcnn, 512);
+  #endif
 
-  //connect_pva711(convnet);
   connect_frcnn(frcnn, convnet);
 
   shape_net(convnet);
@@ -1230,10 +1224,11 @@ void construct_frcnn_7_1_1(Net* const convnet, Net* const frcnn)
   malloc_net(convnet);
   malloc_net(frcnn);
 
-  printf("x\n");
-
-  //assign_pva711_tops(convnet);
+  #ifdef INCEPTION
   assign_inception_tops(convnet);
+  #else
+  assign_pva711_tops(convnet);
+  #endif
 /*
   {
     for (int i = 0; i < convnet->num_layers; ++i) {
@@ -1257,8 +1252,6 @@ void construct_frcnn_7_1_1(Net* const convnet, Net* const frcnn)
     convnet->layers[17]->tops[0].data = convnet->layer_data[1];
   }
 */
-
-  printf("y\n");
 
   {
     for (int i = 0; i < frcnn->num_layers; ++i) {
@@ -1290,12 +1283,8 @@ void construct_frcnn_7_1_1(Net* const convnet, Net* const frcnn)
     frcnn->layers[21]->tops[0].data = frcnn->layer_data[3];
   }
 
-  printf("z\n");
-
   init_layers(convnet);
   init_layers(frcnn);
-
-  printf("zz\n");
 
   // print total memory size required
   {
@@ -1445,6 +1434,7 @@ int main(int argc, char* argv[])
       line[count] = &buf[buf_count];
       ++count;
       buf_count += len;
+      tick0 = clock();
       if (count == input->num_items) {
         // input data loading
         get_input_frcnn_7_1_1(&convnet, (const char * const *)&line, count);
@@ -1455,6 +1445,14 @@ int main(int argc, char* argv[])
 
         // retrieve output & save to file
         get_output_frcnn_7_1_1(&frcnn, total_count, fp_out);
+
+        tick1 = clock();
+        a_time[0] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+        a_time[1] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+        tick0 = tick1;
+        printf("Running time: %.2f (current), %.2f (average)\n",
+               a_time[0] * 1000 / count,
+               a_time[1] * 1000 / (total_count + count));
 
         total_count += count;
         count = 0;
@@ -1467,6 +1465,13 @@ int main(int argc, char* argv[])
       forward_net(&convnet);
       forward_net(&frcnn);
       get_output_frcnn_7_1_1(&frcnn, total_count, fp_out);
+
+      tick1 = clock();
+      a_time[0] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+      a_time[1] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+      printf("Running time: %.2f (current), %.2f (average)\n",
+             a_time[0] * 1000 / count,
+             a_time[1] * 1000 / (total_count + count));
     }
 
     fclose(fp_list);

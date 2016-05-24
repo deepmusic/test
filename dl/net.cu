@@ -108,8 +108,6 @@ void malloc_net(Net* const net)
   long int space_cpu = 0;
   long int space = 0;
 
-  printf("a\n");
-
   for (int i = 0; i < net->num_layer_data; ++i) {
     #ifdef GPU
     cudaMalloc(&net->layer_data[i], net->layer_size * sizeof(real));
@@ -120,7 +118,6 @@ void malloc_net(Net* const net)
   }
   space += net->num_layer_data * net->layer_size * sizeof(real);
 
-  printf("b\n");
   #ifdef GPU
   {
     cudaMalloc(&net->temp_data, net->temp_size * sizeof(real));
@@ -159,7 +156,6 @@ void malloc_net(Net* const net)
                                + net->temp_size)
                + sizeof(int) * (net->tempint_size);
 
-  printf("c\n");
   // data initialization
   {
   #ifdef GPU
@@ -176,13 +172,11 @@ void malloc_net(Net* const net)
   #endif
   }
 
-  printf("d\n");
   for (int i = 0; i < net->num_layers; ++i) {
     space += malloc_load_layer_data(net->layers[i], net->layers[i]->name,
                                     net->param_cpu_data);
   }
 
-  printf("e\n");
   {
     if (net->img_info) {
       const int img_info_size = net->layers[0]->tops[0].num_items * 6;
@@ -192,7 +186,6 @@ void malloc_net(Net* const net)
     }
   }
 
-  printf("f\n");
   // acquire CuBLAS handle
   #ifdef GPU
   {
