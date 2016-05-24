@@ -1,8 +1,339 @@
 #include "layer.h"
 #include <string.h>
 
-//#define MSRPN
+#define MSRPN
 #define FC_COMPRESS
+
+static
+void setup_data_layer(Net* const net)
+{
+  net->layers[0] = (Layer*)malloc(sizeof(Layer));
+  init_layer(net->layers[0]);
+  strcpy(net->layers[0]->name, "data");
+
+  net->layers[0]->num_tops = 1;
+
+  net->space_cpu += malloc_layer(layers[0]);
+
+  {
+    Tensor* input = &net->layers[0]->tops[0];
+    input->num_items = 1;
+    input->ndim = 3;
+    for (int n = 0; n < input->num_items; ++n) {
+      input->shape[n][0] = 3;
+      input->shape[n][1] = 640;
+      input->shape[n][2] = 1024;
+      input->start[n] = n * 3 * 640 * 1024;
+    }
+  }
+
+  net->img_info = (Tensor*)malloc(sizeof(Tensor));
+}
+
+static
+void setup_conv_sub(Layer** const layers,
+                    const char* const * const names,
+                    const int num_layers,
+                    const int* const out_channels,
+                    const int* const kernels,
+                    const int stride,
+                    const Layer* const prev_layer,
+                    const void* const blas_handle,
+                    int* const p_space_cpu)
+{
+  for (int i = 0; i < num_layers; ++i) {
+    layers[i] = (Layer*)malloc(sizeof(Layer));
+    init_layer(layers[i]);
+    strcpy(layers[i]->name, names[i]);
+
+    layers[i]->option.kernel_h = kernels[i];
+    layers[i]->option.kernel_w = kernels[i];
+    layers[i]->option.stride_h = stride;
+    layers[i]->option.stride_w = stride;
+    layers[i]->option.pad_h = kernels[i] / 2;
+    layers[i]->option.pad_w = kernels[i] / 2;
+    layers[i]->option.out_channels = out_channels[i];
+    layers[i]->option.num_groups = 1;
+    layers[i]->option.negative_slope = 0;
+    layers[i]->option.handle = blas_handle;
+    layers[i]->num_bottoms = 1;
+    layers[i]->num_tops = 1;
+    layers[i]->num_params = 2;
+  }
+
+  for (int i = 0; i < num_layers; ++i) {
+    *p_space_cpu += malloc_layer(layers[i]);
+  }
+
+  layers[0]->p_bottoms[0] = &prev_layer->tops[0];
+  for (int i = 1; i < num_layers; ++i) {
+    layers[i]->p_bottoms[0] = &layers[i - 1]->tops[0];
+  }
+
+  for (int i = 0; i < num_layers; ++i) {
+    layers[i]->f_forward[0] = forward_conv_layer;
+    layers[i]->f_forward[1] = forward_inplace_relu_layer;
+    layers[i]->f_shape[0] = shape_conv_layer;
+  }
+}
+
+static
+void setup_inception_sub(Layer** const layers,
+                         const char* const sub_name,
+                         const int* const out_channels,
+                         const int stride,
+                         const Layer* const prev_layer,
+                         const void* const blas_handle,
+                         int* const p_space_cpu)
+{
+  const char* names[] = {
+    "pool1", "conv1",
+    "conv3_1", "conv3_2",
+    "conv5_1", "conv5_2", "conv5_3",
+    "concat"
+  };
+  const int num_layers = 8;
+
+  for (int i = 0; i < num_layers; ++i) {
+    layers[i] = (Layer*)malloc(sizeof(Layer));
+    init_layer(layers[i]);
+    sprintf(layers[i]->name, "%s_%s", sub_name, names[i]);
+  }
+
+  for (int i = 1; i < num_layers - 1; ++i) {
+    layers[i]->option.kernel_h = 1;
+    layers[i]->option.kernel_w = 1;
+    layers[i]->option.stride_h = 1;
+    layers[i]->option.stride_w = 1;
+    layers[i]->option.pad_h = 0;
+    layers[i]->option.pad_w = 0;
+    layers[i]->option.out_channels = out_channels[i - 1];
+    layers[i]->option.num_groups = 1;
+    layers[i]->option.negative_slope = 0;
+    layers[i]->option.handle = blas_handle;
+    layers[i]->num_bottoms = 1;
+    layers[i]->num_tops = 1;
+    layers[i]->num_params = 2;
+  }
+
+  // pool1
+  layers[0]->option.kernel_h = 3;
+  layers[0]->option.kernel_w = 3;
+  layers[0]->option.stride_h = stride;
+  layers[0]->option.stride_w = stride;
+  layers[0]->option.pad_h = 0;
+  layers[0]->option.pad_w = 0;
+  layers[0]->num_bottoms = (stride > 1) ? 1 : 0;
+  layers[0]->num_tops = (stride > 1) ? 1 : 0;
+  layers[0]->num_params = 0;
+
+  // conv1
+
+  // conv3_1
+
+  // conv3_2
+  layers[3]->option.kernel_h = 3;
+  layers[3]->option.kernel_w = 3;
+  layers[3]->option.stride_h = stride;
+  layers[3]->option.stride_w = stride;
+  layers[3]->option.pad_h = 1;
+  layers[3]->option.pad_w = 1;
+
+  // conv5_1
+
+  // conv5_2
+  layers[5]->option.kernel_h = 3;
+  layers[5]->option.kernel_w = 3;
+  layers[5]->option.pad_h = 1;
+  layers[5]->option.pad_w = 1;
+
+  // conv5_3
+  layers[6]->option.kernel_h = 3;
+  layers[6]->option.kernel_w = 3;
+  layers[6]->option.stride_h = stride;
+  layers[6]->option.stride_w = stride;
+  layers[6]->option.pad_h = 1;
+  layers[6]->option.pad_w = 1;
+
+  // concat
+  layers[7]->option.num_concats = 3;
+  layers[7]->num_bottoms = 3;
+  layers[7]->num_tops = 1;
+  layers[7]->num_params = 0;
+
+  for (int i = 0; i < num_layers; ++i) {
+    *p_space_cpu += malloc_layer(layers[i]);
+  }
+
+  // pool1, conv1
+  if (stride > 1) {
+    layers[0]->p_bottoms[0] = &prev_layer->tops[0];
+    layers[0]->f_forward[0] = forward_pool_layer;
+    layers[0]->f_shape[0] = shape_pool_layer;
+    layers[1]->p_bottoms[0] = &layers[0]->tops[0];
+  }
+  else {
+    layers[1]->p_bottoms[0] = &prev_layer->tops[0];
+  }
+
+  // conv3_1, conv3_2
+  layers[2]->p_bottoms[0] = &prev_layer->tops[0];
+  layers[3]->p_bottoms[0] = &layers[2]->tops[0];
+
+  // conv5_1, conv5_2, conv5_3
+  layers[4]->p_bottoms[0] = &prev_layer->tops[0];
+  layers[5]->p_bottoms[0] = &layers[4]->tops[0];
+  layers[6]->p_bottoms[0] = &layers[5]->tops[0];
+
+  // conv*
+  for (int i = 1; i < num_layers - 1; ++i) {
+    layers[i]->f_forward[0] = forward_conv_layer;
+    layers[i]->f_forward[1] = forward_inplace_relu_layer;
+    layers[i]->f_shape[0] = shape_conv_layer;
+  }
+
+  // concat
+  layers[7]->p_bottoms[0] = &layers[1]->tops[0];
+  layers[7]->p_bottoms[1] = &layers[3]->tops[0];
+  layers[7]->p_bottoms[2] = &layers[6]->tops[0];
+  layers[7]->f_forward[0] = forward_concat_layer;
+  layers[7]->f_shape[0] = shape_concat_layer;
+}
+
+static
+void assign_data_tops(Net* const net)
+{
+  net->layers[0]->tops[0].data = net->layer_data[4];
+}
+
+static
+void assign_conv_sub_tops(Net* const net,
+                          Layer* const * const layers,
+                          const int num_layers)
+{
+  // assume prev_layer->tops[0] = layer_data[4]
+  for (int i = 0; i < num_layers - 1; ++i) {
+    layers[i]->tops[0].data = net->layer_data[i % 2];
+  }
+
+  // final conv layer's tops[0] = layer_data[4]
+  layers[num_layers - 1]->tops[0].data = net->layer_data[4];
+}
+
+static
+void assign_inception_sub_tops(Net* const net,
+                               Layer* const * const layers)
+{
+  // assume prev_layer->tops[0] = layer_data[4]
+
+  // pool1, conv1
+  layers[0]->tops[0].data = net->layer_data[0];
+  layers[1]->tops[0].data = net->layer_data[1];
+
+  // conv3_1, conv3_2
+  layers[2]->tops[0].data = net->layer_data[0];
+  layers[3]->tops[0].data = net->layer_data[2];
+
+  // conv5_1, conv5_2, conv5_3
+  layers[4]->tops[0].data = net->layer_data[0];
+  layers[5]->tops[0].data = net->layer_data[4];
+  layers[6]->tops[0].data = net->layer_data[3];
+
+  // concat
+  layers[7]->tops[0].data = net->layer_data[4];
+}
+
+static
+void assign_inception_tops(Net* const net)
+{
+  int num_layers = 0;
+
+  // data
+  assign_data_tops(net);
+  num_layers = 1;
+
+  // conv1, conv2, conv3
+  assign_conv_sub_tops(net, &net->layers[num_layers], 3);
+  num_layers += 3;
+
+  // inc3
+  for (int i = 0; i < 5; ++i) {
+    assign_inception_sub_tops(net, &net->layers[num_layers]);
+    num_layers += 8;
+  }
+
+  // inc4
+  for (int i = 0; i < 5; ++i) {
+    assign_inception_sub_tops(net, &net->layers[num_layers]);
+    num_layers += 8;
+  }
+}
+
+static
+void setup_inception(Net* const net)
+{
+  int num_layers = 0;
+
+  init_net(net);
+
+  // data
+  setup_data_layer(net);
+  num_layers = 1;
+
+  // conv1, conv2, conv3
+  {
+    const char* conv_names[] = {
+      "conv1", "conv2", "conv3"
+    };
+    const int out_channels[] = { 24, 48, 96 };
+    const int kernels[] = { 7, 3, 3 };
+
+    setup_conv_sub(
+        &net->layers[num_layers],  conv_names,  3,
+        out_channels,  kernels,  stride,
+        net->layers[num_layers - 1],  (void*)&net->cublas_handle,
+        &net->space_cpu);
+    num_layers += 3;
+  }
+
+  // inc3
+  {
+    const char* sub_names[] = {
+      "inc3a", "inc3b", "inc3c", "inc3d", "inc3e"
+    };
+    const int out_channels[] = { 96, 24, 64, 12, 24, 24 };
+
+    for (int i = 0; i < 5; ++i) {
+      const int stride = (i == 0) ? 2 : 1;
+      setup_inception_sub(
+          &net->layers[num_layers],  sub_names[i],
+          out_channels,  stride,
+          net->layers[num_layers - 1],  (void*)&net->cublas_handle,
+          &net->space_cpu);
+      num_layers += 8;
+    }
+  }
+
+  // inc4
+  {
+    const char* sub_names[] = {
+      "inc4a", "inc4b", "inc4c", "inc4d", "inc4e"
+    }
+    const int out_channels[] = { 128, 32, 96, 16, 32, 32 };
+
+    for (int i = 0; i < 5; ++i) {
+      const int stride = (i == 0) ? 2 : 1;
+      setup_inception_sub(
+          &net->layers[num_layers],  sub_names[i],  out_channels,  stride,
+          net->layers[num_layers - 1],  (void*)&net->cublas_handle,
+          &net->space_cpu);
+      num_layers += 8;
+    }
+  }
+
+  net->num_layers = num_layers;
+  net->num_layer_data = 5;
+}
 
 static
 void setup_pva711(Net* const net)
@@ -569,10 +900,11 @@ void connect_frcnn(Net* const net,
 
 void construct_frcnn_7_1_1(Net* const convnet, Net* const frcnn)
 {
-  setup_pva711(convnet);
+  //setup_pva711(convnet);
+  setup_inception(convnet);
   setup_frcnn(frcnn);
 
-  connect_pva711(convnet);
+  //connect_pva711(convnet);
   connect_frcnn(frcnn, convnet);
 
   shape_net(convnet);
@@ -597,6 +929,8 @@ void construct_frcnn_7_1_1(Net* const convnet, Net* const frcnn)
   malloc_net(convnet);
   malloc_net(frcnn);
 
+  assign_inception_tops(net);
+/*
   {
     for (int i = 0; i < convnet->num_layers; ++i) {
       for (int j = 0; j < convnet->layers[i]->num_tops; ++j) {
@@ -618,6 +952,7 @@ void construct_frcnn_7_1_1(Net* const convnet, Net* const frcnn)
     convnet->layers[15]->tops[0].data = convnet->layer_data[3];
     convnet->layers[17]->tops[0].data = convnet->layer_data[1];
   }
+*/
 
   {
     for (int i = 0; i < frcnn->num_layers; ++i) {
