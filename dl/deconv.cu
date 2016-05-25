@@ -451,12 +451,6 @@ void shape_deconv_layer(void* const net_, void* const layer_)
   update_net_size(net, layer, temp_size, 0, const_size);
 }
 
-void init_conv_layer(void* const net_, void* const layer_,
-                     const void* const entry_)
-{
-  init_conv_layer(net_, layer_, entry_);
-}
-
 
 
 // --------------------------------------------------------------------------

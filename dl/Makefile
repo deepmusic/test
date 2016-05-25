@@ -1,77 +1,88 @@
+CUDA_LIB_DIR := /usr/local/cuda/lib64
+OPENCV_LIB_DIR := /usr/lib/x86_64-linux-gnu
+
 CC := g++
-CFLAGS := -O3 -Wall
-LDFLAGS := -lcblas -lm -lopencv_core -lopencv_highgui -lgomp
+CFLAGS := -c -O3 -Wall -fPIC
+LDFLAGS := -L$(OPENCV_LIB_DIR) -lcblas -lm -lopencv_core -lopencv_highgui -lgomp
 NVCC := /usr/local/cuda/bin/nvcc
-#NVCCFLAGS := -O3 -Xcompiler -Wall -DGPU  # softmax generates exactly same outputs with those produced by caffe
-NVCCFLAGS := -O3 -use_fast_math -Xcompiler -Wall -DGPU
-NVLDFLAGS := -lcuda -lcublas -lopencv_core -lopencv_highgui
-BUILD_DIR := build
+NVCCFLAGS := -c -O3 -use_fast_math -Xcompiler '-fPIC -Wall -DGPU'
+NVLDFLAGS := -L$(CUDA_LIB_DIR) -L$(OPENCV_LIB_DIR) -lcudart -lcublas -lopencv_core -lopencv_highgui
 
-all: demo_cpu.bin demo_gpu.bin frcnn_cpu.bin frcnn_gpu.bin
+all: test_gpu.bin test_cpu.bin
 
-demo_cpu.bin: demo.cpp.cpu.o frcnn.cpu.o $(BUILD_DIR)/libdlcpu.a
+test_cpu.bin: test_pvanet.cpp.cpu.o pvanet.cpp.cpu.o libdlcpu.so
 	$(CC) -o $@ $^ $(LDFLAGS)
-demo_gpu.bin: demo.gpu.o frcnn.gpu.o $(BUILD_DIR)/libdlgpu.a
+	rm $<
+test_gpu.bin: test_pvanet.cpp.cpu.o pvanet.cpp.cpu.o libdlgpu.so
+	$(CC) -o $@ $^ $(NVLDFLAGS)
+	rm $<
+
+demo_cpu.bin: demo.cpp.cpu.test.o libdlcpu.so
+	$(CC) -o $@ $^ $(LDFLAGS)
+demo_gpu.bin: demo.gpu.test.o libdlgpu.so
 	$(NVCC) -o $@ $^ $(NVLDFLAGS)
 
-frcnn_cpu.bin: frcnn.cpp.cpu.test.o $(BUILD_DIR)/libdlcpu.a
+frcnn_cpu.bin: frcnn.cpp.cpu.test.o libdlcpu.so
 	$(CC) -o $@ $^ $(LDFLAGS)
-frcnn_gpu.bin: frcnn.gpu.test.o $(BUILD_DIR)/libdlgpu.a
+frcnn_gpu.bin: frcnn.gpu.test.o libdlgpu.so
 	$(NVCC) -o $@ $^ $(NVLDFLAGS)
 
-test_cpu: conv.cpu.test.bin deconv.cpu.test.bin dropout.cpu.test.bin fc.cpu.test.bin pool.cpu.test.bin proposal.nms.cpu.test.bin relu.cpu.test.bin roipool.cpu.test.bin
-test_gpu: conv.gpu.test.bin deconv.gpu.test.bin dropout.gpu.test.bin fc.gpu.test.bin pool.gpu.test.bin proposal.nms.gpu.test.bin relu.gpu.test.bin roipool.gpu.test.bin
+libdlgpu.so: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o image.gpu.o frcnn.gpu.o link.gpu.o
+	$(CC) -shared -o $@ $^ $(NVLDFLAGS)
+	rm $^
+libdlcpu.so: tensor.cpu.o net.cpu.o nms.cpu.o softmax.cpu.o conv.cpu.o deconv.cpu.o fc.cpu.o dropout.cpu.o relu.cpu.o roipool.cpu.o pool.cpu.o proposal.cpu.o concat.cpu.o odout.cpu.o image.cpu.o frcnn.cpu.o
+	$(CC) -shared -o $@ $^ $(LDFLAGS)
+	rm $^
 
-$(BUILD_DIR)/libdlcpu.a: tensor.cpu.o net.cpu.o nms.cpu.o softmax.cpu.o conv.cpu.o deconv.cpu.o fc.cpu.o dropout.cpu.o relu.cpu.o roipool.cpu.o pool.cpu.o proposal.cpu.o concat.cpu.o odout.cpu.o odtest.cpu.o image.cpp.cpu.o
-	mkdir -p $(BUILD_DIR)
+libdlcpu.a: tensor.cpu.o net.cpu.o nms.cpu.o softmax.cpu.o conv.cpu.o deconv.cpu.o fc.cpu.o dropout.cpu.o relu.cpu.o roipool.cpu.o pool.cpu.o proposal.cpu.o concat.cpu.o odout.cpu.o odtest.cpu.o image.cpp.cpu.o frcnn.cpu.o
 	ar rcs $@ $^
 	rm $^
-$(BUILD_DIR)/libdlgpu.a: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o odtest.gpu.o image.gpu.o
-	mkdir -p $(BUILD_DIR)
+libdlgpu.a: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o odtest.gpu.o image.gpu.o frcnn.gpu.o
 	ar rcs $@ $^
-	#rm $^
+	rm $^
+
+unit_test_cpu: conv.cpu.test.bin deconv.cpu.test.bin dropout.cpu.test.bin fc.cpu.test.bin pool.cpu.test.bin proposal.nms.cpu.test.bin relu.cpu.test.bin roipool.cpu.test.bin
+unit_test_gpu: conv.gpu.test.bin deconv.gpu.test.bin dropout.gpu.test.bin fc.gpu.test.bin pool.gpu.test.bin proposal.nms.gpu.test.bin relu.gpu.test.bin roipool.gpu.test.bin
 
 clean:
-	rm -rf $(BUILD_DIR)
-	rm -f *.cpu.o *.gpu.o *.bin *.test.o
+	rm -f *.cpu.o *.gpu.o *.bin *.test.o *.so *.a
 
 conv.cpu.o: conv.cu layer.h
 	cp $< $*.cpp
-	$(CC) $(CFLAGS) -fopenmp -c $*.cpp -o $@
+	$(CC) $(CFLAGS) -fopenmp $*.cpp -o $@
 	rm $*.cpp
 
 %.cpu.o: %.cu layer.h
 	cp $< $*.c
-	$(CC) $(CFLAGS) -c $*.c -o $@
+	$(CC) $(CFLAGS) $*.c -o $@
 	rm $*.c
 %.cpp.cpu.o: %.cu layer.h
 	cp $< $*.cpp
-	$(CC) $(CFLAGS) -c $*.cpp -o $@
+	$(CC) $(CFLAGS) $*.cpp -o $@
 	rm $*.cpp
 %.cpu.test.o: %.cu layer.h
 	cp $< $*.c
-	$(CC) $(CFLAGS) -DTEST -c $*.c -o $@
+	$(CC) $(CFLAGS) -DTEST $*.c -o $@
 	rm $*.c
 %.cpp.cpu.test.o: %.cu layer.h
 	cp $< $*.cpp
-	$(CC) $(CFLAGS) -DTEST -c $*.cpp -o $@
+	$(CC) $(CFLAGS) -DTEST $*.cpp -o $@
 	rm $*.cpp
 
-%.gpu.o: %.cu layer.h cuda_settings.h
-	$(NVCC) $(NVCCFLAGS) -c $< -o $@
-%.gpu.test.o: %.cu layer.h cuda_settings.h
-	$(NVCC) $(NVCCFLAGS) -DTEST -c $< -o $@
+link.gpu.o: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o image.gpu.o frcnn.gpu.o
+	$(NVCC) -Xcompiler '-fPIC' -dlink $^ -o $@
+
+%.gpu.o: %.cu layer.h
+	$(NVCC) $(NVCCFLAGS) $< -o $@
+%.gpu.test.o: %.cu layer.h
+	$(NVCC) $(NVCCFLAGS) -DTEST $< -o $@
 
 %.cpu.test.bin: %.cpu.test.o tensor.cpu.o
-	mkdir -p $(BUILD_DIR)
-	$(CC) -o $(BUILD_DIR)/$@ $^ $(LDFLAGS)
+	$(CC) -o $@ $^ $(LDFLAGS)
 %.nms.cpu.test.bin: %.cpu.test.o tensor.cpu.o nms.cpu.o
-	mkdir -p $(BUILD_DIR)
-	$(CC) -o $(BUILD_DIR)/$@ $^ $(LDFLAGS)
+	$(CC) -o $@ $^ $(LDFLAGS)
 
 %.gpu.test.bin: %.gpu.test.o tensor.gpu.o
-	mkdir -p $(BUILD_DIR)
-	$(NVCC) -o $(BUILD_DIR)/$@ $^ $(NVLDFLAGS)
+	$(NVCC) -o $@ $^ $(NVLDFLAGS)
 %.nms.gpu.test.bin: %.gpu.test.o tensor.gpu.o nms.gpu.o
-	mkdir -p $(BUILD_DIR)
-	$(NVCC) -o $(BUILD_DIR)/$@ $^ $(NVLDFLAGS)
+	$(NVCC) -o $@ $^ $(NVLDFLAGS)

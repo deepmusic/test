@@ -5,10 +5,6 @@
 #include <opencv2/imgproc/imgproc.hpp>
 
 #ifdef GPU
-#define PASS
-#endif
-
-#ifdef PASS
 __global__
 void bilinear_resize_gpu(const unsigned char* const img,
                          real* const input3d,
@@ -150,7 +146,7 @@ void img2input(const unsigned char* const img,
   p_img_info1d[4] = (real)height;
   p_img_info1d[5] = (real)width;
 
-  #ifdef PASS
+  #ifdef GPU
   {
     const int num_threads = 3 * resized_height * resized_width;
     const int threads_per_block = 512;

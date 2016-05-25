@@ -1,15 +1,10 @@
 #include "layer.h"
-
 #include <string.h>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
-#ifdef _MSC_VER
-  #include <time.h>
-#else
-  #include "boost/date_time/posix_time/posix_time.hpp"
-#endif
+#include <time.h>
 
 using std::ostringstream;
 
@@ -39,21 +34,6 @@ const char* gs_class_names[] = {
   "cake",
   "vase"
 };
-
-static
-void get_output(Net* net)
-{
-  const Tensor* const out = &net->layers[40]->tops[0];
-  const long int output_size = flatten_size(out);
-
-  #ifdef GPU
-  cudaMemcpyAsync(net->output_cpu_data, out->data,
-                  output_size * sizeof(real),
-                  cudaMemcpyDeviceToHost);
-  #else
-  memcpy(net->output_cpu_data, out->data, output_size * sizeof(real));
-  #endif
-}
 
 static
 void draw_boxes(cv::Mat* const image,
@@ -101,29 +81,14 @@ void detect_frame(Net* const net,
                   cv::Mat* const image)
 {
   if (image && image->data) {
-    const clock_t tick0 = clock();
-    real time = 0;
-
     const int height = image->rows;
     const int width = image->cols;
     const int stride = (int)image->step.p[0];
 
-    Tensor* input = &net->layers[0]->tops[0];
-    input->ndim = 3;
-    input->num_items = 0;
-    input->start[0] = 0;
-    net->img_info->ndim = 1;
-    net->img_info->num_items = 0;
+    const clock_t tick0 = clock();
+    real time = 0;
 
-    img2input(image->data, &net->layers[0]->tops[0], net->img_info,
-              (unsigned char*)net->temp_data,
-              height, width, stride);
-
-    shape_net(net);
-
-    forward_net(net);
-
-    get_output(net);
+    process_pvanet(net, image->data, height, width, stride, NULL);
 
     {
       clock_t tick1 = clock();
@@ -135,9 +100,7 @@ void detect_frame(Net* const net,
       }
     }
 
-    draw_boxes(image, net->output_cpu_data,
-               net->layers[40]->tops[0].shape[0][0],
-               time);
+    draw_boxes(image, net->output_cpu_data, net->num_output_boxes, time);
 
     cv::imshow("faster-rcnn", *image);
   }
@@ -194,7 +157,7 @@ int test(const char* const args[], const int num_args)
   cudaSetDevice(0);
   #endif
 
-  construct_frcnn_7_1_1(&frcnn);
+  construct_pvanet(&frcnn, "params");
 
   if (strcmp(command, "live") == 0) {
     if (num_args >= 4) {
@@ -270,6 +233,7 @@ int test(const char* const args[], const int num_args)
   return 0;
 }
 
+#ifdef TEST
 int main(int argc, char* argv[])
 {
   if (argc >= 2) {
@@ -281,3 +245,4 @@ int main(int argc, char* argv[])
 
   return 0;
 }
+#endif

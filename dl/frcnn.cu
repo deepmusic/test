@@ -1,14 +1,10 @@
 #include "layer.h"
 #include <string.h>
 
-#include "boost/date_time/posix_time/posix_time.hpp"
-
 #define MSRPN
 #define FC_COMPRESS
 #define INCEPTION
-
-static float a_time[2] = { 0, };
-static clock_t tick0, tick1;
+#define DEMO
 
 static
 void setup_data_layer(Net* const net)
@@ -427,8 +423,6 @@ void setup_inception(Net* const net)
   Layer* as_is_layer = NULL;
   Layer* upsample_layer = NULL;
 
-  init_net(net);
-
   // data
   setup_data_layer(net);
   num_layers = 1;
@@ -539,8 +533,6 @@ void setup_pva711(Net* const net)
   Layer* as_is_layer = NULL;
   Layer* upsample_layer = NULL;
 
-  init_net(net);
-
   // data
   setup_data_layer(net);
   num_layers = 1;
@@ -555,7 +547,9 @@ void setup_pva711(Net* const net)
       "conv4_1", "conv4_2", "conv4_3",
       "conv5_1", "conv5_2", "conv5_3",
     };
-    const int out_channels[] = { 32, 32, 64, 64, 96, 64, 128, 192, 128, 256, 384, 256, 512 };
+    const int out_channels[] = {
+      32, 32, 64, 64, 96, 64, 128, 192, 128, 256, 384, 256, 512
+    };
     const int kernels[] = { 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3 };
     const int strides[] = { 2, 1, 2, 1, 2, 1, 1, 2, 1, 1, 2, 1, 1 };
 
@@ -627,692 +621,486 @@ void assign_pva711_tops(Net* const net)
 }
 
 static
-void setup_pva711_(Net* const net)
-{
-  const char* names[] = {
-    // PVANET: 18 layers
-    "data",
-    "conv1_1", "conv1_2",
-    "conv2_1", "conv2_2",
-    "conv3_1", "conv3_2", "conv3_3", "downsample",
-    "conv4_1", "conv4_2", "conv4_3",
-    "conv5_1", "conv5_2", "conv5_3", "upsample",
-    "concat", "convf",
-  };
-
-  init_net(net);
-
-  net->num_layers = 18;
-  for (int i = 0; i < net->num_layers; ++i) {
-    net->layers[i] = (Layer*)malloc(sizeof(Layer));
-    init_layer(net->layers[i]);
-    strcpy(net->layers[i]->name, names[i]);
-  }
-
-  net->img_info = (Tensor*)malloc(sizeof(Tensor));
-
-  net->num_layer_data = 4;
-
-  {
-    for (int i = 1; i <= 15; ++i) {
-      net->layers[i]->option.num_groups = 1;
-      net->layers[i]->option.kernel_h = 3;
-      net->layers[i]->option.kernel_w = 3;
-      net->layers[i]->option.pad_h = 1;
-      net->layers[i]->option.pad_w = 1;
-      net->layers[i]->option.bias = 1;
-      net->layers[i]->option.stride_h = 2;
-      net->layers[i]->option.stride_w = 2;
-      net->layers[i]->option.negative_slope = 0;
-      #ifdef GPU
-      net->layers[i]->option.handle = (void*)&net->cublas_handle;
-      #endif
-    }
-    {
-      net->layers[8]->option.pad_h = 0;
-      net->layers[8]->option.pad_w = 0;
-      net->layers[8]->option.stride_h = 2;
-      net->layers[8]->option.stride_w = 2;
-
-      net->layers[15]->option.num_groups = 512;
-      net->layers[15]->option.kernel_h = 4;
-      net->layers[15]->option.kernel_w = 4;
-      net->layers[15]->option.pad_h = 1;
-      net->layers[15]->option.pad_w = 1;
-      net->layers[15]->option.bias = 0;
-      net->layers[15]->option.stride_h = 2;
-      net->layers[15]->option.stride_w = 2;
-
-      net->layers[16]->option.num_concats = 3;
-
-      net->layers[17]->option.num_groups = 1;
-      net->layers[17]->option.kernel_h = 1;
-      net->layers[17]->option.kernel_w = 1;
-      net->layers[17]->option.pad_h = 0;
-      net->layers[17]->option.pad_w = 0;
-      net->layers[17]->option.bias = 1;
-      net->layers[17]->option.stride_h = 1;
-      net->layers[17]->option.stride_w = 1;
-      net->layers[17]->option.negative_slope = 0;
-      #ifdef GPU
-      net->layers[17]->option.handle = (void*)&net->cublas_handle;
-      #endif
-
-      net->layers[2]->option.stride_h = 1;
-      net->layers[2]->option.stride_w = 1;
-
-      net->layers[4]->option.stride_h = 1;
-      net->layers[4]->option.stride_w = 1;
-
-      net->layers[6]->option.stride_h = 1;
-      net->layers[6]->option.stride_w = 1;
-
-      net->layers[7]->option.stride_h = 1;
-      net->layers[7]->option.stride_w = 1;
-
-      net->layers[10]->option.stride_h = 1;
-      net->layers[10]->option.stride_w = 1;
-
-      net->layers[11]->option.stride_h = 1;
-      net->layers[11]->option.stride_w = 1;
-
-      net->layers[13]->option.stride_h = 1;
-      net->layers[13]->option.stride_w = 1;
-
-      net->layers[14]->option.stride_h = 1;
-      net->layers[14]->option.stride_w = 1;
-    }
-
-    net->layers[1]->option.out_channels = 32;
-    net->layers[2]->option.out_channels = 32;
-    net->layers[3]->option.out_channels = 64;
-    net->layers[4]->option.out_channels = 64;
-    net->layers[5]->option.out_channels = 96;
-    net->layers[6]->option.out_channels = 64;
-    net->layers[7]->option.out_channels = 128;
-    net->layers[9]->option.out_channels = 192;
-    net->layers[10]->option.out_channels = 128;
-    net->layers[11]->option.out_channels = 256;
-    net->layers[12]->option.out_channels = 384;
-    net->layers[13]->option.out_channels = 256;
-    net->layers[14]->option.out_channels = 512;
-    net->layers[15]->option.out_channels = 512;
-    net->layers[17]->option.out_channels = 512;
-  }
-
-  {
-    net->layers[0]->num_tops = 1;
-
-    for (int i = 1; i <= 17; ++i) {
-      net->layers[i]->num_bottoms = 1;
-      net->layers[i]->num_tops = 1;
-      net->layers[i]->num_params = 2;
-    }
-    net->layers[8]->num_params = 0;
-    net->layers[15]->num_params = 1;
-
-    net->layers[16]->num_bottoms = 3;
-    net->layers[16]->num_tops = 1;
-    net->layers[16]->num_params = 0;
-  }
-
-  for (int i = 0; i < net->num_layers; ++i) {
-    net->space_cpu += malloc_layer(net->layers[i]);
-  }
-
-  {
-    Tensor* input = &net->layers[0]->tops[0];
-    input->num_items = 1;
-    input->ndim = 3;
-    for (int n = 0; n < input->num_items; ++n) {
-      input->shape[n][0] = 3;
-      input->shape[n][1] = 640;
-      input->shape[n][2] = 1024;
-      input->start[n] = n * 3 * 640 * 1024;
-    }
-  }
-
-  {
-    net->layers[8]->allocate_top_data[0] = 1;
-  }
-}
-
-static
 void setup_frcnn(Net* const net,
-                 const int rpn_channels)
+                 Layer** const layers,
+                 const int rpn_channels,
+                 const Layer* const convnet_out_layer)
 {
   const char* names[] = {
-    // Multi-scale RPN: 12 layers
-  #ifdef MSRPN
-    "rpn_conv1", "rpn_cls_score1", "rpn_bbox_pred1",
-    "rpn_conv3", "rpn_cls_score3", "rpn_bbox_pred3",
-    "rpn_conv5", "rpn_cls_score5", "rpn_bbox_pred5",
-    "rpn_score", "rpn_bbox",
-  #else
-    "rpn_conv1", "rpn_cls_score", "rpn_bbox_pred",
-    "null", "null", "null",
-    "null", "null", "null",
-    "null", "null",
-  #endif
-    "rpn_roi",
+    // RPN
+    #ifdef MSRPN
+      "rpn_conv1", "rpn_cls_score1", "rpn_bbox_pred1",
+      "rpn_conv3", "rpn_cls_score3", "rpn_bbox_pred3",
+      "rpn_conv5", "rpn_cls_score5", "rpn_bbox_pred5",
+      "rpn_score", "rpn_bbox",
+    #else
+      "rpn_conv1", "rpn_cls_score", "rpn_bbox_pred",
+      "null", "null", "null",
+      "null", "null", "null",
+      "null", "null",
+    #endif
+      "rpn_roi",
 
-    // R-CNN: 10 layers
-    "rcnn_roipool",
-  #ifdef FC_COMPRESS
-    "fc6_L", "fc6_U", "fc7_L", "fc7_U",
-  #else
-    "null", "fc6", "null", "fc7",
-  #endif
-    "cls_score", "cls_pred", "bbox_pred",
-    "out", "test"
+    // R-CNN
+      "rcnn_roipool",
+    #ifdef FC_COMPRESS
+      "fc6_L", "fc6_U", "fc7_L", "fc7_U",
+    #else
+      "null", "fc6", "null", "fc7",
+    #endif
+      "cls_score", "cls_pred", "bbox_pred",
+
+    // output & test
+    #ifdef DEMO
+      "out"
+    #else
+      "out", "test"
+    #endif
   };
 
-  init_net(net);
+  #ifdef DEMO
+  const int sub_size = 21;
+  #else
+  const int sub_size = 22;
+  #endif
 
-  net->num_layers = 22;
-  for (int i = 0; i < net->num_layers; ++i) {
-    net->layers[i] = (Layer*)malloc(sizeof(Layer));
-    init_layer(net->layers[i]);
-    strcpy(net->layers[i]->name, names[i]);
+  for (int i = 0; i < sub_size; ++i) {
+    layers[i] = (Layer*)malloc(sizeof(Layer));
+    init_layer(layers[i]);
+    strcpy(layers[i]->name, names[i]);
   }
 
-  //net->img_info = (Tensor*)malloc(sizeof(Tensor));
-
-#ifdef MSRPN
-  real anchor_scales[9] = { 3.0f, 6.0f, 9.0f,
-                            4.0f, 8.0f, 16.0f,
-                            7.0f, 13.0f, 32.0f };
-  real anchor_ratios[3] = { 0.5f, 1.0f, 2.0f };
-  memcpy(net->anchor_scales, anchor_scales, 9 * sizeof(real));
-  memcpy(net->anchor_ratios, anchor_ratios, 3 * sizeof(real));
-#else
-  real anchor_scales[5] = { 3.0f, 6.0f, 9.0f, 16.0f, 32.0f };
-  real anchor_ratios[5] = { 0.5f, 0.667f, 1.0f, 1.5f, 2.0f };
-  memcpy(net->anchor_scales, anchor_scales, 5 * sizeof(real));
-  memcpy(net->anchor_ratios, anchor_ratios, 5 * sizeof(real));
-#endif
-
-  net->num_layer_data = 4;
-
   {
-    for (int i = 0; i <= 8; ++i) {
-      net->layers[i]->option.num_groups = 1;
-      net->layers[i]->option.kernel_h = 1;
-      net->layers[i]->option.kernel_w = 1;
-      net->layers[i]->option.pad_h = 0;
-      net->layers[i]->option.pad_w = 0;
-      net->layers[i]->option.bias = 1;
-      net->layers[i]->option.stride_h = 1;
-      net->layers[i]->option.stride_w = 1;
-      net->layers[i]->option.negative_slope = 0;
-      #ifdef GPU
-      net->layers[i]->option.handle = (void*)&net->cublas_handle;
-      #endif
-    }
-    {
     #ifdef MSRPN
-      net->layers[3]->option.kernel_h = 3;
-      net->layers[3]->option.kernel_w = 3;
-      net->layers[3]->option.pad_h = 1;
-      net->layers[3]->option.pad_w = 1;
-
-      net->layers[6]->option.kernel_h = 5;
-      net->layers[6]->option.kernel_w = 5;
-      net->layers[6]->option.pad_h = 2;
-      net->layers[6]->option.pad_w = 2;
+    const int num_conv_layers = 9;
     #else
-      net->layers[0]->option.kernel_h = 3;
-      net->layers[0]->option.kernel_w = 3;
-      net->layers[0]->option.pad_h = 1;
-      net->layers[0]->option.pad_w = 1;
+    const int num_conv_layers = 3;
     #endif
-    }
 
-    {
-    #ifdef MSRPN
-      net->layers[9]->option.num_concats = 3;
-      net->layers[10]->option.num_concats = 3;
-    #endif
-    }
-
-  #ifdef MSRPN
-    net->layers[0]->option.out_channels = rpn_channels / 4;
-    net->layers[1]->option.out_channels = 18;
-    net->layers[2]->option.out_channels = 36;
-    net->layers[3]->option.out_channels = rpn_channels / 2;
-    net->layers[4]->option.out_channels = 18;
-    net->layers[5]->option.out_channels = 36;
-    net->layers[6]->option.out_channels = rpn_channels / 4;
-    net->layers[7]->option.out_channels = 18;
-    net->layers[8]->option.out_channels = 36;
-  #else
-    net->layers[0]->option.out_channels = rpn_channels;
-    net->layers[1]->option.out_channels = 50;
-    net->layers[2]->option.out_channels = 100;
-  #endif
-
-    net->layers[11]->option.num_concats = 1;
-    net->layers[11]->option.base_size = 16;
-    net->layers[11]->option.feat_stride = 16;
-    net->layers[11]->option.min_size = 16;
-    net->layers[11]->option.pre_nms_topn = 6000;
-    net->layers[11]->option.post_nms_topn = 300;
-    net->layers[11]->option.nms_thresh = 0.7f;
-    net->layers[11]->option.scales = &net->anchor_scales[0];
-    net->layers[11]->option.ratios = &net->anchor_ratios[0];
-  #ifdef MSRPN
-    net->layers[11]->option.num_scales = 9;
-    net->layers[11]->option.num_ratios = 3;
-  #else
-    net->layers[11]->option.num_scales = 5;
-    net->layers[11]->option.num_ratios = 5;
-  #endif
-
-    net->layers[12]->option.pooled_height = 6;
-    net->layers[12]->option.pooled_width = 6;
-    net->layers[12]->option.spatial_scale = 0.0625;
-    net->layers[12]->option.flatten = 1;
-
-    for (int i = 13; i <= 19; ++i) {
-      net->layers[i]->option.bias = 1;
-      net->layers[i]->option.negative_slope = 0;
-      net->layers[i]->option.threshold = 0.5f;
-      net->layers[i]->option.test = 1;
-      net->layers[i]->option.scaled = 1;
+    for (int i = 0; i < num_conv_layers; ++i) {
+      layers[i]->option.kernel_h = 1;
+      layers[i]->option.kernel_w = 1;
+      layers[i]->option.stride_h = 1;
+      layers[i]->option.stride_w = 1;
+      layers[i]->option.pad_h = 0;
+      layers[i]->option.pad_w = 0;
+      layers[i]->option.num_groups = 1;
+      layers[i]->option.bias = 1;
+      layers[i]->option.negative_slope = 0;
       #ifdef GPU
-      net->layers[i]->option.handle = (void*)&net->cublas_handle;
+      layers[i]->option.handle = (void*)&net->cublas_handle;
       #endif
-    }
-    net->layers[13]->option.bias = 0;
-    net->layers[15]->option.bias = 0;
-    net->layers[13]->option.out_channels = 512;
-    net->layers[14]->option.out_channels = 4096;
-    net->layers[15]->option.out_channels = 128;
-    net->layers[16]->option.out_channels = 4096;
-    net->layers[17]->option.out_channels = 21;
-    net->layers[19]->option.out_channels = 84;
 
-    net->layers[20]->option.min_size = 16;
-    net->layers[20]->option.score_thresh = 0.7f;
-    net->layers[20]->option.nms_thresh = 0.3f;
+      layers[i]->num_bottoms = 1;
+      layers[i]->num_tops = 1;
+      layers[i]->num_params = 2;
+    }
   }
 
-  {
-    for (int i = 0; i <= 2; ++i) {
-      net->layers[i]->num_bottoms = 1;
-      net->layers[i]->num_tops = 1;
-      net->layers[i]->num_params = 2;
-    }
-
   #ifdef MSRPN
-    for (int i = 3; i <= 8; ++i) {
-      net->layers[i]->num_bottoms = 1;
-      net->layers[i]->num_tops = 1;
-      net->layers[i]->num_params = 2;
-    }
-    net->layers[9]->num_bottoms = 3;
-    net->layers[9]->num_tops = 1;
-    net->layers[10]->num_bottoms = 3;
-    net->layers[10]->num_tops = 1;
-  #endif
+  {
+    // 1x1 RPN
+    layers[0]->option.out_channels = rpn_channels / 4;
+    layers[1]->option.out_channels = 18;
+    layers[2]->option.out_channels = 36;
 
-    net->layers[11]->num_bottoms = 3;
-    net->layers[11]->num_tops = 1;
-    net->layers[11]->num_aux_data = 1;
+    // 3x3 RPN
+    layers[3]->option.kernel_h = 3;
+    layers[3]->option.kernel_w = 3;
+    layers[3]->option.pad_h = 1;
+    layers[3]->option.pad_w = 1;
+    layers[3]->option.out_channels = rpn_channels / 2;
+    layers[4]->option.out_channels = 18;
+    layers[5]->option.out_channels = 36;
 
-    net->layers[12]->num_bottoms = 2;
-    net->layers[12]->num_tops = 1;
+    // 5x5 RPN
+    layers[6]->option.kernel_h = 5;
+    layers[6]->option.kernel_w = 5;
+    layers[6]->option.pad_h = 2;
+    layers[6]->option.pad_w = 2;
+    layers[6]->option.out_channels = rpn_channels / 4;
+    layers[7]->option.out_channels = 18;
+    layers[8]->option.out_channels = 36;
 
-    for (int i = 13; i <= 19; ++i) {
-      net->layers[i]->num_bottoms = 1;
-      net->layers[i]->num_tops = 1;
-      net->layers[i]->num_params = 2;
-    }
-  #ifdef FC_COMPRESS
-    net->layers[13]->num_params = 1;
-    net->layers[15]->num_params = 1;
+    // score concat
+    layers[9]->option.num_concats = 3;
+    layers[9]->num_bottoms = 3;
+    layers[9]->num_tops = 1;
+
+    // bbox concat
+    layers[10]->option.num_concats = 3;
+    layers[10]->num_bottoms = 3;
+    layers[10]->num_tops = 1;
+  }
   #else
-    net->layers[13]->num_bottoms = 0;
-    net->layers[13]->num_tops = 0;
-    net->layers[13]->num_params = 0;
-    net->layers[15]->num_bottoms = 0;
-    net->layers[15]->num_tops = 0;
-    net->layers[15]->num_params = 0;
-  #endif
-
-    net->layers[18]->num_bottoms = 2;
-    net->layers[18]->num_params = 0;
-
-    net->layers[19]->num_bottoms = 2;
-
-    net->layers[20]->num_bottoms = 4;
-    net->layers[20]->num_tops = 1;
-
-    net->layers[21]->num_bottoms = 4;
-    net->layers[21]->num_tops = 1;
-  }
-
-  for (int i = 0; i < net->num_layers; ++i) {
-    net->space_cpu += malloc_layer(net->layers[i]);
-  }
-
   {
-    net->layers[1]->allocate_top_data[0] = 1;
-    net->layers[2]->allocate_top_data[0] = 1;
-    net->layers[11]->allocate_top_data[0] = 1;
-  #ifdef MSRPN
-    net->layers[4]->allocate_top_data[0] = 1;
-    net->layers[5]->allocate_top_data[0] = 1;
-    net->layers[7]->allocate_top_data[0] = 1;
-    net->layers[8]->allocate_top_data[0] = 1;
-  #endif
+    // 3x3 RPN
+    layers[0]->option.kernel_h = 3;
+    layers[0]->option.kernel_w = 3;
+    layers[0]->option.pad_h = 1;
+    layers[0]->option.pad_w = 1;
+    layers[0]->option.out_channels = rpn_channels;
+    layers[1]->option.out_channels = 50;
+    layers[2]->option.out_channels = 100;
   }
+  #endif
+
+  // proposal, RoI-pooling
+  {
+  #ifdef MSRPN
+    real anchor_scales[9] = { 3.0f, 6.0f, 9.0f,
+                              4.0f, 8.0f, 16.0f,
+                              7.0f, 13.0f, 32.0f };
+    real anchor_ratios[3] = { 0.5f, 1.0f, 2.0f };
+    layers[11]->option.num_scales = 9;
+    layers[11]->option.num_ratios = 3;
+  #else
+    real anchor_scales[5] = { 3.0f, 6.0f, 9.0f, 16.0f, 32.0f };
+    real anchor_ratios[5] = { 0.5f, 0.667f, 1.0f, 1.5f, 2.0f };
+    layers[11]->option.num_scales = 5;
+    layers[11]->option.num_ratios = 5;
+  #endif
+
+    memcpy(net->anchor_scales, anchor_scales,
+           layers[11]->option.num_scales * sizeof(real));
+    memcpy(net->anchor_ratios, anchor_ratios,
+           layers[11]->option.num_ratios * sizeof(real));
+
+    layers[11]->option.num_concats = 1;
+    layers[11]->option.base_size = 16;
+    layers[11]->option.feat_stride = 16;
+    layers[11]->option.min_size = 16;
+    layers[11]->option.pre_nms_topn = 6000;
+    layers[11]->option.post_nms_topn = 300;
+    layers[11]->option.nms_thresh = 0.7f;
+    layers[11]->option.scales = &net->anchor_scales[0];
+    layers[11]->option.ratios = &net->anchor_ratios[0];
+    layers[11]->num_bottoms = 3;
+    layers[11]->num_tops = 1;
+    layers[11]->num_aux_data = 1;
+
+    layers[12]->option.pooled_height = 6;
+    layers[12]->option.pooled_width = 6;
+    layers[12]->option.spatial_scale = 0.0625;
+    layers[12]->option.flatten = 1;
+    layers[12]->num_bottoms = 2;
+    layers[12]->num_tops = 1;
+  }
+
+  // fc6, fc7, RCNN score, RCNN bbox
+  for (int i = 13; i <= 19; ++i) {
+    layers[i]->option.bias = 1;
+    layers[i]->option.negative_slope = 0;
+    layers[i]->option.threshold = 0.5f;
+    layers[i]->option.test = 1;
+    layers[i]->option.scaled = 1;
+    #ifdef GPU
+    layers[i]->option.handle = (void*)&net->cublas_handle;
+    #endif
+
+    layers[i]->num_bottoms = 1;
+    layers[i]->num_tops = 1;
+    layers[i]->num_params = 2;
+  }
+
+  // fc6, fc7
+  {
+  #ifdef FC_COMPRESS
+    layers[13]->option.out_channels = 512;
+    layers[13]->option.bias = 0;
+    layers[13]->num_params = 1;
+    layers[15]->option.out_channels = 128;
+    layers[15]->option.bias = 0;
+    layers[15]->num_params = 1;
+  #else
+    layers[13]->num_bottoms = 0;
+    layers[13]->num_tops = 0;
+    layers[13]->num_params = 0;
+    layers[15]->num_bottoms = 0;
+    layers[15]->num_tops = 0;
+    layers[15]->num_params = 0;
+  #endif
+    layers[14]->option.out_channels = 4096;
+    layers[16]->option.out_channels = 4096;
+  }
+
+  // RCNN score
+  layers[17]->option.out_channels = 22;
+
+  // RCNN pred
+  layers[18]->num_bottoms = 2;
+  layers[18]->num_params = 0;
+
+  // RCNN bbox
+  layers[19]->option.out_channels = 88;
+  layers[19]->num_bottoms = 2;
+
+  // output
+  layers[20]->option.min_size = 16;
+  layers[20]->option.score_thresh = 0.7f;
+  layers[20]->option.nms_thresh = 0.3f;
+  layers[20]->num_bottoms = 4;
+  layers[20]->num_tops = 1;
+
+  // test
+  #ifndef DEMO
+  {
+    layers[21]->num_bottoms = 4;
+    layers[21]->num_tops = 1;
+  }
+  #endif
+
+  for (int i = 0; i < sub_size; ++i) {
+    net->space_cpu += malloc_layer(layers[i]);
+  }
+
+  // RPN
+  {
+    #ifdef MSRPN
+    const int num_conv_layers = 9;
+    #else
+    const int num_conv_layers = 3;
+    #endif
+
+    for (int i = 0; i < num_conv_layers; i += 3) {
+      // conv
+      layers[i]->p_bottoms[0] = &convnet_out_layer->tops[0];
+      layers[i]->f_forward[0] = forward_conv_layer;
+      layers[i]->f_forward[1] = forward_inplace_relu_layer;
+      layers[i]->f_shape[0] = shape_conv_layer;
+
+      // score
+      layers[i + 1]->p_bottoms[0] = &layers[i]->tops[0];
+      layers[i + 1]->f_forward[0] = forward_conv_layer;
+      layers[i + 1]->f_shape[0] = shape_conv_layer;
+
+      // bbox
+      layers[i + 2]->p_bottoms[0] = &layers[i]->tops[0];
+      layers[i + 2]->f_forward[0] = forward_conv_layer;
+      layers[i + 2]->f_shape[0] = shape_conv_layer;
+    }
+  }
+
+  #ifdef MSRPN
+  {
+    // scores & bbox for multi-scale RPNs
+    layers[1]->allocate_top_data[0] = 1;
+    layers[2]->allocate_top_data[0] = 1;
+    layers[4]->allocate_top_data[0] = 1;
+    layers[5]->allocate_top_data[0] = 1;
+    layers[7]->allocate_top_data[0] = 1;
+    layers[8]->allocate_top_data[0] = 1;
+
+    // score concat
+    layers[9]->p_bottoms[0] = &layers[1]->tops[0];
+    layers[9]->p_bottoms[1] = &layers[4]->tops[0];
+    layers[9]->p_bottoms[2] = &layers[7]->tops[0];
+    layers[9]->f_forward[0] = forward_concat_layer;
+    layers[9]->f_forward[1] = forward_rpn_pred_layer;
+    layers[9]->f_shape[0] = shape_concat_layer;
+    layers[9]->f_shape[1] = shape_rpn_pred_layer;
+
+    // bbox concat
+    layers[10]->p_bottoms[0] = &layers[2]->tops[0];
+    layers[10]->p_bottoms[1] = &layers[5]->tops[0];
+    layers[10]->p_bottoms[2] = &layers[8]->tops[0];
+    layers[10]->f_forward[0] = forward_concat_layer;
+    layers[10]->f_forward[1] = forward_rpn_bbox_layer;
+    layers[10]->f_shape[0] = shape_concat_layer;
+    layers[10]->f_shape[1] = shape_rpn_bbox_layer;
+  }
+  #else
+  {
+    layers[1]->f_forward[1] = forward_rpn_pred_layer;
+    layers[1]->f_shape[1] = shape_rpn_pred_layer;
+    layers[2]->f_forward[1] = forward_rpn_bbox_layer;
+    layers[2]->f_shape[1] = shape_rpn_bbox_layer;
+  }
+  #endif
+
+  // proposal & RoI-pooling
+  {
+  #ifdef MSRPN
+    layers[11]->p_bottoms[0] = &layers[9]->tops[0];
+    layers[11]->p_bottoms[1] = &layers[10]->tops[0];
+  #else
+    layers[11]->p_bottoms[0] = &layers[1]->tops[0];
+    layers[11]->p_bottoms[1] = &layers[2]->tops[0];
+  #endif
+    layers[11]->p_bottoms[2] = net->img_info;
+    layers[11]->f_forward[0] = forward_proposal_layer;
+    layers[11]->f_shape[0] = shape_proposal_layer;
+    layers[11]->f_init[0] = init_proposal_layer;
+    layers[11]->allocate_top_data[0] = 1;
+
+    layers[12]->p_bottoms[0] = &convnet_out_layer->tops[0];
+    layers[12]->p_bottoms[1] = &layers[11]->tops[0];
+    layers[12]->f_forward[0] = forward_roipool_layer;
+    layers[12]->f_shape[0] = shape_roipool_layer;
+  }
+
+  // fc6_L, 6_U, 7_L, 7_U
+  for (int i = 13; i <= 16; i += 2) {
+  #ifdef FC_COMPRESS
+    layers[i]->p_bottoms[0] = &layers[i - 1]->tops[0];
+    layers[i]->f_forward[0] = forward_fc_layer;
+    layers[i]->f_shape[0] = shape_fc_layer;
+    layers[i + 1]->p_bottoms[0] = &layers[i]->tops[0];
+  #else
+    layers[i + 1]->p_bottoms[0] = &layers[i - 1]->tops[0];
+  #endif
+    layers[i + 1]->f_forward[0] = forward_fc_layer;
+    layers[i + 1]->f_forward[1] = forward_inplace_relu_layer;
+    layers[i + 1]->f_forward[2] = forward_inplace_dropout_layer;
+    layers[i + 1]->f_shape[0] = shape_fc_layer;
+  }
+
+  // RCNN score
+  layers[17]->p_bottoms[0] = &layers[16]->tops[0];
+  layers[17]->f_forward[0] = forward_fc_layer;
+  layers[17]->f_shape[0] = shape_fc_layer;
+
+  // RCNN pred
+  layers[18]->p_bottoms[0] = &layers[17]->tops[0];
+  layers[18]->p_bottoms[1] = &layers[11]->tops[0];
+  layers[18]->f_forward[0] = forward_rcnn_pred_layer;
+  layers[18]->f_shape[0] = shape_rcnn_pred_layer;
+
+  // RCNN bbox
+  layers[19]->p_bottoms[0] = &layers[16]->tops[0];
+  layers[19]->p_bottoms[1] = &layers[11]->tops[0];
+  layers[19]->f_forward[0] = forward_fc_layer;
+  layers[19]->f_forward[1] = forward_rcnn_bbox_layer;
+  layers[19]->f_shape[0] = shape_fc_layer;
+  layers[19]->f_shape[1] = shape_rcnn_bbox_layer;
+
+  // output
+  layers[20]->p_bottoms[0] = &layers[18]->tops[0];
+  layers[20]->p_bottoms[1] = &layers[19]->tops[0];
+  layers[20]->p_bottoms[2] = &layers[11]->tops[0];
+  layers[20]->p_bottoms[3] = net->img_info;
+  layers[20]->f_forward[0] = forward_odout_layer;
+  layers[20]->f_shape[0] = shape_odout_layer;
+
+  // test
+  #ifndef DEMO
+  {
+    layers[21]->p_bottoms[0] = &layers[18]->tops[0];
+    layers[21]->p_bottoms[1] = &layers[19]->tops[0];
+    layers[21]->p_bottoms[2] = &layers[11]->tops[0];
+    layers[21]->p_bottoms[3] = net->img_info;
+    layers[21]->f_forward[0] = forward_odtest_layer;
+    layers[21]->f_shape[0] = shape_odtest_layer;
+  }
+  #endif
+
+  net->num_layers += sub_size;
 }
 
 static
-void connect_pva711(Net* const net)
+void assign_frcnn_tops(Net* const net)
 {
-  // PVANET
-  {
-    // 1_1, 1_2, 2_1, 2_2, 3_1, 3_2, 3_3
-    for (int i = 1; i <= 7; ++i) {
-      net->layers[i]->p_bottoms[0] = &net->layers[i - 1]->tops[0];
-      net->layers[i]->f_forward[0] = forward_conv_layer;
-      net->layers[i]->f_forward[1] = forward_inplace_relu_layer;
-      net->layers[i]->f_shape[0] = shape_conv_layer;
-    }
-
-    // downsample
-    net->layers[8]->p_bottoms[0] = &net->layers[7]->tops[0];
-    net->layers[8]->f_forward[0] = forward_pool_layer;
-    net->layers[8]->f_shape[0] = shape_pool_layer;
-
-    // 4_1, 4_2, 4_3, 5_1, 5_2, 5_3
-    for (int i = 9; i <= 14; ++i) {
-      net->layers[i]->p_bottoms[0] = &net->layers[i - 1]->tops[0];
-      net->layers[i]->f_forward[0] = forward_conv_layer;
-      net->layers[i]->f_forward[1] = forward_inplace_relu_layer;
-      net->layers[i]->f_shape[0] = shape_conv_layer;
-    }
-    net->layers[9]->p_bottoms[0] = &net->layers[7]->tops[0];
-
-    // upsample
-    net->layers[15]->p_bottoms[0] = &net->layers[14]->tops[0];
-    net->layers[15]->f_forward[0] = forward_deconv_layer;
-    net->layers[15]->f_shape[0] = shape_deconv_layer;
-
-    // concat
-    net->layers[16]->p_bottoms[0] = &net->layers[8]->tops[0];
-    net->layers[16]->p_bottoms[1] = &net->layers[11]->tops[0];
-    net->layers[16]->p_bottoms[2] = &net->layers[15]->tops[0];
-    net->layers[16]->f_forward[0] = forward_concat_layer;
-    net->layers[16]->f_shape[0] = shape_concat_layer;
-
-    // convf
-    net->layers[17]->p_bottoms[0] = &net->layers[16]->tops[0];
-    net->layers[17]->f_forward[0] = forward_conv_layer;
-    net->layers[17]->f_forward[1] = forward_inplace_relu_layer;
-    net->layers[17]->f_shape[0] = shape_conv_layer;
-  }
-}
-
-static
-void connect_frcnn(Net* const net,
-                   const Net* const convnet)
-{
-  // Multi-scale RPN
-  {
-    // rpn_1, 3, 5
-  #ifdef MSRPN
-    const int rpn_layer_end = 8;
+  #ifdef DEMO
+  const int sub_size = 21;
   #else
-    const int rpn_layer_end = 2;
-  #endif
-    for (int i = 0; i <= rpn_layer_end; i += 3) {
-      // rpn_conv1, 3, 5
-      net->layers[i]->p_bottoms[0]
-          = &convnet->layers[convnet->num_layers - 1]->tops[0];
-      net->layers[i]->f_forward[0] = forward_conv_layer;
-      net->layers[i]->f_forward[1] = forward_inplace_relu_layer;
-      net->layers[i]->f_shape[0] = shape_conv_layer;
-
-      // rpn_cls_score1, 3, 5
-      net->layers[i + 1]->p_bottoms[0] = &net->layers[i]->tops[0];
-      net->layers[i + 1]->f_forward[0] = forward_conv_layer;
-      net->layers[i + 1]->f_shape[0] = shape_conv_layer;
-
-      // rpn_bbox_pred1, 3, 5
-      net->layers[i + 2]->p_bottoms[0] = &net->layers[i]->tops[0];
-      net->layers[i + 2]->f_forward[0] = forward_conv_layer;
-      net->layers[i + 2]->f_shape[0] = shape_conv_layer;
-    }
-
-  #ifdef MSRPN
-    // rpn_score
-    net->layers[9]->p_bottoms[0] = &net->layers[1]->tops[0];
-    net->layers[9]->p_bottoms[1] = &net->layers[4]->tops[0];
-    net->layers[9]->p_bottoms[2] = &net->layers[7]->tops[0];
-    net->layers[9]->f_forward[0] = forward_concat_layer;
-    net->layers[9]->f_forward[1] = forward_rpn_pred_layer;
-    net->layers[9]->f_shape[0] = shape_concat_layer;
-    net->layers[9]->f_shape[1] = shape_rpn_pred_layer;
-
-    // rpn_bbox
-    net->layers[10]->p_bottoms[0] = &net->layers[2]->tops[0];
-    net->layers[10]->p_bottoms[1] = &net->layers[5]->tops[0];
-    net->layers[10]->p_bottoms[2] = &net->layers[8]->tops[0];
-    net->layers[10]->f_forward[0] = forward_concat_layer;
-    net->layers[10]->f_forward[1] = forward_rpn_bbox_layer;
-    net->layers[10]->f_shape[0] = shape_concat_layer;
-    net->layers[10]->f_shape[1] = shape_rpn_bbox_layer;
-  #else
-    net->layers[1]->f_forward[1] = forward_rpn_pred_layer;
-    net->layers[1]->f_shape[1] = shape_rpn_pred_layer;
-    net->layers[2]->f_forward[1] = forward_rpn_bbox_layer;
-    net->layers[2]->f_shape[1] = shape_rpn_bbox_layer;
+  const int sub_size = 22;
   #endif
 
-    // proposal
-  #ifdef MSRPN
-    net->layers[11]->p_bottoms[0] = &net->layers[9]->tops[0];
-    net->layers[11]->p_bottoms[1] = &net->layers[10]->tops[0];
-  #else
-    net->layers[11]->p_bottoms[0] = &net->layers[1]->tops[0];
-    net->layers[11]->p_bottoms[1] = &net->layers[2]->tops[0];
-  #endif
-    net->layers[11]->p_bottoms[2] = convnet->img_info;
-    net->layers[11]->f_forward[0] = forward_proposal_layer;
-    net->layers[11]->f_shape[0] = shape_proposal_layer;
-    net->layers[11]->f_init[0] = init_proposal_layer;
-  }
+  Layer** const layers = &net->layers[net->num_layers - sub_size];
 
-  // R-CNN
-  {
-    // roipool
-    net->layers[12]->p_bottoms[0]
-        = &convnet->layers[convnet->num_layers - 1]->tops[0];
-    net->layers[12]->p_bottoms[1] = &net->layers[11]->tops[0];
-    net->layers[12]->f_forward[0] = forward_roipool_layer;
-    net->layers[12]->f_shape[0] = shape_roipool_layer;
-
-    // fc6_L, 6_U, 7_L, 7_U
-    for (int i = 13; i <= 16; i += 2) {
-    #ifdef FC_COMPRESS
-      net->layers[i]->p_bottoms[0] = &net->layers[i - 1]->tops[0];
-      net->layers[i]->f_forward[0] = forward_fc_layer;
-      net->layers[i]->f_shape[0] = shape_fc_layer;
-      net->layers[i + 1]->p_bottoms[0] = &net->layers[i]->tops[0];
-    #else
-      net->layers[i + 1]->p_bottoms[0] = &net->layers[i - 1]->tops[0];
-    #endif
-      net->layers[i + 1]->f_forward[0] = forward_fc_layer;
-      net->layers[i + 1]->f_forward[1] = forward_inplace_relu_layer;
-      net->layers[i + 1]->f_forward[2] = forward_inplace_dropout_layer;
-      net->layers[i + 1]->f_shape[0] = shape_fc_layer;
-    }
-
-    // score
-    net->layers[17]->p_bottoms[0] = &net->layers[16]->tops[0];
-    net->layers[17]->f_forward[0] = forward_fc_layer;
-    net->layers[17]->f_shape[0] = shape_fc_layer;
-
-    // pred
-    net->layers[18]->p_bottoms[0] = &net->layers[17]->tops[0];
-    net->layers[18]->p_bottoms[1] = &net->layers[11]->tops[0];
-    net->layers[18]->f_forward[0] = forward_rcnn_pred_layer;
-    //net->layers[18]->f_forward[1] = save_layer_tops;
-    net->layers[18]->f_shape[0] = shape_rcnn_pred_layer;
-
-    // bbox
-    net->layers[19]->p_bottoms[0] = &net->layers[16]->tops[0];
-    net->layers[19]->p_bottoms[1] = &net->layers[11]->tops[0];
-    net->layers[19]->f_forward[0] = forward_fc_layer;
-    net->layers[19]->f_forward[1] = forward_rcnn_bbox_layer;
-    //net->layers[19]->f_forward[2] = save_layer_tops;
-    net->layers[19]->f_shape[0] = shape_fc_layer;
-    net->layers[19]->f_shape[1] = shape_rcnn_bbox_layer;
-
-    // out
-    net->layers[20]->p_bottoms[0] = &net->layers[18]->tops[0];
-    net->layers[20]->p_bottoms[1] = &net->layers[19]->tops[0];
-    net->layers[20]->p_bottoms[2] = &net->layers[11]->tops[0];
-    net->layers[20]->p_bottoms[3] = convnet->img_info;
-    net->layers[20]->f_forward[0] = forward_odout_layer;
-    net->layers[20]->f_shape[0] = shape_odout_layer;
-
-    // test
-    net->layers[21]->p_bottoms[0] = &net->layers[18]->tops[0];
-    net->layers[21]->p_bottoms[1] = &net->layers[19]->tops[0];
-    net->layers[21]->p_bottoms[2] = &net->layers[11]->tops[0];
-    net->layers[21]->p_bottoms[3] = convnet->img_info;
-    net->layers[21]->f_forward[0] = forward_odtest_layer;
-    net->layers[21]->f_shape[0] = shape_odtest_layer;
-  }
-}
-
-void construct_frcnn_7_1_1(Net* const convnet, Net* const frcnn)
-{
-  #ifdef INCEPTION
-  setup_inception(convnet);
-  setup_frcnn(frcnn, 256);
-  #else
-  setup_pva711(convnet);
-  setup_frcnn(frcnn, 512);
-  #endif
-
-  connect_frcnn(frcnn, convnet);
-
-  shape_net(convnet);
-  shape_net(frcnn);
-
-  printf("Max layer size = %ld + %ld = %ld\n",
-         convnet->layer_size, frcnn->layer_size,
-         convnet->layer_size + frcnn->layer_size);
-  printf("Max param size = %ld + %ld = %ld\n",
-         convnet->param_size, frcnn->param_size,
-         convnet->param_size + frcnn->param_size);
-  printf("Max temp size = %ld + %ld = %ld\n",
-         convnet->temp_size, frcnn->temp_size,
-         convnet->temp_size + frcnn->temp_size);
-  printf("Max tempint size = %ld + %ld = %ld\n",
-         convnet->tempint_size, frcnn->tempint_size,
-         convnet->tempint_size + frcnn->tempint_size);
-  printf("Max const size = %ld + %ld = %ld\n",
-         convnet->const_size, frcnn->const_size,
-         convnet->const_size + frcnn->const_size);
-
-  malloc_net(convnet);
-  malloc_net(frcnn);
-
-  #ifdef INCEPTION
-  assign_inception_tops(convnet);
-  #else
-  assign_pva711_tops(convnet);
-  #endif
-/*
-  {
-    for (int i = 0; i < convnet->num_layers; ++i) {
-      for (int j = 0; j < convnet->layers[i]->num_tops; ++j) {
-        if (!convnet->layers[i]->allocate_top_data[j]) {
-          convnet->layers[i]->tops[j].data = convnet->layer_data[j];
-        }
+  for (int i = 0; i < sub_size; ++i) {
+    for (int j = 0; j < layers[i]->num_tops; ++j) {
+      if (!layers[i]->allocate_top_data[j]) {
+        layers[i]->tops[j].data = net->layer_data[j];
       }
     }
-
-    convnet->layers[1]->tops[0].data = convnet->layer_data[1];
-    convnet->layers[3]->tops[0].data = convnet->layer_data[1];
-    convnet->layers[5]->tops[0].data = convnet->layer_data[1];
-    convnet->layers[7]->tops[0].data = convnet->layer_data[1];
-    convnet->layers[10]->tops[0].data = convnet->layer_data[1];
-    convnet->layers[12]->tops[0].data = convnet->layer_data[1];
-    convnet->layers[14]->tops[0].data = convnet->layer_data[1];
-
-    convnet->layers[11]->tops[0].data = convnet->layer_data[2];
-    convnet->layers[15]->tops[0].data = convnet->layer_data[3];
-    convnet->layers[17]->tops[0].data = convnet->layer_data[1];
   }
-*/
 
   {
-    for (int i = 0; i < frcnn->num_layers; ++i) {
-      for (int j = 0; j < frcnn->layers[i]->num_tops; ++j) {
-        if (!frcnn->layers[i]->allocate_top_data[j]) {
-          frcnn->layers[i]->tops[j].data = frcnn->layer_data[j];
-        }
-      }
-    }
-
   #ifdef MSRPN
-    frcnn->layers[9]->tops[0].data = frcnn->layer_data[0];
-    frcnn->layers[10]->tops[0].data = frcnn->layer_data[2];
+    layers[9]->tops[0].data = net->layer_data[0];
+    layers[10]->tops[0].data = net->layer_data[2];
   #endif
-    frcnn->layers[12]->tops[0].data = frcnn->layer_data[2];
+    layers[12]->tops[0].data = net->layer_data[2];
+  }
 
+  {
   #ifdef FC_COMPRESS
-    frcnn->layers[14]->tops[0].data = frcnn->layer_data[1];
-    frcnn->layers[16]->tops[0].data = frcnn->layer_data[1];
+    layers[14]->tops[0].data = net->layer_data[1];
+    layers[16]->tops[0].data = net->layer_data[1];
   #else
-    frcnn->layers[14]->tops[0].data = frcnn->layer_data[0];
-    frcnn->layers[16]->tops[0].data = frcnn->layer_data[1];
+    layers[14]->tops[0].data = net->layer_data[0];
+    layers[16]->tops[0].data = net->layer_data[1];
   #endif
-
-    frcnn->layers[17]->tops[0].data = frcnn->layer_data[0];
-    frcnn->layers[18]->tops[0].data = frcnn->layers[17]->tops[0].data;
-    frcnn->layers[19]->tops[0].data = frcnn->layer_data[2];
-    frcnn->layers[20]->tops[0].data = frcnn->layer_data[1];
-    frcnn->layers[21]->tops[0].data = frcnn->layer_data[3];
   }
 
-  init_layers(convnet);
-  init_layers(frcnn);
+  layers[17]->tops[0].data = net->layer_data[0];
+  layers[18]->tops[0].data = layers[17]->tops[0].data;
+  layers[19]->tops[0].data = net->layer_data[2];
+  layers[20]->tops[0].data = net->layer_data[1];
+
+  #ifndef DEMO
+  {
+    layers[21]->tops[0].data = net->layer_data[3];
+  }
+  #endif
+}
+
+void construct_pvanet(Net* const pvanet,
+                      const char* const param_path)
+{
+  init_net(pvanet);
+
+  strcpy(pvanet->param_path, param_path);
+
+  #ifdef INCEPTION
+  setup_inception(pvanet);
+  setup_frcnn(pvanet, &pvanet->layers[pvanet->num_layers],
+              256, pvanet->layers[pvanet->num_layers - 1]);
+  #else
+  setup_pva711(pvanet);
+  setup_frcnn(pvanet, &pvanet->layers[pvanet->num_layers],
+              512, pvanet->layers[pvanet->num_layers - 1]);
+  #endif
+
+  shape_net(pvanet);
+
+  printf("Max layer size = %ld\n", pvanet->layer_size);
+  printf("Max param size = %ld\n", pvanet->param_size);
+  printf("Max temp size = %ld\n", pvanet->temp_size);
+  printf("Max tempint size = %ld\n", pvanet->tempint_size);
+  printf("Max const size = %ld\n", pvanet->const_size);
+
+  malloc_net(pvanet);
+
+  #ifdef INCEPTION
+  assign_inception_tops(pvanet);
+  #else
+  assign_pva711_tops(pvanet);
+  #endif
+  assign_frcnn_tops(pvanet);
+
+  init_layers(pvanet);
 
   // print total memory size required
   {
   #ifdef GPU
-    printf("%ld + %ld = %ldMB of main memory allocated\n",
-           DIV_THEN_CEIL(convnet->space_cpu,  1000000),
-           DIV_THEN_CEIL(frcnn->space_cpu,  1000000),
-           DIV_THEN_CEIL(convnet->space_cpu + frcnn->space_cpu,  1000000));
-    printf("%ld + %ld = %ldMB of GPU memory allocated\n",
-           DIV_THEN_CEIL(convnet->space,  1000000),
-           DIV_THEN_CEIL(frcnn->space,  1000000),
-           DIV_THEN_CEIL(convnet->space + frcnn->space,  1000000));
+    printf("%ldMB of main memory allocated\n",
+           DIV_THEN_CEIL(pvanet->space_cpu,  1000000));
+    printf("%ldMB of GPU memory allocated\n",
+           DIV_THEN_CEIL(pvanet->space,  1000000));
   #else
-    printf("%ld + %ld = %ldMB of main memory allocated\n",
-           DIV_THEN_CEIL(convnet->space + convnet->space_cpu,  1000000),
-           DIV_THEN_CEIL(frcnn->space + frcnn->space_cpu,  1000000),
-           DIV_THEN_CEIL(convnet->space + convnet->space_cpu
-                         + frcnn->space + frcnn->space_cpu,  1000000));
+    printf("%ldMB of main memory allocated\n",
+           DIV_THEN_CEIL(pvanet->space + pvanet->space_cpu,  1000000));
   #endif
   }
 }
 
-void get_input_frcnn_7_1_1(Net* const net,
-                           const char* const filename[],
-                           const int num_images)
+void get_input_pvanet(Net* const net,
+                      const char* const filename[],
+                      const int num_images)
 {
-  Tensor* input = &net->layers[0]->tops[0];
-  //input->data = net->input_cpu_data;
+  Tensor* const input = &net->layers[0]->tops[0];
   input->ndim = 3;
   input->num_items = 0;
   input->start[0] = 0;
@@ -1323,31 +1111,26 @@ void get_input_frcnn_7_1_1(Net* const net,
   for (int i = 0; i < num_images; ++i) {
     load_image(filename[i], input, net->img_info, net->temp_data);
   }
-/*
-  #ifdef GPU
-  cudaMemcpyAsync(net->layer_data[0], input->data,
-                  flatten_size(input) * sizeof(real),
-                  cudaMemcpyHostToDevice);
-  #else
-  memcpy(net->layer_data[0], input->data,
-         flatten_size(input) * sizeof(real));
-  #endif
-  input->data = net->layer_data[0];
-*/
-  // network reshape
+
   shape_net(net);
 
   print_tensor_info("data", input);
   print_tensor_info("img_info", net->img_info);
 }
 
-void get_output_frcnn_7_1_1(Net* const net,
-                            const int image_start_index,
-                            FILE* fp)
+void get_output_pvanet(Net* const net,
+                       const int image_start_index,
+                       FILE* fp)
 {
   // retrieve & print output
   {
-    const Tensor* const out = &net->layers[20]->tops[0];
+    #ifdef DEMO
+    const int out_layer_idx = net->num_layers - 1;
+    #else
+    const int out_layer_idx = net->num_layers - 2;
+    #endif
+
+    const Tensor* const out = &net->layers[out_layer_idx]->tops[0];
     const long int output_size = flatten_size(out);
 
   #ifdef GPU
@@ -1358,6 +1141,7 @@ void get_output_frcnn_7_1_1(Net* const net,
     memcpy(net->output_cpu_data, out->data, output_size * sizeof(real));
   #endif
 
+    net->num_output_boxes = 0;
     for (int n = 0; n < out->num_items; ++n) {
       const int image_index = image_start_index + n;
       const real* const p_out_item = net->output_cpu_data + out->start[n];
@@ -1371,12 +1155,14 @@ void get_output_frcnn_7_1_1(Net* const net,
                p_out_item[i * 6 + 1], p_out_item[i * 6 + 2],
                p_out_item[i * 6 + 3], p_out_item[i * 6 + 4]);
       }
+      net->num_output_boxes += out->shape[n][0];
     }
   }
 
   // retrieve & save test output for measuring performance
+  #ifndef DEMO
   {
-    const Tensor* const out = &net->layers[21]->tops[0];
+    const Tensor* const out = &net->layers[net->num_layers - 1]->tops[0];
     const long int output_size = flatten_size(out);
 
   #ifdef GPU
@@ -1387,17 +1173,49 @@ void get_output_frcnn_7_1_1(Net* const net,
     memcpy(net->output_cpu_data, out->data, output_size * sizeof(real));
   #endif
 
-    for (int n = 0; n < out->num_items; ++n) {
-      const real* const p_out_item = net->output_cpu_data + out->start[n];
+    if (fp) {
+      for (int n = 0; n < out->num_items; ++n) {
+        const real* const p_out_item = net->output_cpu_data + out->start[n];
 
-      fwrite(&out->ndim, sizeof(int), 1, fp);
-      fwrite(out->shape[n], sizeof(int), out->ndim, fp);
-      fwrite(p_out_item, sizeof(real), out->shape[n][0] * 6, fp);
+        fwrite(&out->ndim, sizeof(int), 1, fp);
+        fwrite(out->shape[n], sizeof(int), out->ndim, fp);
+        fwrite(p_out_item, sizeof(real), out->shape[n][0] * 6, fp);
+      }
     }
   }
+  #endif
+}
+
+void process_pvanet(Net* const net,
+                    const unsigned char* const image_data,
+                    const int height, const int width, const int stride,
+                    FILE* fp)
+{
+  Tensor* const input = &net->layers[0]->tops[0];
+  input->ndim = 3;
+  input->num_items = 0;
+  input->start[0] = 0;
+
+  net->img_info->ndim = 1;
+  net->img_info->num_items = 0;
+
+  img2input(image_data, input, net->img_info,
+            (unsigned char*)net->temp_data,
+            height, width, stride);
+
+  shape_net(net);
+
+  forward_net(net);
+
+  get_output_pvanet(net, 0, fp);
 }
 
 #ifdef TEST
+#include <time.h>
+
+static float a_time[2] = { 0, };
+static clock_t tick0, tick1;
+
 int main(int argc, char* argv[])
 {
   // CUDA initialization
@@ -1409,26 +1227,26 @@ int main(int argc, char* argv[])
   #endif
 
   // PVANET construction
-  Net convnet, frcnn;
-  construct_frcnn_7_1_1(&convnet, &frcnn);
+  Net pvanet;
+  construct_pvanet(&pvanet, argv[1]);
 
   // load a text file containing image filenames to be tested
   {
     char buf[10240];
     char* line[20];
     int total_count = 0, count = 0, buf_count = 0;
-    FILE* fp_list = fopen(argv[1], "r");
-    FILE* fp_out = fopen(argv[2], "wb");
+    FILE* fp_list = fopen(argv[2], "r");
+    FILE* fp_out = fopen(argv[3], "wb");
 
     if (!fp_list) {
-      printf("File not found: %s\n", argv[1]);
+      printf("File not found: %s\n", argv[2]);
     }
     if (!fp_out) {
-      printf("File write error: %s\n", argv[2]);
+      printf("File write error: %s\n", argv[3]);
     }
 
     while (fgets(&buf[buf_count], 1024, fp_list)) {
-      const Tensor* const input = &convnet.layers[0]->tops[0];
+      const Tensor* const input = &pvanet.layers[0]->tops[0];
       const int len = strlen(&buf[buf_count]);
       buf[buf_count + len - 1] = 0;
       line[count] = &buf[buf_count];
@@ -1437,14 +1255,13 @@ int main(int argc, char* argv[])
       tick0 = clock();
       if (count == input->num_items) {
         // input data loading
-        get_input_frcnn_7_1_1(&convnet, (const char * const *)&line, count);
+        get_input_pvanet(&pvanet, (const char * const *)&line, count);
 
         // forward-pass
-        forward_net(&convnet);
-        forward_net(&frcnn);
+        forward_net(&pvanet);
 
         // retrieve output & save to file
-        get_output_frcnn_7_1_1(&frcnn, total_count, fp_out);
+        get_output_pvanet(&pvanet, total_count, fp_out);
 
         tick1 = clock();
         a_time[0] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
@@ -1461,10 +1278,9 @@ int main(int argc, char* argv[])
     }
 
     if (count > 0) {
-      get_input_frcnn_7_1_1(&convnet, (const char * const *)&line, count);
-      forward_net(&convnet);
-      forward_net(&frcnn);
-      get_output_frcnn_7_1_1(&frcnn, total_count, fp_out);
+      get_input_pvanet(&pvanet, (const char * const *)&line, count);
+      forward_net(&pvanet);
+      get_output_pvanet(&pvanet, total_count, fp_out);
 
       tick1 = clock();
       a_time[0] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
@@ -1480,8 +1296,7 @@ int main(int argc, char* argv[])
 
 
   // end
-  free_net(&convnet);
-  free_net(&frcnn);
+  free_net(&pvanet);
 
   return 0;
 }

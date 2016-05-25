@@ -1,7 +1,7 @@
 #include "layer.h"
 #include <string.h>
 
-#include "boost/date_time/posix_time/posix_time.hpp"
+#include <time.h>
 
 static float a_time[8] = { 0, };
 static clock_t tick0, tick1;

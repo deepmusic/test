@@ -1,14 +1,22 @@
 #ifndef PVA_DL_LAYER_H
 #define PVA_DL_LAYER_H
 
-#define DEBUG
+//#define DEBUG
+//#define MKL
 
 // --------------------------------------------------------------------------
 // include cuda & blas library
 // --------------------------------------------------------------------------
 
 #ifdef GPU
-  #include "cuda_settings.h"
+  #include <cublas_v2.h>
+  #include <cuda.h>
+  #include <cuda_runtime.h>
+  #include <curand.h>
+  #include <driver_types.h>
+#elif defined(MKL)
+  #include <mkl_cblas.h>
+  #include <math.h>
 #else
   #include <cblas.h>
   #include <math.h>
@@ -61,6 +69,10 @@ typedef struct Tensor_
   real* data;
 } Tensor;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // initialize: set all values to 0
 void init_tensor(Tensor* const tensor);
 
@@ -98,27 +110,12 @@ void save_tensor_data(const char* const filename,
 long int flatten_size(const Tensor* const tensor);
 
 // print shapes for all batch items in tensor
-void print_tensor_info(const char* name,
+void print_tensor_info(const char* const name,
                        const Tensor* const tensor);
 
-
-
-// --------------------------------------------------------------------------
-// load image & transform into network input
-//   load_image
-//   img2input
-// --------------------------------------------------------------------------
-
-void load_image(const char* const filename,
-                Tensor* const input3d,
-                Tensor* const img_info1d,
-                real* const temp_data);
-
-void img2input(const unsigned char* const img,
-               Tensor* const input3d,
-               Tensor* const img_info1d,
-               unsigned char* const temp_data,
-               const int height, const int width, const int stride);
+#ifdef __cplusplus
+} //end extern "C"
+#endif
 
 
 
@@ -187,9 +184,17 @@ typedef struct Layer_
   LayerOption option;
 } Layer;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void init_layer(Layer* const layer);
 
 long int malloc_layer(Layer* const layer);
+
+#ifdef __cplusplus
+} // end extern "C"
+#endif
 
 
 
@@ -197,13 +202,15 @@ long int malloc_layer(Layer* const layer);
 // net data structure & some functions
 // --------------------------------------------------------------------------
 
-#define MAX_NUM_LAYERS 100
+#define MAX_NUM_LAYERS 200
 #define MAX_NUM_LAYER_DATA 5
 #define MAX_NUM_RATIOS 10
 #define MAX_NUM_SCALES 10
 
 typedef struct Net_
 {
+  char param_path[1024];
+
   Layer* layers[MAX_NUM_LAYERS];
   int num_layers;
 
@@ -213,6 +220,8 @@ typedef struct Net_
   real* output_cpu_data;
   long int layer_size;
   int num_layer_data;
+
+  int num_output_boxes;
 
   real* param_cpu_data;
   long int param_size;
@@ -242,6 +251,10 @@ typedef struct Net_
   #endif
 } Net;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void init_net(Net* const net);
 
 void malloc_net(Net* const net);
@@ -265,21 +278,35 @@ void save_layer_tops(void* const net_, void* const layer_);
 void print_layer_tops(const Net* const net,
                       const Layer* const layer);
 
+#ifdef __cplusplus
+} // end extern "C"
+#endif
 
+
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // --------------------------------------------------------------------------
-// PVANET 7.1.1
+// PVANET
 // --------------------------------------------------------------------------
 
-void construct_frcnn_7_1_1(Net* net);
+void construct_pvanet(Net* const net,
+                      const char* const param_path);
 
-void get_input_frcnn_7_1_1(Net* net,
-                           const char* const filename[],
-                           const int num_images);
+void get_input_pvanet(Net* const net,
+                      const char* const filename[],
+                      const int num_images);
 
-void get_output_frcnn_7_1_1(Net* net,
-                            const int image_start_index,
-                            FILE* fp);
+void get_output_pvanet(Net* const net,
+                       const int image_start_index,
+                       FILE* fp);
+
+void process_pvanet(Net* const net,
+                    const unsigned char* const image_data,
+                    const int height, const int width, const int stride,
+                    FILE* fp);
 
 
 
@@ -446,5 +473,29 @@ void nms(const int num_boxes, const real* const boxes,
          int* const num_out, int* const keep_out, const int base_index,
          const real nms_thresh, const int max_num_out);
 
+#ifdef __cplusplus
+} // end extern "C"
+#endif
 
-#endif // endifndef PVA_DL_LAYER_H
+
+
+// --------------------------------------------------------------------------
+// load image & transform into network input
+//   load_image
+//   img2input
+// --------------------------------------------------------------------------
+
+void load_image(const char* const filename,
+                Tensor* const input3d,
+                Tensor* const img_info1d,
+                real* const temp_data);
+
+void img2input(const unsigned char* const img,
+               Tensor* const input3d,
+               Tensor* const img_info1d,
+               unsigned char* const temp_data,
+               const int height, const int width, const int stride);
+
+
+
+#endif // end PVA_DL_LAYER_H

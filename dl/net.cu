@@ -32,6 +32,7 @@ long int malloc_layer(Layer* const layer)
 }
 
 long int malloc_load_layer_data(Layer* const layer,
+                                const char* const param_path,
                                 const char* const name,
                                 real* const temp_cpu_space)
 {
@@ -49,10 +50,8 @@ long int malloc_load_layer_data(Layer* const layer,
 
   for (int i = 0; i < layer->num_params; ++i) {
     char path[1024];
-    //printf("malloc param %d\n", i);
     space += malloc_tensor_data(&layer->params[i]);
-    sprintf(path, "params/%s_param%d.bin", name, i);
-    //printf("load param %s\n", path);
+    sprintf(path, "%s/%s_param%d.bin", param_path, name, i);
     load_tensor(path, &layer->params[i], temp_cpu_space);
   }
 
@@ -123,13 +122,7 @@ void malloc_net(Net* const net)
     cudaMalloc(&net->temp_data, net->temp_size * sizeof(real));
     cudaMalloc(&net->tempint_data, net->tempint_size * sizeof(int));
     cudaMalloc(&net->const_data, net->const_size * sizeof(real));
-/*
-    cudaMallocHost(&net->input_cpu_data, net->layer_size * sizeof(real));
-    cudaMallocHost(&net->output_cpu_data, net->layer_size * sizeof(real));
-    cudaMallocHost(&net->param_cpu_data, net->param_size * sizeof(real));
-    cudaMallocHost(&net->temp_cpu_data, net->temp_size * sizeof(real));
-    cudaMallocHost(&net->tempint_cpu_data, net->tempint_size * sizeof(int));
-*/
+
     net->input_cpu_data = (real*)malloc(net->layer_size * sizeof(real));
     net->output_cpu_data = (real*)malloc(net->layer_size * sizeof(real));
     net->param_cpu_data = (real*)malloc(net->param_size * sizeof(real));
@@ -173,7 +166,8 @@ void malloc_net(Net* const net)
   }
 
   for (int i = 0; i < net->num_layers; ++i) {
-    space += malloc_load_layer_data(net->layers[i], net->layers[i]->name,
+    space += malloc_load_layer_data(net->layers[i], net->param_path,
+                                    net->layers[i]->name,
                                     net->param_cpu_data);
   }
 
@@ -221,13 +215,7 @@ void free_net(Net* const net)
     cudaFree(net->temp_data);
     cudaFree(net->tempint_data);
     cudaFree(net->const_data);
-/*
-    cudaFreeHost(net->input_cpu_data);
-    cudaFreeHost(net->output_cpu_data);
-    cudaFreeHost(net->param_cpu_data);
-    cudaFreeHost(net->temp_cpu_data);
-    cudaFreeHost(net->tempint_cpu_data);
-*/
+
     free(net->input_cpu_data);
     free(net->output_cpu_data);
     free(net->param_cpu_data);
@@ -347,7 +335,7 @@ void save_layer_tops(void* const net_, void* const layer_)
 
   for (int i = 0; i < layer->num_tops; ++i) {
     char path[1024];
-    sprintf(path, "params/%s_top%d.rt.bin", layer->name, i);
+    sprintf(path, "%s/%s_top%d.rt.bin", net->param_path, layer->name, i);
     save_tensor_data(path, &layer->tops[i], net->output_cpu_data);
   }
 }
@@ -365,7 +353,7 @@ void print_layer_tops(const Net* const net,
     memcpy(net->output_cpu_data, layer->tops[i].data, size * sizeof(real));
     #endif
     char path[1024];
-    sprintf(path, "params/%s_top%d.txt", layer->name, i);
+    sprintf(path, "%s/%s_top%d.txt", net->param_path, layer->name, i);
     FILE* fp = fopen(path, "w");
     const Tensor* const t = &layer->tops[0];
     int j = 0;
