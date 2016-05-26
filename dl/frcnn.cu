@@ -1,10 +1,10 @@
 #include "layer.h"
 #include <string.h>
 
-#define MSRPN
+//#define MSRPN
 #define FC_COMPRESS
 #define INCEPTION
-#define DEMO
+//#define DEMO
 
 static
 void setup_data_layer(Net* const net)
@@ -734,11 +734,14 @@ void setup_frcnn(Net* const net,
   }
   #else
   {
-    // 3x3 RPN
+    // 3x3 RPN if using PVA-7.1.1
+    #ifndef INCEPTION
     layers[0]->option.kernel_h = 3;
     layers[0]->option.kernel_w = 3;
     layers[0]->option.pad_h = 1;
     layers[0]->option.pad_w = 1;
+    #endif
+
     layers[0]->option.out_channels = rpn_channels;
     layers[1]->option.out_channels = 50;
     layers[2]->option.out_channels = 100;
@@ -911,8 +914,10 @@ void setup_frcnn(Net* const net,
   }
   #else
   {
+    layers[1]->allocate_top_data[0] = 1;
     layers[1]->f_forward[1] = forward_rpn_pred_layer;
     layers[1]->f_shape[1] = shape_rpn_pred_layer;
+    layers[2]->allocate_top_data[0] = 1;
     layers[2]->f_forward[1] = forward_rpn_bbox_layer;
     layers[2]->f_shape[1] = shape_rpn_bbox_layer;
   }
@@ -1055,13 +1060,12 @@ void construct_pvanet(Net* const pvanet,
 
   #ifdef INCEPTION
   setup_inception(pvanet);
-  setup_frcnn(pvanet, &pvanet->layers[pvanet->num_layers],
-              256, pvanet->layers[pvanet->num_layers - 1]);
   #else
   setup_pva711(pvanet);
-  setup_frcnn(pvanet, &pvanet->layers[pvanet->num_layers],
-              512, pvanet->layers[pvanet->num_layers - 1]);
   #endif
+  setup_frcnn(pvanet, &pvanet->layers[pvanet->num_layers],
+              pvanet->layers[pvanet->num_layers - 1]->option.out_channels,
+              pvanet->layers[pvanet->num_layers - 1]);
 
   shape_net(pvanet);
 

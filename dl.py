@@ -22,10 +22,12 @@ def rpn_score_bbox_corr(net):
           print (np.sqrt((v1 * v2).sum()), np.sqrt((v1 * v1).sum()), np.sqrt((v2 * v2).sum()))
 
 def load_inception():
-  proto = '../new-faster-rcnn/pva_inception2_coco.pt'
-  model = '../new-faster-rcnn/output/faster_rcnn_once_25anc_plus/pvtdb_pengo_80_pva/pva_inception2_2_once_iter_4720000.caffemodel'
-  #proto = '../new-faster-rcnn/pva7.1.1_coco.pt'
-  #model = '../new-faster-rcnn/pva7.1.1_coco_once_iter_880000.caffemodel'
+  #proto = '../new-faster-rcnn/pva_inception2_3_coco.pt'
+  #model = '../new-faster-rcnn/output/faster_rcnn_once_25anc_plus/pvtdb_pengo_80_pva/pva_inception2_3_once_iter_330000.caffemodel'
+  #proto = '../new-faster-rcnn/pva_inception2_coco.pt'
+  #model = '../new-faster-rcnn/output/faster_rcnn_once_25anc_plus/pvtdb_pengo_80_pva/pva_inception2_2_once_iter_4720000.caffemodel'
+  proto = '../new-faster-rcnn/pva7.1.1_coco.pt'
+  model = '../new-faster-rcnn/pva7.1.1_coco_once_iter_880000.caffemodel'
   import caffe
   caffe.set_mode_cpu()
   #caffe.set_device(1)
@@ -205,9 +207,9 @@ def convert_net(net, save_dir):
     for param_id in range(len(net.params[layer_name])):
       filename = '{:s}/{:s}_param{:d}.bin'.format(save_dir, layer_name.replace('/', '_'), param_id)
       save_data(filename, net.params[layer_name][param_id].data)
-    if layer_name.startswith('fc6'):
+    if layer_name in ['fc6']:
       compress_fc(net, save_dir, layer_name, 512)
-    elif layer_name.startswith('fc7'):
+    elif layer_name in ['fc7']:
       compress_fc(net, save_dir, layer_name, 128)
 
 def load_image(filename):

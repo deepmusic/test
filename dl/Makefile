@@ -27,10 +27,10 @@ frcnn_cpu.bin: frcnn.cpp.cpu.test.o libdlcpu.so
 frcnn_gpu.bin: frcnn.gpu.test.o libdlgpu.so
 	$(NVCC) -o $@ $^ $(NVLDFLAGS)
 
-libdlgpu.so: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o image.gpu.o frcnn.gpu.o link.gpu.o
+libdlgpu.so: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o odtest.gpu.o image.gpu.o frcnn.gpu.o link.gpu.o
 	$(CC) -shared -o $@ $^ $(NVLDFLAGS)
 	rm $^
-libdlcpu.so: tensor.cpu.o net.cpu.o nms.cpu.o softmax.cpu.o conv.cpu.o deconv.cpu.o fc.cpu.o dropout.cpu.o relu.cpu.o roipool.cpu.o pool.cpu.o proposal.cpu.o concat.cpu.o odout.cpu.o image.cpu.o frcnn.cpu.o
+libdlcpu.so: tensor.cpu.o net.cpu.o nms.cpu.o softmax.cpu.o conv.cpu.o deconv.cpu.o fc.cpu.o dropout.cpu.o relu.cpu.o roipool.cpu.o pool.cpu.o proposal.cpu.o concat.cpu.o odout.cpu.o odtest.cpu.o image.cpu.o frcnn.cpu.o
 	$(CC) -shared -o $@ $^ $(LDFLAGS)
 	rm $^
 
@@ -69,7 +69,7 @@ conv.cpu.o: conv.cu layer.h
 	$(CC) $(CFLAGS) -DTEST $*.cpp -o $@
 	rm $*.cpp
 
-link.gpu.o: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o image.gpu.o frcnn.gpu.o
+link.gpu.o: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o odtest.gpu.o image.gpu.o frcnn.gpu.o
 	$(NVCC) -Xcompiler '-fPIC' -dlink $^ -o $@
 
 %.gpu.o: %.cu layer.h

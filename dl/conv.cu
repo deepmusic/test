@@ -440,6 +440,13 @@ void conv_forward(const Tensor* const bottom3d,
   const real* p_bottom_item = bottom3d->data;
   real* p_top_item = top3d->data;
   real* p_temp_data = temp_data;
+
+  // if 1x1 convolution, skip convert_bottom
+  if (kernel_h == 1 && kernel_w == 1 && stride_h == 1 && stride_w == 1 &&
+      pad_h == 0 && pad_w == 0) {
+    p_temp_data = bottom3d->data;
+  }
+
   for (int n = 0; n < bottom3d->num_items; ++n) {
     // bottom shape: (G * C) x H x W
     const int bottom_H = bottom3d->shape[n][1];  // H
@@ -470,7 +477,7 @@ void conv_forward(const Tensor* const bottom3d,
 
     // convert bottom shape
     //   (G * C) x H x W -> (G * C * kernel_h * kernel_w) x (H' * W')
-    {
+    if (p_bottom_item != p_temp_data) {
     #ifdef GPU
       // one thread computes "kernel_h * kernel_w" entries in top
       const int num_threads = num_groups * bottom_C * top_H * top_W;
