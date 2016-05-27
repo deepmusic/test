@@ -148,7 +148,7 @@ void enumerate_output_gpu(const real* const bottom2d,
     const real d_log_w = p_d_anchor3d[2];
     const real d_log_h = p_d_anchor3d[3];
 
-    const real* const p_roi2d = roi2d + r * 4;
+    const real* const p_roi2d = roi2d + r * 5;
     real* const p_proposals = proposals + index * 5;
     p_proposals[0] = p_roi2d[0];
     p_proposals[1] = p_roi2d[1];
@@ -183,7 +183,7 @@ void enumerate_output_cpu(const real* const bottom2d,
       const real d_log_w = p_d_anchor3d[2];
       const real d_log_h = p_d_anchor3d[3];
 
-      const real* const p_roi2d = roi2d + r * 4;
+      const real* const p_roi2d = roi2d + r * 5;
       real* const p_proposals = proposals + (c * num_rois + r) * 5;
       p_proposals[0] = p_roi2d[0];
       p_proposals[1] = p_roi2d[1];
@@ -402,7 +402,7 @@ void odout_forward(const Tensor* const bottom2d,
     {
       const int bottom_size = num_rois * num_classes;
       const int d_anchor_size = bottom_size * 4;
-      const int roi_size = num_rois * 4;
+      const int roi_size = num_rois * 5;
       const int img_info_size = 6;
       const int top_size = num_output * 6;
       p_bottom_item += bottom_size;

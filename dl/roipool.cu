@@ -34,10 +34,10 @@ void roi_pool_gpu(const real* const bottom3d,
     const int w = index % top_W;
 
     // RoI in the bottom plane
-    const int x1 = ROUND(roi2d[r * 4 + 0] * spatial_scale);
-    const int y1 = ROUND(roi2d[r * 4 + 1] * spatial_scale);
-    const int x2 = ROUND(roi2d[r * 4 + 2] * spatial_scale);
-    const int y2 = ROUND(roi2d[r * 4 + 3] * spatial_scale);
+    const int x1 = ROUND(roi2d[r * 5 + 0] * spatial_scale);
+    const int y1 = ROUND(roi2d[r * 5 + 1] * spatial_scale);
+    const int x2 = ROUND(roi2d[r * 5 + 2] * spatial_scale);
+    const int y2 = ROUND(roi2d[r * 5 + 3] * spatial_scale);
     const int roi_W = x2 - x1 + 1;
     const int roi_H = y2 - y1 + 1;
 
@@ -91,10 +91,10 @@ void roi_pool_cpu(const real* const bottom3d,
 
   for (int r = 0; r < R; ++r) {
     // RoI in the bottom plane
-    const int x1 = ROUND(roi2d[r * 4 + 0] * spatial_scale);
-    const int y1 = ROUND(roi2d[r * 4 + 1] * spatial_scale);
-    const int x2 = ROUND(roi2d[r * 4 + 2] * spatial_scale);
-    const int y2 = ROUND(roi2d[r * 4 + 3] * spatial_scale);
+    const int x1 = ROUND(roi2d[r * 5 + 0] * spatial_scale);
+    const int y1 = ROUND(roi2d[r * 5 + 1] * spatial_scale);
+    const int x2 = ROUND(roi2d[r * 5 + 2] * spatial_scale);
+    const int y2 = ROUND(roi2d[r * 5 + 3] * spatial_scale);
     const int roi_W = x2 - x1 + 1;
     const int roi_H = y2 - y1 + 1;
 
@@ -155,7 +155,7 @@ void roi_pool_cpu(const real* const bottom3d,
 
 // RoI pooling: bottom -> top
 //   bottom: C x H x W
-//   roi: R x 4
+//   roi: R x 5
 //   top: R x C x H' x W'
 //   argmax: R * C * H' * W' array
 void roipool_forward(const Tensor* const bottom3d,
@@ -208,7 +208,7 @@ void roipool_forward(const Tensor* const bottom3d,
     // locate next item
     {
       const int bottom_size = C * H * W;
-      const int roi_size = R * 4;
+      const int roi_size = R * 5;
       const int top_size = R * C * top_H * top_W;
       p_bottom_item += bottom_size;
       p_roi_item += roi_size;
@@ -417,7 +417,7 @@ int main(int argc, char* argv[])
     roi.num_items = X.num_items;
     roi.ndim = 2;
     for (int n = 0; n < roi.num_items; ++n) {
-      roi.shape[n][1] = 4;
+      roi.shape[n][1] = 5;
     }
     {
       const int num_rois = shape[0];
@@ -428,10 +428,10 @@ int main(int argc, char* argv[])
         const real x2 = roi_data[i * 5 + 3];
         const real y2 = roi_data[i * 5 + 4];
         ++roi.shape[n][0];
-        roi_data[i * 4 + 0] = x1;
-        roi_data[i * 4 + 1] = y1;
-        roi_data[i * 4 + 2] = x2;
-        roi_data[i * 4 + 3] = y2;
+        roi_data[i * 5 + 0] = x1;
+        roi_data[i * 5 + 1] = y1;
+        roi_data[i * 5 + 2] = x2;
+        roi_data[i * 5 + 3] = y2;
       }
     }
 
