@@ -2,7 +2,9 @@
 #define MAX_LOG_ITEMS   100
 
 #include <string>
-#include <Windows.h>
+#ifdef _MSC_VER
+  #include <Windows.h>
+#endif
 
 class logger {
 
@@ -20,9 +22,10 @@ private:
     float           acc_times_[MAX_LOG_ITEMS];
     unsigned int    counts_[MAX_LOG_ITEMS];
     std::string     names_[MAX_LOG_ITEMS];
-
+  #ifdef _MSC_VER
     LARGE_INTEGER freq_;
     LARGE_INTEGER tick_start_[MAX_LOG_ITEMS];
+  #endif
 };
 
 extern logger global_logger;

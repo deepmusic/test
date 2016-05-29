@@ -1,0 +1,3 @@
+scripts/voc/000001.jpg
+scripts/voc/000004.jpg
+scripts/voc/000014.jpg

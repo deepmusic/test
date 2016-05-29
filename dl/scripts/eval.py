@@ -27,7 +27,7 @@ def apply_nms(all_boxes, thresh):
 def test_net(filename, **kwargs):
   if kwargs is not None:
     dbname = kwargs['dbname'] if kwargs.has_key('dbname') else 'pvtdb:voc2007test:20'
-    outdir = kwargs['outdir'] if kwargs.has_key('outdir') else 'params'
+    outdir = kwargs['outdir'] if kwargs.has_key('outdir') else 'scripts/params'
   imdb = get_imdb(dbname)
 
   num_images = len(imdb.image_index)

@@ -2,7 +2,8 @@
 #define PVA_DL_LAYER_H
 
 //#define DEBUG
-#define MKL
+//#define MKL
+#define CPU_OPT
 
 // --------------------------------------------------------------------------
 // include cuda & blas library

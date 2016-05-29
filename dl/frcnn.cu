@@ -4,7 +4,7 @@
 //#define MSRPN
 #define FC_COMPRESS
 #define INCEPTION
-//#define DEMO
+#define DEMO
 
 static
 void setup_data_layer(Net* const net)

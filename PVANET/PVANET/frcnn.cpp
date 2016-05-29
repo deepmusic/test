@@ -3,7 +3,7 @@
 
 #include "logger.h"
 
-#define MSRPN
+//#define MSRPN
 #define FC_COMPRESS
 #define INCEPTION
 #define DEMO
@@ -736,11 +736,14 @@ void setup_frcnn(Net* const net,
   }
   #else
   {
-    // 3x3 RPN
+    // 3x3 RPN if using PVA-7.1.1
+    #ifndef INCEPTION
     layers[0]->option.kernel_h = 3;
     layers[0]->option.kernel_w = 3;
     layers[0]->option.pad_h = 1;
     layers[0]->option.pad_w = 1;
+    #endif
+
     layers[0]->option.out_channels = rpn_channels;
     layers[1]->option.out_channels = 50;
     layers[2]->option.out_channels = 100;

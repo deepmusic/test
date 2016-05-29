@@ -2,7 +2,7 @@
 
 #include <time.h>
 
-#ifdef CPU_OPT
+#if defined(CPU_OPT) && defined(_MSC_VER)
 #include "smmintrin.h"
 #endif
 
@@ -136,7 +136,7 @@ void roi_pool_cpu(const real* const bottom3d,
       // if the bottom region is not empty,
       //   top[r][c][h][w] = "max in the region"
 
-#if defined(CPU_OPT) && !defined(BACKWARD)
+#if defined(CPU_OPT) && defined(_MSC_VER) && !defined(BACKWARD)
 
       int wb_size = wb_end - wb_start;
       int wb_denom = wb_size % 4;
