@@ -330,8 +330,8 @@ real* get_layer_data(Net* const net)
 
 void save_layer_tops(void* const net_, void* const layer_)
 {
-  Net* net = (Net*)net_;
-  Layer* layer = (Layer*)layer_;
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
 
   for (int i = 0; i < layer->num_tops; ++i) {
     char path[1024];
@@ -340,11 +340,16 @@ void save_layer_tops(void* const net_, void* const layer_)
   }
 }
 
-void print_layer_tops(const Net* const net,
-                      const Layer* const layer)
+void print_layer_tops(void* const net_, void* const layer_)
 {
+  const Net* const net = (Net*)net_;
+  const Layer* const layer = (Layer*)layer_;
+
   for (int i = 0; i < layer->num_tops; ++i) {
     const long int size = flatten_size(&layer->tops[i]);
+    const Tensor* const t = &layer->tops[i];
+    int idx[g_max_ndim + 1] = { 0, };
+
     #ifdef GPU
     cudaMemcpyAsync(net->output_cpu_data, layer->tops[i].data,
                     size * sizeof(real),
@@ -352,18 +357,22 @@ void print_layer_tops(const Net* const net,
     #else
     memcpy(net->output_cpu_data, layer->tops[i].data, size * sizeof(real));
     #endif
-    char path[1024];
-    sprintf(path, "%s/%s_top%d.txt", net->param_path, layer->name, i);
-    FILE* fp = fopen(path, "w");
-    const Tensor* const t = &layer->tops[0];
-    int j = 0;
-    for (int n = 0; n < t->num_items; ++n) {
-      for (int c = 0; c < t->shape[n][0]; ++c)
-        for (int h = 0; h < t->shape[n][1]; ++h)
-          for (int w = 0; w < t->shape[n][2]; ++w)
-            fprintf(fp, "%d %d %d %d %f\n",
-                    n, c, h, w, net->output_cpu_data[j++]);
+
+    for (int j = 0; j < size; ++j) {
+      const int n = idx[0];
+
+      printf("Layer %s / Top %d / Image %d [", layer->name, i, n);
+      for (int d = 1; d < t->ndim; ++d) {
+        printf("%d, ", idx[d]);
+      }
+      printf("%d]: %f\n", idx[t->ndim]++, net->output_cpu_data[j]);
+
+      for (int d = t->ndim; d > 0; --d) {
+        if (idx[d] == t->shape[n][d - 1]) {
+          idx[d] = 0;
+          ++idx[d - 1];
+        }
+      }
     }
-    fclose(fp);
-  }
+  } // endfor i
 }

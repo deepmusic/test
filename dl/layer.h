@@ -277,8 +277,7 @@ void update_net_size(Net* const net,
 
 void save_layer_tops(void* const net_, void* const layer_);
 
-void print_layer_tops(const Net* const net,
-                      const Layer* const layer);
+void print_layer_tops(void* const net_, void* const layer_);
 
 #ifdef __cplusplus
 } // end extern "C"
@@ -517,6 +516,10 @@ void _release_net(void);
 
 void _detect_net(const unsigned char* const image_dta, 
                  const int width, const int height);
+
+Tensor* _layer_net(const int layer_id, const int top_id);
+
+void _print_layer(const int layer_id);
 
 #ifdef __cplusplus
 } // end extern "C"
