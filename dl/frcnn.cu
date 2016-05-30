@@ -5,6 +5,8 @@
 #define FC_COMPRESS
 #define INCEPTION
 #define DEMO
+#define DROPOUT_SCALE_TRAIN 1  // for new PVANET
+//#define DROPOUT_SCALE_TRAIN 0  // for old PVANET
 
 static
 void setup_data_layer(Net* const net)
@@ -796,7 +798,7 @@ void setup_frcnn(Net* const net,
     layers[i]->option.negative_slope = 0;
     layers[i]->option.threshold = 0.5f;
     layers[i]->option.test = 1;
-    layers[i]->option.scaled = 1;
+    layers[i]->option.scaled = DROPOUT_SCALE_TRAIN;
     #ifdef GPU
     layers[i]->option.handle = (void*)&net->cublas_handle;
     #endif
