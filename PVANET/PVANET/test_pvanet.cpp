@@ -5,7 +5,6 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
-#include <Windows.h>
 
 #include "logger.h"
 
@@ -32,15 +31,15 @@ void draw_boxes(Mat& image, vector<pair<string, vector<float> > >& boxes) {
 }
 
 int main(int argc, char** argv) {
-	pvanet_init("", "./params", 0);
+	pvanet_init("", "./scripts/params2", 0);
 
     Mat image;
     if (argc >= 2)
         image = imread(argv[1]);
     else
-        //image = imread("./004545.jpg");
+        image = imread("./scripts/voc/004545.jpg");
         //image = imread("./test_dogs.jpg");
-        image = imread("./test_pedestrian_blur.jpg");
+        //image = imread("./test_pedestrian_blur.jpg");
 
     vector<pair<string, vector<float> > > boxes;
 

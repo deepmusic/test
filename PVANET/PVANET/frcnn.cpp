@@ -7,6 +7,8 @@
 #define FC_COMPRESS
 #define INCEPTION
 #define DEMO
+#define DROPOUT_SCALE_TRAIN 1  // for new PVANET
+//#define DROPOUT_SCALE_TRAIN 0  // for old PVANET
 
 static
 void setup_data_layer(Net* const net)
@@ -798,7 +800,7 @@ void setup_frcnn(Net* const net,
     layers[i]->option.negative_slope = 0;
     layers[i]->option.threshold = 0.5f;
     layers[i]->option.test = 1;
-    layers[i]->option.scaled = 1;
+    layers[i]->option.scaled = DROPOUT_SCALE_TRAIN;
     #ifdef GPU
     layers[i]->option.handle = (void*)&net->cublas_handle;
     #endif
@@ -916,8 +918,10 @@ void setup_frcnn(Net* const net,
   }
   #else
   {
+    layers[1]->allocate_top_data[0] = 1;
     layers[1]->f_forward[1] = forward_rpn_pred_layer;
     layers[1]->f_shape[1] = shape_rpn_pred_layer;
+    layers[2]->allocate_top_data[0] = 1;
     layers[2]->f_forward[1] = forward_rpn_bbox_layer;
     layers[2]->f_shape[1] = shape_rpn_bbox_layer;
   }
@@ -1060,13 +1064,12 @@ void construct_pvanet(Net* const pvanet,
 
   #ifdef INCEPTION
   setup_inception(pvanet);
-  setup_frcnn(pvanet, &pvanet->layers[pvanet->num_layers],
-              256, pvanet->layers[pvanet->num_layers - 1]);
   #else
   setup_pva711(pvanet);
-  setup_frcnn(pvanet, &pvanet->layers[pvanet->num_layers],
-              512, pvanet->layers[pvanet->num_layers - 1]);
   #endif
+  setup_frcnn(pvanet, &pvanet->layers[pvanet->num_layers],
+              pvanet->layers[pvanet->num_layers - 1]->option.out_channels,
+              pvanet->layers[pvanet->num_layers - 1]);
 
   shape_net(pvanet);
 
@@ -1148,10 +1151,10 @@ void get_output_pvanet(Net* const net,
 
     net->num_output_boxes = 0;
     for (int n = 0; n < out->num_items; ++n) {
+    #ifdef DEBUG
       const int image_index = image_start_index + n;
       const real* const p_out_item = net->output_cpu_data + out->start[n];
 
-#ifdef DEBUG
       for (int i = 0; i < out->shape[n][0]; ++i) {
         const int class_index = (int)p_out_item[i * 6 + 0];
 
@@ -1161,11 +1164,11 @@ void get_output_pvanet(Net* const net,
                p_out_item[i * 6 + 1], p_out_item[i * 6 + 2],
                p_out_item[i * 6 + 3], p_out_item[i * 6 + 4]);
       }
-#endif // DEBUG
+    #endif // DEBUG
 
       net->num_output_boxes += out->shape[n][0];
     }
-    }
+  }
 
   // retrieve & save test output for measuring performance
   #ifndef DEMO
