@@ -503,4 +503,25 @@ void img2input(const unsigned char* const img,
 
 
 
+// --------------------------------------------------------------------------
+// shared library interface
+// --------------------------------------------------------------------------
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void _init_net(void);
+
+void _release_net(void);
+
+void _detect_net(const unsigned char* const image_dta, 
+                 const int width, const int height);
+
+#ifdef __cplusplus
+} // end extern "C"
+#endif
+
+
+
 #endif // end PVA_DL_LAYER_H

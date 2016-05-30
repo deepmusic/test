@@ -12,29 +12,31 @@ all: test_gpu.bin test_cpu.bin
 
 test_cpu.bin: test_pvanet.cpp.cpu.o pvanet.cpp.cpu.o libdlcpu.so
 	$(CC) -o $@ $^ $(LDFLAGS)
-	rm $<
+	rm *.cpp.cpu.o
 test_gpu.bin: test_pvanet.cpp.cpu.o pvanet.cpp.cpu.o libdlgpu.so
 	$(CC) -o $@ $^ $(NVLDFLAGS)
-	rm $<
+	rm *.cpp.cpu.o
 
 demo_cpu.bin: demo.cpp.cpu.test.o libdlcpu.so
 	$(CC) -o $@ $^ $(LDFLAGS)
+	rm $<
 demo_gpu.bin: demo.gpu.test.o libdlgpu.so
 	$(NVCC) -o $@ $^ $(NVLDFLAGS)
+	rm $<
 
-libdlgpu.so: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o odtest.gpu.o image.gpu.o frcnn.gpu.o link.gpu.o
+libdlgpu.so: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o odtest.gpu.o image.gpu.o frcnn.gpu.o wrapper.gpu.o link.gpu.o
 	$(CC) -shared -o $@ $^ $(NVLDFLAGS)
 	rm $^
-libdlcpu.so: tensor.cpu.o net.cpu.o nms.cpu.o softmax.cpu.o conv.cpu.o deconv.cpu.o fc.cpu.o dropout.cpu.o relu.cpu.o roipool.cpu.o pool.cpu.o proposal.cpu.o concat.cpu.o odout.cpu.o odtest.cpu.o image.cpu.o frcnn.cpu.o
+libdlcpu.so: tensor.cpu.o net.cpu.o nms.cpu.o softmax.cpu.o conv.cpu.o deconv.cpu.o fc.cpu.o dropout.cpu.o relu.cpu.o roipool.cpu.o pool.cpu.o proposal.cpu.o concat.cpu.o odout.cpu.o odtest.cpu.o image.cpu.o frcnn.cpu.o wrapper.cpu.o
 	$(CC) -shared -o $@ $^ $(LDFLAGS)
 	rm $^
-link.gpu.o: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o odtest.gpu.o image.gpu.o frcnn.gpu.o
+link.gpu.o: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o odtest.gpu.o image.gpu.o frcnn.gpu.o wrapper.gpu.o
 	$(NVCC) -Xcompiler '-fPIC' -dlink $^ -o $@
 
-libdlcpu.a: tensor.cpu.o net.cpu.o nms.cpu.o softmax.cpu.o conv.cpu.o deconv.cpu.o fc.cpu.o dropout.cpu.o relu.cpu.o roipool.cpu.o pool.cpu.o proposal.cpu.o concat.cpu.o odout.cpu.o odtest.cpu.o image.cpu.o frcnn.cpu.o
+libdlcpu.a: tensor.cpu.o net.cpu.o nms.cpu.o softmax.cpu.o conv.cpu.o deconv.cpu.o fc.cpu.o dropout.cpu.o relu.cpu.o roipool.cpu.o pool.cpu.o proposal.cpu.o concat.cpu.o odout.cpu.o odtest.cpu.o image.cpu.o frcnn.cpu.o wrapper.cpu.o
 	ar rcs $@ $^
 	rm $^
-libdlgpu.a: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o odtest.gpu.o image.gpu.o frcnn.gpu.o
+libdlgpu.a: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o odtest.gpu.o image.gpu.o frcnn.gpu.o wrapper.gpu.o
 	ar rcs $@ $^
 	rm $^
 
