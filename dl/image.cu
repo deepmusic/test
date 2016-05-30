@@ -1,8 +1,4 @@
 #include "layer.h"
-#include <string.h>
-#include <opencv2/core/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/imgproc/imgproc.hpp>
 
 #ifdef GPU
 __global__
@@ -10,14 +6,14 @@ void bilinear_resize_gpu(const unsigned char* const img,
                          real* const input3d,
                          const int height, const int width,
                          const int resized_height, const int resized_width,
-                         const real img_scale_y, const real img_scale_x,
-                         const int stride)
+                         const real img_scale_y, const real img_scale_x)
 {
   const real gs_mean[3] = { 102.9801f, 115.9465f, 122.7717f };
 
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
   const int resized_area = resized_height * resized_width;
   if (index < 3 * resized_area) {
+    const int stride = width * 3;
     const int c = index / resized_area;
     const int i = (index / resized_width) % resized_height;
     const int j = index % resized_width;
@@ -48,13 +44,13 @@ void bilinear_resize_cpu(const unsigned char* const img,
                          real* const input3d,
                          const int height, const int width,
                          const int resized_height, const int resized_width,
-                         const real img_scale_y, const real img_scale_x,
-                         const int stride)
+                         const real img_scale_y, const real img_scale_x)
 {
   static const real gs_mean_blue = 102.9801f;
   static const real gs_mean_green = 115.9465f;
   static const real gs_mean_red = 122.7717f;
 
+  const int stride = width * 3;
   const int resized_area = resized_height * resized_width;
   real* const p_inputB = input3d + 0 * resized_area;
   real* const p_inputG = input3d + 1 * resized_area;
@@ -113,7 +109,7 @@ void img2input(const unsigned char* const img,
                Tensor* const input3d,
                Tensor* const img_info1d,
                unsigned char* const temp_data,
-               const int height, const int width, const int stride)
+               const int height, const int width)
 {
   static const real gs_max_size = 1000.0f;
   static const real gs_base_size = 600.0f;
@@ -157,14 +153,14 @@ void img2input(const unsigned char* const img,
     bilinear_resize_gpu<<<num_blocks, threads_per_block>>>(
         temp_data,  input3d->data + input3d->start[n],
         height,  width,  resized_height,  resized_width,
-        img_scale_y,  img_scale_x,  stride);
+        img_scale_y,  img_scale_x);
   }
   #else
   {
     bilinear_resize_cpu(
         img,  input3d->data + input3d->start[n],
         height,  width,  resized_height,  resized_width,
-        img_scale_y,  img_scale_x,  stride);
+        img_scale_y,  img_scale_x);
   }
   #endif
 
@@ -178,32 +174,4 @@ void img2input(const unsigned char* const img,
 
   img_info1d->shape[n][0] = 6;
   ++img_info1d->num_items;
-}
-
-void load_image(const char* const filename,
-                Tensor* const input3d,
-                Tensor* const img_info1d,
-                real* const temp_data)
-{
-  cv::Mat image = cv::imread(filename);
-  if (!image.data) {
-    printf("[ERROR] Cannot open image: %s\n", image.data);
-  }
-
-  const int height = image.rows;
-  const int width = image.cols;
-  const int stride = (int)image.step.p[0];
-/*
-  printf("Image %s: %d x %d, stride=%d\n", filename, height, width, stride);
-  char path[1024];
-  sprintf(path, "params/%s.txt", filename + 35);
-  FILE* fp = fopen(path, "w");
-  for (int i = 0; i < height; ++i)
-    for (int j = 0; j < width; ++j)
-      for (int k = 0; k < 3; ++k)
-        fprintf(fp, "%d %d %d %d\n", i, j, k, image.data[i * width * 3 + j * 3 + k]);
-  fclose(fp);
-*/
-  img2input(image.data, input3d, img_info1d, (unsigned char*)temp_data,
-            height, width, stride);
 }

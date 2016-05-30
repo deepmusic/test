@@ -13,6 +13,13 @@ __device__
 #endif
 real iou(const real* const A, const real* const B)
 {
+  #ifndef GPU
+  if (A[0] > B[2] || A[1] > B[3] || A[2] < B[0] || A[3] < B[1]) {
+    return 0;
+  }
+  else {
+  #endif
+
   // overlapped region (= box)
   const real x1 = MAX(A[0],  B[0]);
   const real y1 = MAX(A[1],  B[1]);
@@ -30,6 +37,10 @@ real iou(const real* const A, const real* const B)
 
   // IoU
   return area / (A_area + B_area - area);
+
+  #ifndef GPU
+  }
+  #endif
 }
 
 // given box proposals, compute overlap between all box pairs

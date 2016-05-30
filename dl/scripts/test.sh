@@ -1,3 +1,3 @@
 #!/bin/bash
-./frcnn_gpu.bin scripts/params scripts/voc2007test.txt detections.bin
+./demo_gpu.bin database scripts/params2 scripts/voc2007test.txt detections.bin
 ./scripts/eval.py detections.bin

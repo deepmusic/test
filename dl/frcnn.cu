@@ -4,7 +4,7 @@
 //#define MSRPN
 #define FC_COMPRESS
 #define INCEPTION
-#define DEMO
+
 #define DROPOUT_SCALE_TRAIN 1  // for new PVANET
 //#define DROPOUT_SCALE_TRAIN 0  // for old PVANET
 
@@ -21,7 +21,7 @@ void setup_data_layer(Net* const net)
 
   {
     Tensor* input = &net->layers[0]->tops[0];
-    input->num_items = 1;
+    input->num_items = BATCH_SIZE;
     input->ndim = 3;
     for (int n = 0; n < input->num_items; ++n) {
       input->shape[n][0] = 3;
@@ -1102,11 +1102,27 @@ void construct_pvanet(Net* const pvanet,
   }
 }
 
-void get_input_pvanet(Net* const net,
-                      const char* const filename[],
+void set_input_pvanet(Net* const net,
+                      const unsigned char* const * const images_data,
+                      const int* const heights,
+                      const int* const widths,
                       const int num_images)
 {
+
   Tensor* const input = &net->layers[0]->tops[0];
+  int shape_changed = (input->num_items != num_images);
+
+  if (!shape_changed) {
+    for (int n = 0; n < num_images; ++n) {
+      if (net->img_info->data[n * 6 + 4] != (real)heights[n] ||
+          net->img_info->data[n * 6 + 5] != (real)widths[n])
+      {
+        shape_changed = 1;
+        break;
+      }
+    }
+  }
+
   input->ndim = 3;
   input->num_items = 0;
   input->start[0] = 0;
@@ -1114,20 +1130,50 @@ void get_input_pvanet(Net* const net,
   net->img_info->ndim = 1;
   net->img_info->num_items = 0;
 
-  for (int i = 0; i < num_images; ++i) {
-    load_image(filename[i], input, net->img_info, net->temp_data);
+  for (int n = 0; n < num_images; ++n) {
+    img2input(images_data[n], input, net->img_info,
+              (unsigned char*)net->temp_data,
+              heights[n], widths[n]);
   }
 
-  shape_net(net);
-
-  print_tensor_info("data", input);
-  print_tensor_info("img_info", net->img_info);
+  if (shape_changed) {
+    printf("shape changed\n");
+    print_tensor_info("data", input);
+    print_tensor_info("img_info", net->img_info);
+    shape_net(net);
+  }
 }
 
 void get_output_pvanet(Net* const net,
                        const int image_start_index,
                        FILE* fp)
 {
+  // retrieve & save test output for measuring performance
+  #ifndef DEMO
+  {
+    const Tensor* const out = &net->layers[net->num_layers - 1]->tops[0];
+    const long int output_size = flatten_size(out);
+
+  #ifdef GPU
+    cudaMemcpyAsync(net->output_cpu_data, out->data,
+                    output_size * sizeof(real),
+                    cudaMemcpyDeviceToHost);
+  #else
+    memcpy(net->output_cpu_data, out->data, output_size * sizeof(real));
+  #endif
+
+    if (fp) {
+      for (int n = 0; n < out->num_items; ++n) {
+        const real* const p_out_item = net->output_cpu_data + out->start[n];
+
+        fwrite(&out->ndim, sizeof(int), 1, fp);
+        fwrite(out->shape[n], sizeof(int), out->ndim, fp);
+        fwrite(p_out_item, sizeof(real), out->shape[n][0] * 6, fp);
+      }
+    }
+  }
+  #endif
+
   // retrieve & print output
   {
     #ifdef DEMO
@@ -1164,146 +1210,30 @@ void get_output_pvanet(Net* const net,
       net->num_output_boxes += out->shape[n][0];
     }
   }
-
-  // retrieve & save test output for measuring performance
-  #ifndef DEMO
-  {
-    const Tensor* const out = &net->layers[net->num_layers - 1]->tops[0];
-    const long int output_size = flatten_size(out);
-
-  #ifdef GPU
-    cudaMemcpyAsync(net->output_cpu_data, out->data,
-                    output_size * sizeof(real),
-                    cudaMemcpyDeviceToHost);
-  #else
-    memcpy(net->output_cpu_data, out->data, output_size * sizeof(real));
-  #endif
-
-    if (fp) {
-      for (int n = 0; n < out->num_items; ++n) {
-        const real* const p_out_item = net->output_cpu_data + out->start[n];
-
-        fwrite(&out->ndim, sizeof(int), 1, fp);
-        fwrite(out->shape[n], sizeof(int), out->ndim, fp);
-        fwrite(p_out_item, sizeof(real), out->shape[n][0] * 6, fp);
-      }
-    }
-  }
-  #endif
 }
 
 void process_pvanet(Net* const net,
                     const unsigned char* const image_data,
-                    const int height, const int width, const int stride,
+                    const int height, const int width,
                     FILE* fp)
 {
-  Tensor* const input = &net->layers[0]->tops[0];
-  input->ndim = 3;
-  input->num_items = 0;
-  input->start[0] = 0;
-
-  net->img_info->ndim = 1;
-  net->img_info->num_items = 0;
-
-  img2input(image_data, input, net->img_info,
-            (unsigned char*)net->temp_data,
-            height, width, stride);
-
-  shape_net(net);
+  set_input_pvanet(net, &image_data, &height, &width, 1);
 
   forward_net(net);
 
   get_output_pvanet(net, 0, fp);
 }
 
-#ifdef TEST
-#include <time.h>
-
-static float a_time[2] = { 0, };
-static clock_t tick0, tick1;
-
-int main(int argc, char* argv[])
+void process_batch_pvanet(Net* const net,
+                          const unsigned char* const * const images_data,
+                          const int* const heights,
+                          const int* const widths,
+                          const int num_images,
+                          FILE* fp)
 {
-  // CUDA initialization
-  #ifdef GPU
-  {
-    printf("set device\n");
-    cudaSetDevice(0);
-  }
-  #endif
+  set_input_pvanet(net, images_data, heights, widths, num_images);
 
-  // PVANET construction
-  Net pvanet;
-  construct_pvanet(&pvanet, argv[1]);
+  forward_net(net);
 
-  // load a text file containing image filenames to be tested
-  {
-    char buf[10240];
-    char* line[20];
-    int total_count = 0, count = 0, buf_count = 0;
-    FILE* fp_list = fopen(argv[2], "r");
-    FILE* fp_out = fopen(argv[3], "wb");
-
-    if (!fp_list) {
-      printf("File not found: %s\n", argv[2]);
-    }
-    if (!fp_out) {
-      printf("File write error: %s\n", argv[3]);
-    }
-
-    while (fgets(&buf[buf_count], 1024, fp_list)) {
-      const Tensor* const input = &pvanet.layers[0]->tops[0];
-      const int len = strlen(&buf[buf_count]);
-      buf[buf_count + len - 1] = 0;
-      line[count] = &buf[buf_count];
-      ++count;
-      buf_count += len;
-      tick0 = clock();
-      if (count == input->num_items) {
-        // input data loading
-        get_input_pvanet(&pvanet, (const char * const *)&line, count);
-
-        // forward-pass
-        forward_net(&pvanet);
-
-        // retrieve output & save to file
-        get_output_pvanet(&pvanet, total_count, fp_out);
-
-        tick1 = clock();
-        a_time[0] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-        a_time[1] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-        tick0 = tick1;
-        printf("Running time: %.2f (current), %.2f (average)\n",
-               a_time[0] * 1000 / count,
-               a_time[1] * 1000 / (total_count + count));
-
-        total_count += count;
-        count = 0;
-        buf_count = 0;
-      }
-    }
-
-    if (count > 0) {
-      get_input_pvanet(&pvanet, (const char * const *)&line, count);
-      forward_net(&pvanet);
-      get_output_pvanet(&pvanet, total_count, fp_out);
-
-      tick1 = clock();
-      a_time[0] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-      a_time[1] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-      printf("Running time: %.2f (current), %.2f (average)\n",
-             a_time[0] * 1000 / count,
-             a_time[1] * 1000 / (total_count + count));
-    }
-
-    fclose(fp_list);
-    fclose(fp_out);
-  }
-
-
-  // end
-  free_net(&pvanet);
-
-  return 0;
+  get_output_pvanet(net, 0, fp);
 }
-#endif

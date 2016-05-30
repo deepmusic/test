@@ -6,11 +6,9 @@
 
 #include <time.h>
 
-using std::ostringstream;
-
 static
 const char* gs_class_names[] = {
-  "none",
+  "__unknown__",
   "bicycle",
   "bird",
   "bus",
@@ -81,14 +79,10 @@ void detect_frame(Net* const net,
                   cv::Mat* const image)
 {
   if (image && image->data) {
-    const int height = image->rows;
-    const int width = image->cols;
-    const int stride = (int)image->step.p[0];
-
     const clock_t tick0 = clock();
     real time = 0;
 
-    process_pvanet(net, image->data, height, width, stride, NULL);
+    process_pvanet(net, image->data, image->rows, image->cols, NULL);
 
     {
       clock_t tick1 = clock();
@@ -136,42 +130,156 @@ void test_image(Net* const net, const char* const filename)
 }
 
 static
+void test_database(Net* const net,
+                   const char* const db_filename,
+                   const char* const out_filename)
+{
+  #if BATCH_SIZE == 4
+  static const int batch_size = 4;
+  #else
+  static const int batch_size = 1;
+  #endif
+
+  char buf[10240];
+  char* line[20];
+  int total_count = 0, count = 0, buf_count = 0;
+  FILE* fp_list = fopen(db_filename, "r");
+
+  #ifndef DEMO
+  FILE* fp_out = fopen(out_filename, "wb");
+  #else
+  FILE* fp_out = NULL;
+  #endif
+
+  clock_t tick0, tick1;
+  float a_time[2] = { 0, };
+
+  if (!fp_list) {
+    printf("File not found: %s\n", db_filename);
+  }
+
+  #ifndef DEMO
+  if (!fp_out) {
+    printf("File write error: %s\n", out_filename);
+  }
+  #endif
+
+  tick0 = clock();
+
+  while (fgets(&buf[buf_count], 1024, fp_list))
+  {
+    {
+      const int len = strlen(&buf[buf_count]);
+
+      buf[buf_count + len - 1] = 0;
+      line[count] = &buf[buf_count];
+      ++count;
+      buf_count += len;
+    }
+
+    if (count == batch_size)
+    {
+    #if BATCH_SIZE == 4
+      cv::Mat images[] = {
+        cv::imread(line[0]), cv::imread(line[1]),
+        cv::imread(line[2]), cv::imread(line[3])
+      };
+      const unsigned char* const images_data[] = {
+        images[0].data, images[1].data, images[2].data, images[3].data
+      };
+      const int heights[] = {
+        images[0].rows, images[1].rows, images[2].rows, images[3].rows
+      };
+      const int widths[] = {
+        images[0].cols, images[1].cols, images[2].cols, images[3].cols
+      };
+    #else
+      cv::Mat images[] = { cv::imread(line[0]) };
+      const unsigned char* const images_data[] = { images[0].data };
+      const int heights[] = { images[0].rows };
+      const int widths[] = { images[0].cols };
+    #endif
+
+      process_batch_pvanet(net, images_data, heights, widths, batch_size,
+                           fp_out);
+
+      tick1 = clock();
+      a_time[0] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+      a_time[1] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+      tick0 = tick1;
+      printf("Running time: %.2f (current), %.2f (average)\n",
+             a_time[0] * 1000 / count,
+             a_time[1] * 1000 / (total_count + count));
+
+      total_count += count;
+      count = 0;
+      buf_count = 0;
+    }
+  }
+
+  if (count > 0) {
+    for (int n = 0; n < count; ++n) {
+      cv::Mat image = cv::imread(line[n]);
+      process_pvanet(net, image.data, image.rows, image.cols, fp_out);
+    }
+
+    tick1 = clock();
+    a_time[0] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+    a_time[1] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
+    tick0 = tick1;
+    printf("Running time: %.2f (current), %.2f (average)\n",
+           a_time[0] * 1000 / count,
+           a_time[1] * 1000 / (total_count + count));
+  }
+
+  if (fp_list) {
+    fclose(fp_list);
+  }
+  if (fp_out) {
+    fclose(fp_out);
+  }
+}
+
+static
 void print_usage(void)
 {
-  printf("[Usage] ./demo_gpu.bin <command> <arg1> <arg2> ...\n");
-  printf("  1. [Live demo using WebCam] ./demo_gpu.bin live <camera id> <width> <height>\n");
-  printf("  2. [Image file] ./demo_gpu.bin snapshot <filename>\n");
-  printf("  3. [Video file] ./demo_gpu.bin video <filename>\n");
-  printf("  4. [List of images] ./demo_gpu.bin database <filename>\n");
+  printf("[Usage] ./demo_gpu.bin <command> <model path> <arg1> <arg2> ...\n");
+  printf("  1. [Live demo using WebCam] ./demo_gpu.bin live <model path> <camera id> <width> <height>\n");
+  printf("  2. [Image file] ./demo_gpu.bin snapshot <model path> <image filename>\n");
+  printf("  3. [Video file] ./demo_gpu.bin video <model path> <video filename>\n");
+  printf("  4. [List of images] ./demo_gpu.bin database <model path> <DB filename> <output filename>\n");
 }
 
 static
 int test(const char* const args[], const int num_args)
 {
-  Net frcnn;
+  Net pvanet;
   const char* const command = args[0];
-
-  cv::imshow("faster-rcnn", 0);
+  const char* const model_path = args[1];
 
   #ifdef GPU
   cudaSetDevice(0);
   #endif
 
-  construct_pvanet(&frcnn, "params");
+  construct_pvanet(&pvanet, model_path);
 
   if (strcmp(command, "live") == 0) {
-    if (num_args >= 4) {
-      const int camera_id = atoi(args[1]);
-      const int frame_width = atoi(args[2]);
-      const int frame_height = atoi(args[3]);
+    if (num_args >= 5) {
+      const int camera_id = atoi(args[2]);
+      const int frame_width = atoi(args[3]);
+      const int frame_height = atoi(args[4]);
+
+      cv::imshow("faster-rcnn", 0);
       cv::VideoCapture vc(camera_id);
       if (!vc.isOpened()) {
         printf("Cannot open camera(%d)\n", camera_id);
+        cv::destroyAllWindows();
         return -1;
       }
       vc.set(CV_CAP_PROP_FRAME_WIDTH, frame_width);
       vc.set(CV_CAP_PROP_FRAME_HEIGHT, frame_height);
-      test_stream(&frcnn, vc);
+      test_stream(&pvanet, vc);
+      cv::destroyAllWindows();
     }
     else {
       print_usage();
@@ -180,8 +288,12 @@ int test(const char* const args[], const int num_args)
   }
 
   else if (strcmp(command, "snapshot") == 0) {
-    if (num_args > 1) {
-      test_image(&frcnn, args[1]);
+    if (num_args > 2) {
+      const char* const filename = args[2];
+
+      cv::imshow("faster-rcnn", 0);
+      test_image(&pvanet, filename);
+      cv::destroyAllWindows();
     }
     else {
       print_usage();
@@ -190,13 +302,18 @@ int test(const char* const args[], const int num_args)
   }
 
   else if (strcmp(command, "video") == 0) {
-    if (num_args > 1) {
-      cv::VideoCapture vc(args[1]);
+    if (num_args > 2) {
+      const char* const filename = args[2];
+
+      cv::imshow("faster-rcnn", 0);
+      cv::VideoCapture vc(filename);
       if (!vc.isOpened()) {
-        printf("Cannot open video: %s\n", args[1]);
+        printf("Cannot open video: %s\n", filename);
+        cv::destroyAllWindows();
         return -1;
       }
-      test_stream(&frcnn, vc);
+      test_stream(&pvanet, vc);
+      cv::destroyAllWindows();
     }
     else {
       print_usage();
@@ -205,18 +322,11 @@ int test(const char* const args[], const int num_args)
   }
 
   else if (strcmp(command, "database") == 0) {
-    if (num_args > 1) {
-      char path[256];
-      FILE* fp = fopen(args[1], "r");
-      if (!fp) {
-        printf("Cannot open db: %s\n", args[1]);
-        return -1;
-      }
-      while (fgets(path, 256, fp)) {
-        path[strlen(path) - 1] = 0;
-        test_image(&frcnn, path);
-      }
-      fclose(fp);
+    if (num_args > 3) {
+      const char* const db_filename = args[2];
+      const char* const out_filename = args[3];
+
+      test_database(&pvanet, db_filename, out_filename);
     }
     else {
       print_usage();
@@ -229,14 +339,13 @@ int test(const char* const args[], const int num_args)
     return -1;
   }
 
-  cv::destroyAllWindows();
   return 0;
 }
 
 #ifdef TEST
 int main(int argc, char* argv[])
 {
-  if (argc >= 2) {
+  if (argc >= 3) {
     test(argv + 1, argc - 1);
   }
   else {

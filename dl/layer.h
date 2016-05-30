@@ -3,6 +3,8 @@
 
 //#define DEBUG
 //#define MKL
+//#define DEMO
+#define BATCH_SIZE 1
 
 // --------------------------------------------------------------------------
 // include cuda & blas library
@@ -295,8 +297,10 @@ extern "C" {
 void construct_pvanet(Net* const net,
                       const char* const param_path);
 
-void get_input_pvanet(Net* const net,
-                      const char* const filename[],
+void set_input_pvanet(Net* const net,
+                      const unsigned char* const * const images_data,
+                      const int* const heights,
+                      const int* const widths,
                       const int num_images);
 
 void get_output_pvanet(Net* const net,
@@ -305,8 +309,15 @@ void get_output_pvanet(Net* const net,
 
 void process_pvanet(Net* const net,
                     const unsigned char* const image_data,
-                    const int height, const int width, const int stride,
+                    const int height, const int width,
                     FILE* fp);
+
+void process_batch_pvanet(Net* const net,
+                          const unsigned char* const * const images_data,
+                          const int* const heights,
+                          const int* const widths,
+                          const int num_images,
+                          FILE* fp);
 
 
 
@@ -480,21 +491,15 @@ void nms(const int num_boxes, const real* const boxes,
 
 
 // --------------------------------------------------------------------------
-// load image & transform into network input
-//   load_image
+// transform image into network input
 //   img2input
 // --------------------------------------------------------------------------
-
-void load_image(const char* const filename,
-                Tensor* const input3d,
-                Tensor* const img_info1d,
-                real* const temp_data);
 
 void img2input(const unsigned char* const img,
                Tensor* const input3d,
                Tensor* const img_info1d,
                unsigned char* const temp_data,
-               const int height, const int width, const int stride);
+               const int height, const int width);
 
 
 

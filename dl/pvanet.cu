@@ -9,7 +9,7 @@ static Net pvanet;
 static bool initialized = false;
 
 static const char* class_names[] = {
-  "__background", "bicycle", "bird", "bus", "car", "cat", "dog", "horse",
+  "__unknown__", "bicycle", "bird", "bus", "car", "cat", "dog", "horse",
   "motorbike", "person", "train", "aeroplane", "boat", "bottle", "chair",
   "cow", "diningtable", "pottedplant", "sheep", "sofa", "tvmonitor",
   "cake", "vase"
@@ -39,7 +39,7 @@ void pvanet_detect(const unsigned char* image_data, int width, int height, int s
     return;
   }
 
-  process_pvanet(&pvanet, image_data, height, width, stride, NULL);
+  process_pvanet(&pvanet, image_data, height, width, NULL);
 
   {
     const real* const p_out_item = pvanet.output_cpu_data;
