@@ -18,6 +18,8 @@ long int malloc_layer(Layer* const layer)
                 (Tensor*)calloc(layer->num_tops, sizeof(Tensor));
   layer->allocate_top_data = (layer->num_tops <= 0) ? NULL:
                              (int*)calloc(layer->num_tops, sizeof(int));
+  layer->p_top_data_backup = (layer->num_tops <= 0) ? NULL:
+                             (real**)calloc(layer->num_tops, sizeof(real*));
   space_cpu += layer->num_tops * (sizeof(Tensor) + sizeof(int));
 
   layer->params = (layer->num_params <= 0) ? NULL : 
@@ -43,6 +45,7 @@ long int malloc_load_layer_data(Layer* const layer,
   #endif
 
   for (int i = 0; i < layer->num_tops; ++i) {
+    layer->tops[i].max_data_size = flatten_size(&layer->tops[i]);
     if (layer->allocate_top_data[i]) {
       space += malloc_tensor_data(&layer->tops[i]);
     }
@@ -50,9 +53,47 @@ long int malloc_load_layer_data(Layer* const layer,
 
   for (int i = 0; i < layer->num_params; ++i) {
     char path[1024];
+    layer->params[i].max_data_size = flatten_size(&layer->params[i]);
     space += malloc_tensor_data(&layer->params[i]);
     sprintf(path, "%s/%s_param%d.bin", param_path, name, i);
     load_tensor(path, &layer->params[i], temp_cpu_space);
+  }
+
+  return space;
+}
+
+long int malloc_top_data(Layer* const layer,
+                         const int top_id)
+{
+  long int space = 0;
+
+  if (!layer->allocate_top_data[top_id] &&
+      !layer->p_top_data_backup[top_id])
+  {
+    layer->p_top_data_backup[top_id] = layer->tops[top_id].data;
+    space = malloc_tensor_data(&layer->tops[top_id]);
+    layer->allocate_top_data[top_id] = 1;
+    printf("[Layer %s] malloc for top[%d], +%.2fKB\n",
+           layer->name, top_id, (float)(space / 1000.0f));
+  }
+
+  return space;
+}
+
+long int free_top_data(Layer* const layer,
+                       const int top_id)
+{
+  long int space = 0;
+
+  if (layer->allocate_top_data[top_id] &&
+      layer->p_top_data_backup[top_id])
+  {
+    space = free_tensor_data(&layer->tops[top_id]);
+    layer->tops[top_id].data = layer->p_top_data_backup[top_id];
+    layer->p_top_data_backup[top_id] = NULL;
+    layer->allocate_top_data[top_id] = 0;
+    printf("[Layer %s] dealloc for top[%d], -%.2fKB\n",
+           layer->name, top_id, (float)(space / 1000.0f));
   }
 
   return space;
@@ -72,6 +113,7 @@ void free_layer(Layer* const layer)
     }
     free(layer->tops);
     free(layer->allocate_top_data);
+    free(layer->p_top_data_backup);
   }
 
   if (layer->params) {
@@ -165,6 +207,7 @@ void malloc_net(Net* const net)
   #endif
   }
 
+  // memory allocation for layers
   for (int i = 0; i < net->num_layers; ++i) {
     space += malloc_load_layer_data(net->layers[i], net->param_path,
                                     net->layers[i]->name,
@@ -255,9 +298,11 @@ void free_net(Net* const net)
 void init_layers(Net* const net)
 {
   for (int i = 0; i < net->num_layers; ++i) {
+    Layer* const layer = net->layers[i];
+
     for (int j = 0; j < MAX_NUM_OPS_PER_LAYER; ++j) {
-      if (net->layers[i]->f_init[j]) {
-        (*net->layers[i]->f_init[j])(net, net->layers[i]);
+      if (layer->f_init[j]) {
+        (*layer->f_init[j])(net, layer);
       }
     }
   }
@@ -266,9 +311,11 @@ void init_layers(Net* const net)
 void forward_net(Net* const net)
 {
   for (int i = 0; i < net->num_layers; ++i) {
+    Layer* const layer = net->layers[i];
+
     for (int j = 0; j < MAX_NUM_OPS_PER_LAYER; ++j) {
-      if (net->layers[i]->f_forward[j]) {
-        (*net->layers[i]->f_forward[j])(net, net->layers[i]);
+      if (layer->f_forward[j]) {
+        (*layer->f_forward[j])(net, layer);
       }
     }
   }
@@ -277,12 +324,14 @@ void forward_net(Net* const net)
 void shape_net(Net* const net)
 {
   for (int i = 0; i < net->num_layers; ++i) {
+    Layer* const layer = net->layers[i];
+
     for (int j = 0; j < MAX_NUM_OPS_PER_LAYER; ++j) {
-      if (net->layers[i]->f_shape[j]) {
-        (*net->layers[i]->f_shape[j])(net, net->layers[i]);
+      if (layer->f_shape[j]) {
+        (*layer->f_shape[j])(net, layer);
         #ifdef DEBUG
-        for (int k = 0; k < net->layers[i]->num_tops; ++k) {
-          print_tensor_info(net->layers[i]->name, &net->layers[i]->tops[k]);
+        for (int k = 0; k < layer->num_tops; ++k) {
+          print_tensor_info(layer->name, &layer->tops[k]);
         }
         #endif
       }
@@ -348,7 +397,7 @@ void print_layer_tops(void* const net_, void* const layer_)
   for (int i = 0; i < layer->num_tops; ++i) {
     const long int size = flatten_size(&layer->tops[i]);
     const Tensor* const t = &layer->tops[i];
-    int idx[g_max_ndim + 1] = { 0, };
+    int idx[MAX_NDIM + 1] = { 0, };
 
     #ifdef GPU
     cudaMemcpyAsync(net->output_cpu_data, layer->tops[i].data,

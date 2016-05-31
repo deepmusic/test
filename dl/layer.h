@@ -4,7 +4,7 @@
 //#define DEBUG
 //#define MKL
 //#define DEMO
-#define BATCH_SIZE 1
+#define BATCH_SIZE 4
 
 // --------------------------------------------------------------------------
 // include cuda & blas library
@@ -58,17 +58,17 @@
 // --------------------------------------------------------------------------
 
 typedef float real;
-#define g_max_num_items 128
-#define g_max_ndim 5
+#define MAX_NDIM 5
 
 typedef struct Tensor_
 {
   char name[32];
   int num_items;
   int ndim;
-  int shape[g_max_num_items][g_max_ndim];
-  int start[g_max_num_items];
+  int shape[BATCH_SIZE][MAX_NDIM];
+  int start[BATCH_SIZE];
   real* data;
+  long int max_data_size;
 } Tensor;
 
 #ifdef __cplusplus
@@ -83,8 +83,8 @@ void init_tensor(Tensor* const tensor);
 //   return memory size in bytes
 long int malloc_tensor_data(Tensor* const tensor);
 
-// deallocate memory & set all values to 0
-void free_tensor_data(Tensor* const tensor);
+// deallocate memory
+long int free_tensor_data(Tensor* const tensor);
 
 // load binary data from file & store to CPU memory
 //   data: pointer to CPU memory for storing data
@@ -172,6 +172,7 @@ typedef struct Layer_
 
   Tensor* tops;
   int* allocate_top_data;
+  real** p_top_data_backup;
   int num_tops;
 
   Tensor* params;
@@ -193,6 +194,12 @@ extern "C" {
 void init_layer(Layer* const layer);
 
 long int malloc_layer(Layer* const layer);
+
+long int malloc_top_data(Layer* const layer,
+                         const int top_id);
+
+long int free_top_data(Layer* const layer,
+                       const int top_id);
 
 #ifdef __cplusplus
 } // end extern "C"
@@ -509,6 +516,8 @@ void img2input(const unsigned char* const img,
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+int _batch_size_net(void);
 
 void _init_net(void);
 

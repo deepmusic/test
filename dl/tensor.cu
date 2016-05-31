@@ -11,19 +11,21 @@ void init_tensor(Tensor* const tensor)
 //   allocate GPU memory in GPU mode, or CPU memory in CPU mode
 long int malloc_tensor_data(Tensor* const tensor)
 {
-  const long int data_size = flatten_size(tensor);
+  if (!tensor->max_data_size) {
+    tensor->max_data_size = flatten_size(tensor);
+  }
 
   #ifdef GPU
-  cudaMalloc(&tensor->data, data_size * sizeof(real));
+  cudaMalloc(&tensor->data, tensor->max_data_size * sizeof(real));
   #else
-  tensor->data = (real*)malloc(data_size * sizeof(real));
+  tensor->data = (real*)malloc(tensor->max_data_size * sizeof(real));
   #endif
 
-  return data_size * sizeof(real);
+  return tensor->max_data_size * sizeof(real);
 }
 
-// deallocate memory & set all values to 0
-void free_tensor_data(Tensor* const tensor)
+// deallocate memory
+long int free_tensor_data(Tensor* const tensor)
 {
   #ifdef GPU
   cudaFree(tensor->data);
@@ -31,7 +33,7 @@ void free_tensor_data(Tensor* const tensor)
   free(tensor->data);
   #endif
 
-  memset(tensor, 0, sizeof(Tensor));
+  return tensor->max_data_size * sizeof(real);
 }
 
 // load binary data from file & store to CPU memory
@@ -91,7 +93,7 @@ void load_tensor(const char* const filename,
 
   {
     int ndim;
-    int shape[g_max_ndim];
+    int shape[MAX_NDIM];
 
     load_data(filename, &ndim, shape, temp_data);
     for (int i = 0; i < ndim; ++i) {

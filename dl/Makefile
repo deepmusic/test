@@ -41,7 +41,7 @@ libdlgpu.a: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu
 	rm $^
 
 clean:
-	rm -f *.cpu.o *.gpu.o *.bin *.test.o *.so *.a
+	rm -f *.cpu.o *.gpu.o *.bin *.test.o *.so *.a *.pyc
 
 conv.cpu.o: conv.cu layer.h
 	cp $< $*.cpp

@@ -1,15 +1,19 @@
 import ctypes
 from scipy.ndimage import imread
 
+lib = ctypes.CDLL('libdlcpu.so')
+lib._batch_size_net.restype = ctypes.c_int
+batch_size = lib._batch_size_net()
+
 class Tensor(ctypes.Structure):
   _fields_ = [('name', ctypes.c_char * 32),
               ('num_items', ctypes.c_int),
               ('ndim', ctypes.c_int),
-              ('shape', (ctypes.c_int * 5) * 128),
-              ('start', ctypes.c_int * 128),
-              ('data', ctypes.POINTER(ctypes.c_float))]
+              ('shape', (ctypes.c_int * 5) * batch_size),
+              ('start', ctypes.c_int * batch_size),
+              ('data', ctypes.POINTER(ctypes.c_float)),
+              ('max_data_size', ctypes.c_long)]
 
-lib = ctypes.CDLL('libdlcpu.so')
 lib._detect_net.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]
 lib._layer_net.argtypes = [ctypes.c_int, ctypes.c_int]
 lib._layer_net.restype = ctypes.POINTER(Tensor)

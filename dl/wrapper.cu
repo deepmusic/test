@@ -3,6 +3,11 @@
 static Net pvanet;
 static bool initialized = false;
 
+int _batch_size_net(void)
+{
+  return BATCH_SIZE;
+}
+
 void _init_net(void)
 {
   if (!initialized) {
@@ -53,12 +58,18 @@ void _print_layer(const int layer_id)
       if (layer->f_forward[i] == print_layer_tops) {
         printf("[Layer %d (%s)]: Logging OFF\n", layer_id, layer->name);
         layer->f_forward[i] = NULL;
+        for (int j = 0; j < layer->num_tops; ++j) {
+          pvanet.space -= free_top_data(layer, j);
+        }
         return;
       }
 
       if (!layer->f_forward[i]) {
         printf("[Layer %d (%s)]: Logging ON\n", layer_id, layer->name);
         layer->f_forward[i] = print_layer_tops;
+        for (int j = 0; j < layer->num_tops; ++j) {
+          pvanet.space += malloc_top_data(layer, j);
+        }
         return;
       }
     }
