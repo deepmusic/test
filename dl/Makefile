@@ -24,6 +24,10 @@ demo_gpu.bin: demo.gpu.test.o libdlgpu.so
 	$(NVCC) -o $@ $^ $(NVLDFLAGS)
 	rm $<
 
+loader.bin: loader.cpu.o tensor.cpu.o net.cpu.o
+	$(CC) -o $@ $^ $(LDFLAGS)
+	rm $<
+
 libdlgpu.so: tensor.gpu.o net.gpu.o nms.gpu.o softmax.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o odtest.gpu.o image.gpu.o frcnn.gpu.o wrapper.gpu.o link.gpu.o
 	$(CC) -shared -o $@ $^ $(NVLDFLAGS)
 	rm $^

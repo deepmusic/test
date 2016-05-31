@@ -52,7 +52,7 @@ unsigned int entry2hash(const char* const p_key,
 
   hash = ((hash << 5) + hash) + (unsigned short)type;
   // for ch = 0, ..., strlen(p_key_)-1
-  while (ch = *(p_key_++)) {
+  while ((ch = *(p_key_++))) {
     // hash = hash * 33 + ch
     hash = ((hash << 5) + hash) + ch;
   }
@@ -226,7 +226,7 @@ int word2type(const char* const p_word)
       ++p_word_;
     }
 
-    while (ch = *(p_word_++)) {
+    while ((ch = *(p_word_++))) {
       if (ch < '0' || ch > '9') {
         break;
       }
@@ -236,7 +236,7 @@ int word2type(const char* const p_word)
     }
 
     if (ch == '.') {
-      while (ch = *(p_word_++)) {
+      while ((ch = *(p_word_++))) {
         if (ch < '0' || ch > '9') {
           break;
         }
@@ -413,16 +413,16 @@ void parse_prototxt(const char* const filename)
         else {
           printf("[ERROR] Quotation mark mismatching: %s\n", a_buf);
         }
-        strcpy(p_value, a_buf + 1);
+        strcpy((char*)p_value, a_buf + 1);
       }
       else {
-        strcpy(p_value, a_buf);
+        strcpy((char*)p_value, a_buf);
       }
 
       generate_key(a_block_names, block_ids, block_level, a_key);
       p_entry = find_or_make_hash_entry(
           gs_all_entries, a_block_names[block_level], a_key, STRING_VAL);
-      append_value_to_hash_entry(p_entry, p_value);
+      append_value_to_hash_entry(p_entry, (void*)p_value);
 
       if (p_entry->num_values == 1) {
         if (block_level == 0) {
@@ -446,6 +446,71 @@ void parse_prototxt(const char* const filename)
   }
 }
 
+void set_option(LayerOption* const p_option, HashEntry* const entry)
+{
+  p_option->num_groups = 1;
+  p_option->pad_h = 0;
+  p_option->pad_w = 0;
+  p_option->stride_h = 1;
+  p_option->stride_w = 1;
+  p_option->bias = 1;
+  p_option->out_channels = 0;
+  p_option->kernel_h = 0;
+  p_option->kernel_w = 0;
+
+  {
+    const HashEntry* const p_entry =
+        find_hash_entry(entry, "convolution_param", ENTRY_VAL);
+
+    if (p_entry) {
+      for (int n = 0; n < p_entry->num_values; ++n) {
+        HashEntry* p_child = (HashEntry*)p_entry->p_values[n];
+        if (strcmp(p_child->p_name, "num_output") == 0) {
+          p_option->out_channels = atoi((char*)p_child->p_values[0]);
+        }
+        else if (strcmp(p_child->p_name, "kernel_size") == 0) {
+          p_option->kernel_h = atoi((char*)p_child->p_values[0]);
+          p_option->kernel_w = p_option->kernel_h;
+        }
+        else if (strcmp(p_child->p_name, "stride") == 0) {
+          p_option->stride_h = atoi((char*)p_child->p_values[0]);
+          p_option->stride_w = p_option->stride_h;
+        }
+        else if (strcmp(p_child->p_name, "pad") == 0) {
+          p_option->pad_h = atoi((char*)p_child->p_values[0]);
+          p_option->pad_w = p_option->pad_h;
+        }
+        else if (strcmp(p_child->p_name, "kernel_h") == 0) {
+          p_option->kernel_h = atoi((char*)p_child->p_values[0]);
+        }
+        else if (strcmp(p_child->p_name, "kernel_w") == 0) {
+          p_option->kernel_w = atoi((char*)p_child->p_values[0]);
+        }
+        else if (strcmp(p_child->p_name, "stride_h") == 0) {
+          p_option->stride_h = atoi((char*)p_child->p_values[0]);
+        }
+        else if (strcmp(p_child->p_name, "stride_w") == 0) {
+          p_option->stride_w = atoi((char*)p_child->p_values[0]);
+        }
+        else if (strcmp(p_child->p_name, "pad_h") == 0) {
+          p_option->pad_h = atoi((char*)p_child->p_values[0]);
+        }
+        else if (strcmp(p_child->p_name, "pad_w") == 0) {
+          p_option->pad_w = atoi((char*)p_child->p_values[0]);
+        }
+        else if (strcmp(p_child->p_name, "group") == 0) {
+          p_option->num_groups = atoi((char*)p_child->p_values[0]);
+        }
+        else if (strcmp(p_child->p_name, "bias_term") == 0) {  
+          if (strcmp((char*)p_child->p_values[0], "false") == 0) {
+            p_option->bias = 0;
+          }
+        }
+      }
+    }
+  }
+}
+
 void construct_net(void)
 {
   Net* const p_net = (Net*)malloc(sizeof(Net));
@@ -461,9 +526,9 @@ void construct_net(void)
         strcmp(p_entry->p_name, "layer") == 0) {
       Layer* const p_layer = (Layer*)malloc(sizeof(Layer));
       //init_layer(p_layer);
-      layer->num_bottoms = 0;
-      layer->num_tops = 0;
-      layer->num_params = 0;
+      p_layer->num_bottoms = 0;
+      p_layer->num_tops = 0;
+      p_layer->num_params = 0;
 
       for (int i = 0; i < p_entry->num_values; ++i) {
         const HashEntry* const p_entry_child =
@@ -480,9 +545,8 @@ void construct_net(void)
         else if (strcmp(p_entry_child->p_name, "type") == 0) {
           const char* const p_type = (char*)p_entry_child->p_values[0];
           if (strcmp(p_type, "Convolution") == 0) {
-            init_conv_layer(p_net, p_layer, p_entry);
+            //init_conv_layer(p_net, p_layer, p_entry);
           }
-          else if (strcmp(p_type, ""
         }
       }
 
@@ -513,11 +577,8 @@ void construct_net(void)
           HashEntry* const p_entry_tensor = find_or_make_hash_entry(
               gs_all_entries, p_top_name, p_top_name, TENSOR_VAL);
           if (p_entry_tensor->num_values == 0) {
-            append_value_to_hash(p_entry_tensor,
-                                 (void*)&p_layer->tops[top_index]);
-          }
-          else {
-            
+            append_value_to_hash_entry(p_entry_tensor,
+                                       (void*)&p_layer->tops[top_index]);
           }
           ++top_index;
         }
