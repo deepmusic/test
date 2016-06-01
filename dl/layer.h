@@ -4,7 +4,7 @@
 //#define DEBUG
 //#define MKL
 //#define DEMO
-#define BATCH_SIZE 4
+#define BATCH_SIZE 1
 
 // --------------------------------------------------------------------------
 // include cuda & blas library
