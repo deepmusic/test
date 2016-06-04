@@ -154,7 +154,6 @@ void malloc_net(Net* const net)
     cudaMalloc(&net->layer_data[i], net->layer_size * sizeof(real));
     #else
     net->layer_data[i] = (real*)malloc(net->layer_size * sizeof(real));
-    printf("Allocate layer data %d: %x (%ld)\n", i, net->layer_data[i], net->layer_size);
     #endif
     net->reserved_layer_data[i] = 0;
   }

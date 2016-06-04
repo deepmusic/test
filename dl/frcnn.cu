@@ -1131,22 +1131,18 @@ void set_input_pvanet(Net* const net,
   net->img_info->num_items = 0;
 
   for (int n = 0; n < num_images; ++n) {
-  printf("data layer: %x\n", input->data);
     img2input(images_data[n], input, net->img_info,
               (unsigned char*)net->temp_data,
               heights[n], widths[n]);
-  printf("data layer: %x\n", input->data);
   }
 
   input->data = net->layer_data[4];
-  printf("data layer: %x\n", input->data);
   if (shape_changed) {
     printf("shape changed\n");
     print_tensor_info("data", input);
     print_tensor_info("img_info", net->img_info);
     shape_net(net);
   }
-  printf("data layer: %x\n", input->data);
 }
 
 void get_output_pvanet(Net* const net,

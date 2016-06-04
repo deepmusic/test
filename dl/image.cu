@@ -164,13 +164,17 @@ void img2input(const unsigned char* const img,
   }
   #endif
 
-  const int input_size = 3 * resized_height * resized_width;
-  //printf("image size = %d x %d x 3 = %d\n", resized_height, resized_width, input_size);
   input3d->shape[n][0] = 3;
   input3d->shape[n][1] = resized_height;
   input3d->shape[n][2] = resized_width;
-  input3d->start[n + 1] = input3d->start[n] + input_size;
   ++input3d->num_items;
+
+  #if BATCH_SIZE > 1
+  if (n < BATCH_SIZE - 1) {
+    input3d->start[n + 1] = input3d->start[n]
+                            + 3 * resized_height * resized_width;
+  }
+  #endif
 
   img_info1d->shape[n][0] = 6;
   ++img_info1d->num_items;
