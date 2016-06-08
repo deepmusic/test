@@ -225,8 +225,6 @@ typedef struct Net_
 
   real* layer_data[MAX_NUM_LAYER_DATA];
   int reserved_layer_data[MAX_NUM_LAYER_DATA];
-  real* input_cpu_data;
-  real* output_cpu_data;
   long int layer_size;
   int num_layer_data;
 

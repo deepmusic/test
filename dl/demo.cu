@@ -29,8 +29,10 @@ const char* gs_class_names[] = {
   "sheep",
   "sofa",
   "tvmonitor",
-  "cake",
-  "vase"
+  "cake_choco",
+  "cake_purple",
+  "cake_white",
+  "sportsbag"
 };
 
 static
@@ -94,7 +96,7 @@ void detect_frame(Net* const net,
       }
     }
 
-    draw_boxes(image, net->output_cpu_data, net->num_output_boxes, time);
+    draw_boxes(image, net->temp_cpu_data, net->num_output_boxes, time);
 
     cv::imshow("faster-rcnn", *image);
   }

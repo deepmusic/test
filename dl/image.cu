@@ -94,7 +94,7 @@ void bilinear_resize_cpu(const unsigned char* const img,
       p_inputG[i * resized_width + j] = G - gs_mean_green;
       p_inputR[i * resized_width + j] = R - gs_mean_red;
 /*
-      if (i == resized_height - 1) {
+      if (i == 778) {//i == resized_height - 1) {
         printf("%d %d:  %d %d %d %d %f %f %f %f,  %d %d %d %d   %f %f %f,  %f %f %f\n", i, j, y0, y1, x0, x1, ay, by, ax, bx,
               img[y1 * stride + x1 * 3], img[y0 * stride + x1 * 3], img[y1 * stride + x0 * 3], img[y0 * stride + x0 * 3],
               B, G, R, p_inputB[i * resized_width + j], p_inputG[i * resized_width + j], p_inputR[i * resized_width + j]);
@@ -142,6 +142,7 @@ void img2input(const unsigned char* const img,
   p_img_info1d[4] = (real)height;
   p_img_info1d[5] = (real)width;
 
+  printf("%d x %d --> %d x %d\n", height, width, resized_height, resized_width);
   #ifdef GPU
   {
     const int num_threads = 3 * resized_height * resized_width;

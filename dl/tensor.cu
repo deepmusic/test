@@ -174,7 +174,7 @@ void print_tensor_info(const char* const name,
 {
   #ifdef DEBUG
   {
-    printf("%s: ", name);
+    printf("%s (size = %ld): ", name, flatten_size(tensor));
     if (tensor->num_items > 1) {
       printf("batch size = %d\n", tensor->num_items);
       for (int n = 0; n < tensor->num_items; ++n) {

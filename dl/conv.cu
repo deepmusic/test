@@ -283,6 +283,89 @@ void conv_str1(const real* const bottom3d,
   tick1 = clock();
   a_time[4] += (float)(tick1 - tick00) / CLOCKS_PER_SEC;
 }
+
+void convert_bottom_hwc(const real* const bottom3d,
+                        real* const bottom5d,
+                        const int C, const int H, const int W,
+                        const int H5, const int W5,
+                        const int kernel_h, const int kernel_w,
+                        const int pad_h, const int pad_w,
+                        const int stride_h, const int stride_w)
+{
+  const int stride_kw = C;
+  const int stride_kh = kernel_w * stride_kw;
+  const int stride_w5 = kernel_h * stride_kh;
+  const int stride_h5 = W5 * stride_w5;
+  const int stride_w3 = C;
+  const int stride_h3 = W * stride_w3;
+
+  for (int h5 = 0; h5 < H5; ++h5) {
+    real* const p_bottom5d = bottom5d + h5 * stride_h5;
+    int h = h5 * stride_h - pad_h;
+    int h5_start = 0;
+    int kh = kernel_h;
+
+    if (h < 0) {
+      const int zero_padded_rows = -h;
+      for (int w5 = 0; w5 < W5; ++w5) {
+        memset(p_bottom5d + w5 * stride_w5, 0,
+               zero_padded_rows * stride_kh * sizeof(real));
+      }
+      h5_start = zero_padded_rows * stride_kh;
+      kh = kernel_h - zero_padded_rows;
+      h = 0;
+    }
+    else if (h > H - kernel_h) {
+      const int zero_padded_rows = h + kernel_h - H;
+      real* const p_bottom5d_ =
+          p_bottom5d + (kernel_h - zero_padded_rows) * stride_kh;
+      for (int w5 = 0; w5 < W5; ++w5) {
+        memset(p_bottom5d_ + w5 * stride_w5, 0,
+               zero_padded_rows * stride_kh * sizeof(real));
+      }
+      kh = kernel_h - zero_padded_rows;
+    }
+
+    for (int w5 = 0; w5 < W5; ++w5) {
+      real* const p_bottom5d_ = p_bottom5d + w5 * stride_w5 + h5_start;
+      int w = w5 * stride_w - pad_w;
+      int w5_start = 0;
+      int kw = kernel_w;
+
+      if (w < 0) {
+        const int zero_padded_cols = -w;
+        for (int i = 0; i < kh; ++i) {
+          memset(p_bottom5d_ + i * stride_kh, 0,
+                 zero_padded_cols * stride_kw * sizeof(real));
+        }
+        w5_start = zero_padded_cols * stride_kw;
+        kw = kernel_w - zero_padded_cols;
+        w = 0;
+      }
+      else if (w > W - kernel_w) {
+        const int zero_padded_cols = w + kernel_w - W;
+        real* const p_bottom5d__ =
+          p_bottom5d_ + (kernel_w - zero_padded_cols) * stride_kw;
+        for (int i = 0; i < kh; ++i) {
+          memset(p_bottom5d__ + i * stride_kh, 0,
+                 zero_padded_cols * stride_kw * sizeof(real));
+        }
+        kw = kernel_w - zero_padded_cols;
+      }
+
+      {
+        const real* const p_bottom3d = bottom3d +
+                                       h * stride_h3 + w * stride_w3;
+        real* const p_bottom5d__ = p_bottom5d_ + w5_start;
+        for (int i = 0; i < kh; ++i) {
+          memcpy(p_bottom5d__ + i * stride_kh,
+                 p_bottom3d + i * stride_h3,
+                 kw * stride_kw * sizeof(real));
+        }
+      }
+    } // endfor w5
+  } // endfor h5
+}
 #endif
 
 // --------------------------------------------------------------------------

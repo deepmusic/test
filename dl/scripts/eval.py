@@ -34,8 +34,7 @@ def test_net(filename, **kwargs):
   max_per_set = 40 * num_images
   max_per_image = 100
   thresh = -np.inf * np.ones(imdb.num_classes)
-  top_scores = [[] for _ in xrange(imdb.num_classes+1)]
-  #top_scores = [[] for _ in xrange(imdb.num_classes)]
+  top_scores = [[] for _ in xrange(imdb.num_classes)]
   all_boxes = [[[] for _ in xrange(num_images)]
                for _ in xrange(imdb.num_classes)]
 
@@ -43,11 +42,10 @@ def test_net(filename, **kwargs):
   for i in xrange(num_images):
     ndim = unpack("i", f.read(4))[0]
     shape = np.frombuffer(f.read(ndim * 4), dtype=np.int32, count=-1)
-    num_boxes = shape[0] / (imdb.num_classes+1)
-    #num_boxes = shape[0] / (imdb.num_classes)
+    num_classes = 25
+    num_boxes = shape[0] / num_classes
     data = np.frombuffer(f.read(np.prod(shape) * 4), dtype=np.float32, count=-1) \
-             .reshape((num_boxes, imdb.num_classes+1, 6))
-             #.reshape((num_boxes, imdb.num_classes, 6))
+             .reshape((num_boxes, num_classes, 6))
     scores = data[:,:imdb.num_classes,5]
     boxes = data[:,:imdb.num_classes,1:5].reshape(num_boxes, -1)
     print [i, scores.shape, boxes.shape]

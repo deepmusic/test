@@ -11,6 +11,7 @@
 #ifdef GPU
 __device__
 #endif
+static
 real iou(const real* const A, const real* const B)
 {
   #ifndef GPU

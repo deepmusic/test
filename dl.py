@@ -26,8 +26,10 @@ def load_inception():
   #model = '../new-faster-rcnn/output/faster_rcnn_once_25anc_plus/pvtdb_pengo_80_pva/pva_inception2_3_once_iter_330000.caffemodel'
   #proto = '../new-faster-rcnn/pva_inception2_coco.pt'
   #model = '../new-faster-rcnn/output/faster_rcnn_once_25anc_plus/pvtdb_pengo_80_pva/pva_inception2_2_once_iter_4720000.caffemodel'
-  proto = '../new-faster-rcnn/pva7.1.1_coco.pt'
-  model = '../new-faster-rcnn/pva7.1.1_coco_once_iter_880000.caffemodel'
+  #proto = '../new-faster-rcnn/pva7.1.1_coco.pt'
+  #model = '../new-faster-rcnn/pva7.1.1_coco_once_iter_880000.caffemodel'
+  proto = '../new-faster-rcnn/pva_inception2_4.pt'
+  model = '../new-faster-rcnn/output/faster_rcnn_once_25anc_plus/pvtdb_pengo3_24_pva/pva_inception2_4_once_iter_840000.caffemodel'
   import caffe
   caffe.set_mode_cpu()
   #caffe.set_device(1)

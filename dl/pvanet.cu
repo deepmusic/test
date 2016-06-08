@@ -12,7 +12,7 @@ static const char* class_names[] = {
   "__unknown__", "bicycle", "bird", "bus", "car", "cat", "dog", "horse",
   "motorbike", "person", "train", "aeroplane", "boat", "bottle", "chair",
   "cow", "diningtable", "pottedplant", "sheep", "sofa", "tvmonitor",
-  "cake", "vase"
+  "cake_choco", "cake_purple", "cake_white", "sportsbag"
 };
 
 void pvanet_init(const std::string& model_file, const std::string& weights_file, int gpu_id) {
@@ -42,7 +42,7 @@ void pvanet_detect(const unsigned char* image_data, int width, int height, int s
   process_pvanet(&pvanet, image_data, height, width, NULL);
 
   {
-    const real* const p_out_item = pvanet.output_cpu_data;
+    const real* const p_out_item = pvanet.temp_cpu_data;
     for (int i = 0; i < pvanet.num_output_boxes; ++i) {
       std::pair<std::string, std::vector<float> > box;
 

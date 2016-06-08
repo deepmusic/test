@@ -165,8 +165,6 @@ void malloc_net(Net* const net)
     cudaMalloc(&net->tempint_data, net->tempint_size * sizeof(int));
     cudaMalloc(&net->const_data, net->const_size * sizeof(real));
 
-    net->input_cpu_data = (real*)malloc(net->layer_size * sizeof(real));
-    net->output_cpu_data = (real*)malloc(net->layer_size * sizeof(real));
     net->param_cpu_data = (real*)malloc(net->param_size * sizeof(real));
     net->temp_cpu_data = (real*)malloc(net->temp_size * sizeof(real));
     net->tempint_cpu_data = (int*)malloc(net->tempint_size * sizeof(int));
@@ -178,8 +176,6 @@ void malloc_net(Net* const net)
     net->tempint_data = (int*)malloc(net->tempint_size * sizeof(int));
     net->const_data = (real*)malloc(net->const_size * sizeof(real));
 
-    net->input_cpu_data = (real*)malloc(net->layer_size * sizeof(real));
-    net->output_cpu_data = (real*)malloc(net->layer_size * sizeof(real));
     net->param_cpu_data = (real*)malloc(net->param_size * sizeof(real));
     net->temp_cpu_data = (real*)malloc(net->temp_size * sizeof(real));
     net->tempint_cpu_data = (int*)malloc(net->tempint_size * sizeof(int));
@@ -195,9 +191,9 @@ void malloc_net(Net* const net)
   {
   #ifdef GPU
     for (int i = 0; i < net->const_size; ++i) {
-      net->output_cpu_data[i] = 1;
+      net->temp_cpu_data[i] = 1;
     }
-    cudaMemcpyAsync(net->const_data, net->output_cpu_data,
+    cudaMemcpyAsync(net->const_data, net->temp_cpu_data,
                     net->const_size * sizeof(real),
                     cudaMemcpyHostToDevice);
   #else
@@ -259,8 +255,6 @@ void free_net(Net* const net)
     cudaFree(net->tempint_data);
     cudaFree(net->const_data);
 
-    free(net->input_cpu_data);
-    free(net->output_cpu_data);
     free(net->param_cpu_data);
     free(net->temp_cpu_data);
     free(net->tempint_cpu_data);
@@ -271,8 +265,6 @@ void free_net(Net* const net)
     free(net->tempint_data);
     free(net->const_data);
 
-    free(net->input_cpu_data);
-    free(net->output_cpu_data);
     free(net->param_cpu_data);
     free(net->temp_cpu_data);
     free(net->tempint_cpu_data);
@@ -385,7 +377,7 @@ void save_layer_tops(void* const net_, void* const layer_)
   for (int i = 0; i < layer->num_tops; ++i) {
     char path[1024];
     sprintf(path, "%s/%s_top%d.rt.bin", net->param_path, layer->name, i);
-    save_tensor_data(path, &layer->tops[i], net->output_cpu_data);
+    save_tensor_data(path, &layer->tops[i], net->temp_cpu_data);
   }
 }
 
@@ -400,11 +392,11 @@ void print_layer_tops(void* const net_, void* const layer_)
     int idx[MAX_NDIM + 1] = { 0, };
 
     #ifdef GPU
-    cudaMemcpyAsync(net->output_cpu_data, layer->tops[i].data,
+    cudaMemcpyAsync(net->temp_cpu_data, layer->tops[i].data,
                     size * sizeof(real),
                     cudaMemcpyDeviceToHost);
     #else
-    memcpy(net->output_cpu_data, layer->tops[i].data, size * sizeof(real));
+    memcpy(net->temp_cpu_data, layer->tops[i].data, size * sizeof(real));
     #endif
 
     for (int j = 0; j < size; ++j) {
@@ -414,7 +406,7 @@ void print_layer_tops(void* const net_, void* const layer_)
       for (int d = 1; d < t->ndim; ++d) {
         printf("%d, ", idx[d]);
       }
-      printf("%d]: %f\n", idx[t->ndim]++, net->output_cpu_data[j]);
+      printf("%d]: %f\n", idx[t->ndim]++, net->temp_cpu_data[j]);
 
       for (int d = t->ndim; d > 0; --d) {
         if (idx[d] == t->shape[n][d - 1]) {

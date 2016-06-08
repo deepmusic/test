@@ -19,6 +19,7 @@ void setup_data_layer(Net* const net)
 
   net->space_cpu += malloc_layer(net->layers[0]);
 
+  net->layers[0]->allocate_top_data[0] = 1;
   {
     Tensor* input = &net->layers[0]->tops[0];
     input->num_items = BATCH_SIZE;
@@ -28,6 +29,9 @@ void setup_data_layer(Net* const net)
       input->shape[n][1] = 640;
       input->shape[n][2] = 1024;
       input->start[n] = n * 3 * 640 * 1024;
+    }
+    if (!net->layers[0]->allocate_top_data[0]) {
+      net->layer_size = MAX(net->layer_size,  flatten_size(input));
     }
   }
 
@@ -80,6 +84,10 @@ void setup_conv_sub(Layer** const layers,
     layers[i]->f_forward[1] = forward_inplace_relu_layer;
     layers[i]->f_shape[0] = shape_conv_layer;
   }
+
+  // for space optimization
+  layers[0]->allocate_top_data[0] = 1;
+  layers[1]->allocate_top_data[0] = 1;
 }
 
 static
@@ -306,7 +314,9 @@ void setup_hyper_sub(Layer** const layers,
 static
 void assign_data_tops(Net* const net)
 {
-  net->layers[0]->tops[0].data = net->layer_data[4];
+  if (!net->layers[0]->allocate_top_data[0]) {
+    net->layers[0]->tops[0].data = net->layer_data[4];
+  }
 }
 
 static
@@ -336,18 +346,32 @@ void assign_inception_sub_tops(Net* const net,
 
   // pool1, conv1
   if (stride > 1) {
-    layers[0]->tops[0].data = net->layer_data[0];
+    if (!layers[0]->allocate_top_data[0]) {
+      layers[0]->tops[0].data = net->layer_data[0];
+    }
   }
-  layers[1]->tops[0].data = net->layer_data[1];
+  if (!layers[1]->allocate_top_data[0]) {
+    layers[1]->tops[0].data = net->layer_data[1];
+  }
 
   // conv3_1, conv3_2
-  layers[2]->tops[0].data = net->layer_data[0];
-  layers[3]->tops[0].data = net->layer_data[2];
+  if (!layers[2]->allocate_top_data[0]) {
+    layers[2]->tops[0].data = net->layer_data[0];
+  }
+  if (!layers[3]->allocate_top_data[0]) {
+    layers[3]->tops[0].data = net->layer_data[2];
+  }
 
   // conv5_1, conv5_2, conv5_3
-  layers[4]->tops[0].data = net->layer_data[0];
-  layers[5]->tops[0].data = net->layer_data[4];
-  layers[6]->tops[0].data = net->layer_data[3];
+  if (!layers[4]->allocate_top_data[0]) {
+    layers[4]->tops[0].data = net->layer_data[0];
+  }
+  if (!layers[5]->allocate_top_data[0]) {
+    layers[5]->tops[0].data = net->layer_data[4];
+  }
+  if (!layers[6]->allocate_top_data[0]) {
+    layers[6]->tops[0].data = net->layer_data[3];
+  }
 
   // concat
   if (!layers[7]->allocate_top_data[0]) {
@@ -361,10 +385,18 @@ void assign_hyper_sub_tops(Net* const net,
 {
   // assume prev_layer->tops[0] = layer_data[4]
 
-  layers[0]->tops[0].data = net->layer_data[0];
-  layers[1]->tops[0].data = net->layer_data[1];
-  layers[2]->tops[0].data = net->layer_data[2];
-  layers[3]->tops[0].data = net->layer_data[4];
+  if (!layers[0]->allocate_top_data[0]) {
+    layers[0]->tops[0].data = net->layer_data[0];
+  }
+  if (!layers[1]->allocate_top_data[0]) {
+    layers[1]->tops[0].data = net->layer_data[1];
+  }
+  if (!layers[2]->allocate_top_data[0]) {
+    layers[2]->tops[0].data = net->layer_data[2];
+  }
+  if (!layers[3]->allocate_top_data[0]) {
+    layers[3]->tops[0].data = net->layer_data[4];
+  }
 }
 
 static
@@ -777,7 +809,11 @@ void setup_frcnn(Net* const net,
     layers[11]->option.min_size = 16;
     layers[11]->option.pre_nms_topn = 6000;
     layers[11]->option.post_nms_topn = 300;
+  #ifdef DEMO
+    layers[11]->option.nms_thresh = 0.3f;
+  #else
     layers[11]->option.nms_thresh = 0.7f;
+  #endif
     layers[11]->option.scales = &net->anchor_scales[0];
     layers[11]->option.ratios = &net->anchor_ratios[0];
     layers[11]->num_bottoms = 3;
@@ -830,14 +866,14 @@ void setup_frcnn(Net* const net,
   }
 
   // RCNN score
-  layers[17]->option.out_channels = 22;
+  layers[17]->option.out_channels = 25;
 
   // RCNN pred
   layers[18]->num_bottoms = 2;
   layers[18]->num_params = 0;
 
   // RCNN bbox
-  layers[19]->option.out_channels = 88;
+  layers[19]->option.out_channels = 100;
   layers[19]->num_bottoms = 2;
 
   // output
@@ -1002,6 +1038,9 @@ void setup_frcnn(Net* const net,
   #endif
 
   net->num_layers += sub_size;
+
+  // for space optimization
+  layers[12]->allocate_top_data[0] = 1;
 }
 
 static
@@ -1025,30 +1064,54 @@ void assign_frcnn_tops(Net* const net)
 
   {
   #ifdef MSRPN
-    layers[9]->tops[0].data = net->layer_data[0];
-    layers[10]->tops[0].data = net->layer_data[2];
+    if (!layers[9]->allocate_top_data[0]) {
+      layers[9]->tops[0].data = net->layer_data[0];
+    }
+    if (!layers[10]->allocate_top_data[0]) {
+      layers[10]->tops[0].data = net->layer_data[2];
+    }
   #endif
-    layers[12]->tops[0].data = net->layer_data[2];
+    if (!layers[12]->allocate_top_data[0]) {
+      layers[12]->tops[0].data = net->layer_data[2];
+    }
   }
 
   {
   #ifdef FC_COMPRESS
-    layers[14]->tops[0].data = net->layer_data[1];
-    layers[16]->tops[0].data = net->layer_data[1];
+    if (!layers[14]->allocate_top_data[0]) {
+      layers[14]->tops[0].data = net->layer_data[1];
+    }
+    if (!layers[16]->allocate_top_data[0]) {
+      layers[16]->tops[0].data = net->layer_data[1];
+    }
   #else
-    layers[14]->tops[0].data = net->layer_data[0];
-    layers[16]->tops[0].data = net->layer_data[1];
+    if (!layers[14]->allocate_top_data[0]) {
+      layers[14]->tops[0].data = net->layer_data[0];
+    }
+    if (!layers[16]->allocate_top_data[0]) {
+      layers[16]->tops[0].data = net->layer_data[1];
+    }
   #endif
   }
 
-  layers[17]->tops[0].data = net->layer_data[0];
-  layers[18]->tops[0].data = layers[17]->tops[0].data;
-  layers[19]->tops[0].data = net->layer_data[2];
-  layers[20]->tops[0].data = net->layer_data[1];
+  if (!layers[17]->allocate_top_data[0]) {
+    layers[17]->tops[0].data = net->layer_data[0];
+  }
+  if (!layers[18]->allocate_top_data[0]) {
+    layers[18]->tops[0].data = layers[17]->tops[0].data;
+  }
+  if (!layers[19]->allocate_top_data[0]) {
+    layers[19]->tops[0].data = net->layer_data[2];
+  }
+  if (!layers[20]->allocate_top_data[0]) {
+    layers[20]->tops[0].data = net->layer_data[1];
+  }
 
   #ifndef DEMO
   {
-    layers[21]->tops[0].data = net->layer_data[3];
+    if (!layers[21]->allocate_top_data[0]) {
+      layers[21]->tops[0].data = net->layer_data[3];
+    }
   }
   #endif
 }
@@ -1136,7 +1199,6 @@ void set_input_pvanet(Net* const net,
               heights[n], widths[n]);
   }
 
-  input->data = net->layer_data[4];
   if (shape_changed) {
     printf("shape changed\n");
     print_tensor_info("data", input);
@@ -1156,16 +1218,16 @@ void get_output_pvanet(Net* const net,
     const long int output_size = flatten_size(out);
 
   #ifdef GPU
-    cudaMemcpyAsync(net->output_cpu_data, out->data,
+    cudaMemcpyAsync(net->temp_cpu_data, out->data,
                     output_size * sizeof(real),
                     cudaMemcpyDeviceToHost);
   #else
-    memcpy(net->output_cpu_data, out->data, output_size * sizeof(real));
+    memcpy(net->temp_cpu_data, out->data, output_size * sizeof(real));
   #endif
 
     if (fp) {
       for (int n = 0; n < out->num_items; ++n) {
-        const real* const p_out_item = net->output_cpu_data + out->start[n];
+        const real* const p_out_item = net->temp_cpu_data + out->start[n];
 
         fwrite(&out->ndim, sizeof(int), 1, fp);
         fwrite(out->shape[n], sizeof(int), out->ndim, fp);
@@ -1187,17 +1249,17 @@ void get_output_pvanet(Net* const net,
     const long int output_size = flatten_size(out);
 
   #ifdef GPU
-    cudaMemcpyAsync(net->output_cpu_data, out->data,
+    cudaMemcpyAsync(net->temp_cpu_data, out->data,
                     output_size * sizeof(real),
                     cudaMemcpyDeviceToHost);
   #else
-    memcpy(net->output_cpu_data, out->data, output_size * sizeof(real));
+    memcpy(net->temp_cpu_data, out->data, output_size * sizeof(real));
   #endif
 
     net->num_output_boxes = 0;
     for (int n = 0; n < out->num_items; ++n) {
       const int image_index = image_start_index + n;
-      const real* const p_out_item = net->output_cpu_data + out->start[n];
+      const real* const p_out_item = net->temp_cpu_data + out->start[n];
 
       for (int i = 0; i < out->shape[n][0]; ++i) {
         const int class_index = (int)p_out_item[i * 6 + 0];
