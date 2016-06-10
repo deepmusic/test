@@ -263,8 +263,6 @@ int test(const char* const args[], const int num_args)
   cudaSetDevice(0);
   #endif
 
-  construct_pvanet(&pvanet, model_path);
-
   if (strcmp(command, "live") == 0) {
     if (num_args >= 5) {
       const int camera_id = atoi(args[2]);
@@ -280,7 +278,11 @@ int test(const char* const args[], const int num_args)
       }
       vc.set(CV_CAP_PROP_FRAME_WIDTH, frame_width);
       vc.set(CV_CAP_PROP_FRAME_HEIGHT, frame_height);
+
+      construct_pvanet(&pvanet, model_path);
       test_stream(&pvanet, vc);
+      free_net(&pvanet);
+
       cv::destroyAllWindows();
     }
     else {
@@ -292,9 +294,12 @@ int test(const char* const args[], const int num_args)
   else if (strcmp(command, "snapshot") == 0) {
     if (num_args > 2) {
       const char* const filename = args[2];
-
       cv::imshow("faster-rcnn", 0);
+
+      construct_pvanet(&pvanet, model_path);
       test_image(&pvanet, filename);
+      free_net(&pvanet);
+
       cv::destroyAllWindows();
     }
     else {
@@ -314,7 +319,11 @@ int test(const char* const args[], const int num_args)
         cv::destroyAllWindows();
         return -1;
       }
+
+      construct_pvanet(&pvanet, model_path);
       test_stream(&pvanet, vc);
+      free_net(&pvanet);
+
       cv::destroyAllWindows();
     }
     else {
@@ -328,7 +337,9 @@ int test(const char* const args[], const int num_args)
       const char* const db_filename = args[2];
       const char* const out_filename = args[3];
 
+      construct_pvanet(&pvanet, model_path);
       test_database(&pvanet, db_filename, out_filename);
+      free_net(&pvanet);
     }
     else {
       print_usage();
