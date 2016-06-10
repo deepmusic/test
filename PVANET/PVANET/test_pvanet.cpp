@@ -31,13 +31,13 @@ void draw_boxes(Mat& image, vector<pair<string, vector<float> > >& boxes) {
 }
 
 int main(int argc, char** argv) {
-	pvanet_init("", "./scripts/params2", 0);
+	pvanet_init("", "./scripts/params3", 0);
 
     Mat image;
     if (argc >= 2)
         image = imread(argv[1]);
     else
-        image = imread("./scripts/voc/004545.jpg");
+        image = imread("./scripts/voc/000005.jpg");
         //image = imread("./test_dogs.jpg");
         //image = imread("./test_pedestrian_blur.jpg");
 

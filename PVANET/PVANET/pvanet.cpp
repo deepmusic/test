@@ -14,7 +14,7 @@ static const char* class_names[] = {
   "__background", "bicycle", "bird", "bus", "car", "cat", "dog", "horse",
   "motorbike", "person", "train", "aeroplane", "boat", "bottle", "chair",
   "cow", "diningtable", "pottedplant", "sheep", "sofa", "tvmonitor",
-  "cake", "vase"
+  "cake_choco", "cake_purple", "cake_white", "sportsbag"
 };
 
 void pvanet_init(const std::string& model_file, const std::string& weights_file, int gpu_id) {

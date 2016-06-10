@@ -779,7 +779,7 @@ void setup_frcnn(Net* const net,
     layers[11]->option.min_size = 16;
     layers[11]->option.pre_nms_topn = 6000;
     layers[11]->option.post_nms_topn = 300;
-    layers[11]->option.nms_thresh = 0.7f;
+    layers[11]->option.nms_thresh = 0.3f;
     layers[11]->option.scales = &net->anchor_scales[0];
     layers[11]->option.ratios = &net->anchor_ratios[0];
     layers[11]->num_bottoms = 3;
@@ -832,14 +832,14 @@ void setup_frcnn(Net* const net,
   }
 
   // RCNN score
-  layers[17]->option.out_channels = 22;
+  layers[17]->option.out_channels = 25;
 
   // RCNN pred
   layers[18]->num_bottoms = 2;
   layers[18]->num_params = 0;
 
   // RCNN bbox
-  layers[19]->option.out_channels = 88;
+  layers[19]->option.out_channels = 100;
   layers[19]->num_bottoms = 2;
 
   // output

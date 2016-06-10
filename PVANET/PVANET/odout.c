@@ -148,7 +148,7 @@ void enumerate_output_gpu(const real* const bottom2d,
     const real d_log_w = p_d_anchor3d[2];
     const real d_log_h = p_d_anchor3d[3];
 
-    const real* const p_roi2d = roi2d + r * 4;
+    const real* const p_roi2d = roi2d + r * 5;
     real* const p_proposals = proposals + index * 5;
     p_proposals[0] = p_roi2d[0];
     p_proposals[1] = p_roi2d[1];
@@ -183,7 +183,7 @@ void enumerate_output_cpu(const real* const bottom2d,
       const real d_log_w = p_d_anchor3d[2];
       const real d_log_h = p_d_anchor3d[3];
 
-      const real* const p_roi2d = roi2d + r * 4;
+      const real* const p_roi2d = roi2d + r * 5;
       real* const p_proposals = proposals + (c * num_rois + r) * 5;
       p_proposals[0] = p_roi2d[0];
       p_proposals[1] = p_roi2d[1];
@@ -199,6 +199,44 @@ void enumerate_output_cpu(const real* const bottom2d,
   } // endfor c
 }
 #endif
+
+// "IoU = intersection area / union area" of two boxes A, B
+//   A, B: 4-dim array (x1, y1, x2, y2)
+#ifdef GPU
+__device__
+#endif
+static
+real iou(const real* const A, const real* const B)
+{
+  #ifndef GPU
+  if (A[0] > B[2] || A[1] > B[3] || A[2] < B[0] || A[3] < B[1]) {
+    return 0;
+  }
+  else {
+  #endif
+
+  // overlapped region (= box)
+  const real x1 = MAX(A[0],  B[0]);
+  const real y1 = MAX(A[1],  B[1]);
+  const real x2 = MIN(A[2],  B[2]);
+  const real y2 = MIN(A[3],  B[3]);
+
+  // intersection area
+  const real width = MAX(0.0f,  x2 - x1 + 1.0f);
+  const real height = MAX(0.0f,  y2 - y1 + 1.0f);
+  const real area = width * height;
+
+  // area of A, B
+  const real A_area = (A[2] - A[0] + 1.0f) * (A[3] - A[1] + 1.0f);
+  const real B_area = (B[2] - B[0] + 1.0f) * (B[3] - B[1] + 1.0f);
+
+  // IoU
+  return area / (A_area + B_area - area);
+
+  #ifndef GPU
+  }
+  #endif
+}
 
 // retrieve boxes that are determined to be kept by NMS
 #ifdef GPU
@@ -247,6 +285,59 @@ void retrieve_output_cpu(const real* const proposals,
 }
 #endif
 
+#ifdef GPU
+#else
+static
+void retrieve_unknown_cpu(const real* const proposals,
+                          int* const keep,
+                          const real* const roi2d,
+                          real* const top2d,
+                          const int num_output, const int num_rois,
+                          int* num_output_with_unknown,
+                          const real scale_H, const real scale_W,
+                          const real score_thresh, const real nms_thresh)
+{
+  int num_unknown = 0;
+
+  for (int index = 0; index < num_rois; ++index) {
+    const real* const p_roi2d = roi2d + index * 5;
+    int is_selected = 1;
+
+    if (p_roi2d[4] < score_thresh) {
+      break;
+    }
+
+    for (int i = 0; i < num_output; ++i) {
+      const real* const p_proposals = proposals + keep[i] * 5;
+      if (iou(p_proposals, p_roi2d) > nms_thresh) {
+        is_selected = 0;
+        break;
+      }
+    }
+    for (int i = 0; i < num_unknown; ++i) {
+      const real* const p_unknown = roi2d + keep[num_output + i] * 5;
+      if (iou(p_unknown, p_roi2d) > nms_thresh) {
+        is_selected = 0;
+        break;
+      }
+    }
+
+    if (is_selected) {
+      real* const p_top2d = top2d + (num_output + num_unknown) * 6;
+      p_top2d[0] = 0;
+      p_top2d[1] = p_roi2d[0] / scale_W;
+      p_top2d[2] = p_roi2d[1] / scale_H;
+      p_top2d[3] = p_roi2d[2] / scale_W;
+      p_top2d[4] = p_roi2d[3] / scale_H;
+      p_top2d[5] = p_roi2d[4] - 0.2f;
+      keep[num_output + num_unknown] = index;
+      ++num_unknown;
+    }
+  }
+
+  *num_output_with_unknown = num_output + num_unknown;
+}
+#endif
 // remove duplicated boxes, and select final output boxes
 static
 void filter_output(const real* const bottom2d,
@@ -343,13 +434,17 @@ void filter_output(const real* const bottom2d,
 
     retrieve_output_gpu<<<num_blocks, threads_per_block>>>(
         proposals_dev,  keep_dev,  top2d,  *num_output,  num_rois,
-        scale_H, scale_W);
+        scale_H,  scale_W);
   }
   #else
   {
     retrieve_output_cpu(
         proposals,  keep,  top2d,  *num_output,  num_rois,
-        scale_H, scale_W);
+        scale_H,  scale_W);
+    retrieve_unknown_cpu(
+        proposals,  keep,  roi2d,  top2d,
+        *num_output,  num_rois,  num_output,
+        scale_H,  scale_W,  0.9f,  0.1f);
   }
   #endif
 }
@@ -402,7 +497,7 @@ void odout_forward(const Tensor* const bottom2d,
     {
       const int bottom_size = num_rois * num_classes;
       const int d_anchor_size = bottom_size * 4;
-      const int roi_size = num_rois * 4;
+      const int roi_size = num_rois * 5;
       const int img_info_size = 6;
       const int top_size = num_output * 6;
       p_bottom_item += bottom_size;
@@ -447,12 +542,13 @@ void odout_shape(const Tensor* const bottom2d,
     const int num_classes = bottom2d->shape[n][1];
 
     // calculate total number of RoIs for determining temporary space size
-    total_num_rois += num_rois * num_classes;
+    //   +1 for unknown class
+    total_num_rois += num_rois * (num_classes + 1);
 
     // top shape <= (num_rois * num_classes) x 6
     //   (class index, x1, y1, x2, y2, score) for each output
     //   exact number of outputs will be determined after forward-pass
-    top2d->shape[n][0] = num_rois * num_classes;
+    top2d->shape[n][0] = num_rois * (num_classes + 1);
     top2d->shape[n][1] = 6;
     top2d->start[n] = total_num_rois * 6;
   }

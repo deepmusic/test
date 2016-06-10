@@ -3,7 +3,7 @@
 
 //#define DEBUG
 //#define MKL
-//#define DEMO
+#define DEMO
 #define BATCH_SIZE 1
 
 // --------------------------------------------------------------------------

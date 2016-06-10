@@ -16,7 +16,7 @@ void _init_net(void)
     #endif
 
     initialized = true;
-    construct_pvanet(&pvanet, "scripts/params2");
+    construct_pvanet(&pvanet, "scripts/params3");
   }
 }
 

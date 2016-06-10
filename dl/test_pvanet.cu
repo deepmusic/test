@@ -32,7 +32,7 @@ void draw_boxes(Mat& image, vector<pair<string, vector<float> > >& boxes, float 
 }
 
 int main(int argc, char** argv) {
-	pvanet_init("", "./scripts/params2", 0);
+	pvanet_init("", "./scripts/params3", 0);
 	cv::VideoCapture vc(0);
 	vc.set(CV_CAP_PROP_FRAME_WIDTH, 1920);
 	vc.set(CV_CAP_PROP_FRAME_HEIGHT, 1080);

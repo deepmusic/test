@@ -289,7 +289,7 @@ void retrieve_output_cpu(const real* const proposals,
 #else
 static
 void retrieve_unknown_cpu(const real* const proposals,
-                          const int* const keep,
+                          int* const keep,
                           const real* const roi2d,
                           real* const top2d,
                           const int num_output, const int num_rois,
@@ -314,6 +314,13 @@ void retrieve_unknown_cpu(const real* const proposals,
         break;
       }
     }
+    for (int i = 0; i < num_unknown; ++i) {
+      const real* const p_unknown = roi2d + keep[num_output + i] * 5;
+      if (iou(p_unknown, p_roi2d) > nms_thresh) {
+        is_selected = 0;
+        break;
+      }
+    }
 
     if (is_selected) {
       real* const p_top2d = top2d + (num_output + num_unknown) * 6;
@@ -323,6 +330,7 @@ void retrieve_unknown_cpu(const real* const proposals,
       p_top2d[3] = p_roi2d[2] / scale_W;
       p_top2d[4] = p_roi2d[3] / scale_H;
       p_top2d[5] = p_roi2d[4] - 0.2f;
+      keep[num_output + num_unknown] = index;
       ++num_unknown;
     }
   }

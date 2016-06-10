@@ -809,11 +809,7 @@ void setup_frcnn(Net* const net,
     layers[11]->option.min_size = 16;
     layers[11]->option.pre_nms_topn = 6000;
     layers[11]->option.post_nms_topn = 300;
-  #ifdef DEMO
-    layers[11]->option.nms_thresh = 0.3f;
-  #else
     layers[11]->option.nms_thresh = 0.7f;
-  #endif
     layers[11]->option.scales = &net->anchor_scales[0];
     layers[11]->option.ratios = &net->anchor_ratios[0];
     layers[11]->num_bottoms = 3;

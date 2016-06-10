@@ -2,12 +2,6 @@
 
 #include <time.h>
 
-#if defined(CPU_OPT) && defined(_MSC_VER)
-#include "smmintrin.h"
-#endif
-
-#include "logger.h"
-
 static float a_time[8] = { 0, };
 static clock_t tick0, tick1;
 
@@ -40,10 +34,10 @@ void roi_pool_gpu(const real* const bottom3d,
     const int w = index % top_W;
 
     // RoI in the bottom plane
-    const int x1 = ROUND(roi2d[r * 4 + 0] * spatial_scale);
-    const int y1 = ROUND(roi2d[r * 4 + 1] * spatial_scale);
-    const int x2 = ROUND(roi2d[r * 4 + 2] * spatial_scale);
-    const int y2 = ROUND(roi2d[r * 4 + 3] * spatial_scale);
+    const int x1 = ROUND(roi2d[r * 5 + 0] * spatial_scale);
+    const int y1 = ROUND(roi2d[r * 5 + 1] * spatial_scale);
+    const int x2 = ROUND(roi2d[r * 5 + 2] * spatial_scale);
+    const int y2 = ROUND(roi2d[r * 5 + 3] * spatial_scale);
     const int roi_W = x2 - x1 + 1;
     const int roi_H = y2 - y1 + 1;
 
@@ -95,15 +89,12 @@ void roi_pool_cpu(const real* const bottom3d,
   const int top_area = top_H * top_W;
   const int top_volume = C * top_H * top_W;
 
-#ifdef THREADED
-#pragma omp parallel for
-#endif
   for (int r = 0; r < R; ++r) {
     // RoI in the bottom plane
-    const int x1 = ROUND(roi2d[r * 4 + 0] * spatial_scale);
-    const int y1 = ROUND(roi2d[r * 4 + 1] * spatial_scale);
-    const int x2 = ROUND(roi2d[r * 4 + 2] * spatial_scale);
-    const int y2 = ROUND(roi2d[r * 4 + 3] * spatial_scale);
+    const int x1 = ROUND(roi2d[r * 5 + 0] * spatial_scale);
+    const int y1 = ROUND(roi2d[r * 5 + 1] * spatial_scale);
+    const int x2 = ROUND(roi2d[r * 5 + 2] * spatial_scale);
+    const int y2 = ROUND(roi2d[r * 5 + 3] * spatial_scale);
     const int roi_W = x2 - x1 + 1;
     const int roi_H = y2 - y1 + 1;
 
@@ -135,45 +126,6 @@ void roi_pool_cpu(const real* const bottom3d,
 
       // if the bottom region is not empty,
       //   top[r][c][h][w] = "max in the region"
-
-#if defined(CPU_OPT) && defined(_MSC_VER) && !defined(BACKWARD)
-
-      int wb_size = wb_end - wb_start;
-      int wb_denom = wb_size % 4;
-      for (int c = 0; c < C; ++c) {
-          // find maximum in the bottom region
-          const real* p_bottom3d = bottom3d + c * H * W;
-          real maxval = -1.0e6f;
-          __m128 xmm_maxval_full = _mm_set1_ps(maxval);
-          __m128 xmm_maxval_partial = _mm_set1_ps(maxval);
-          for (int hb = hb_start; hb < hb_end; ++hb) {
-              const real* bottom3d_ptr = p_bottom3d + hb*W + wb_start;
-              int offset = 0;
-              while (offset <= wb_size - 4) {
-                  xmm_maxval_full = _mm_max_ps(xmm_maxval_full, _mm_loadu_ps(bottom3d_ptr+offset));
-                  offset += 4;
-              }
-              if (wb_denom) {
-                  xmm_maxval_partial = _mm_max_ps(xmm_maxval_partial, _mm_loadu_ps(bottom3d_ptr+offset));
-                  // TODO: risk of segmentation fault (in processing the last line) if bottom3d doesn't have enough memory padding
-              }
-          }
-          __declspec(align(16)) float buf[4];
-          if (wb_size >= 4) {
-              _mm_store_ps(buf, xmm_maxval_full);
-              for (int i = 0; i < 4; i++)
-                  if (maxval < buf[i]) maxval = buf[i];
-          }
-          if (wb_denom) {
-              _mm_store_ps(buf, xmm_maxval_partial);
-              for (int i = 0; i < wb_denom; i++)
-                  if (maxval < buf[i]) maxval = buf[i];
-          }
-          top4d[top_index + c * top_area] = maxval;
-      } // endfor c
-
-#else // CPU_OPT
-
       for (int c = 0; c < C; ++c) {
         // find maximum in the bottom region
         const real* p_bottom3d = bottom3d + c * H * W;
@@ -189,9 +141,6 @@ void roi_pool_cpu(const real* const bottom3d,
         argmax4d[top_index + c * top_area] = maxidx;
         #endif
       } // endfor c
-
-#endif // CPU_OPT
-
     }} // endfor h, w
   } // endfor r
 }
@@ -206,7 +155,7 @@ void roi_pool_cpu(const real* const bottom3d,
 
 // RoI pooling: bottom -> top
 //   bottom: C x H x W
-//   roi: R x 4
+//   roi: R x 5
 //   top: R x C x H' x W'
 //   argmax: R * C * H' * W' array
 void roipool_forward(const Tensor* const bottom3d,
@@ -226,7 +175,6 @@ void roipool_forward(const Tensor* const bottom3d,
   const real* p_roi_item = roi2d->data;
   real* p_top_item = top4d->data;
   int* p_argmax_item = argmax_data;
-
   for (int n = 0; n < bottom3d->num_items; ++n) {
     // bottom shape: R x C x H X W
     const int R = roi2d->shape[n][0];
@@ -260,7 +208,7 @@ void roipool_forward(const Tensor* const bottom3d,
     // locate next item
     {
       const int bottom_size = C * H * W;
-      const int roi_size = R * 4;
+      const int roi_size = R * 5;
       const int top_size = R * C * top_H * top_W;
       p_bottom_item += bottom_size;
       p_roi_item += roi_size;
@@ -387,8 +335,6 @@ void roipool_shape(const Tensor* const bottom3d,
 
 void forward_roipool_layer(void* const net_, void* const layer_)
 {
-    global_logger.start_log(FORWARD_ROIPOOL_LAYER);
-
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
 
@@ -404,8 +350,6 @@ void forward_roipool_layer(void* const net_, void* const layer_)
     printf("\n");
   }
   #endif
-
-    global_logger.stop_log(FORWARD_ROIPOOL_LAYER);
 }
 
 void shape_roipool_layer(void* const net_, void* const layer_)
@@ -473,7 +417,7 @@ int main(int argc, char* argv[])
     roi.num_items = X.num_items;
     roi.ndim = 2;
     for (int n = 0; n < roi.num_items; ++n) {
-      roi.shape[n][1] = 4;
+      roi.shape[n][1] = 5;
     }
     {
       const int num_rois = shape[0];
@@ -484,10 +428,10 @@ int main(int argc, char* argv[])
         const real x2 = roi_data[i * 5 + 3];
         const real y2 = roi_data[i * 5 + 4];
         ++roi.shape[n][0];
-        roi_data[i * 4 + 0] = x1;
-        roi_data[i * 4 + 1] = y1;
-        roi_data[i * 4 + 2] = x2;
-        roi_data[i * 4 + 3] = y2;
+        roi_data[i * 5 + 0] = x1;
+        roi_data[i * 5 + 1] = y1;
+        roi_data[i * 5 + 2] = x2;
+        roi_data[i * 5 + 3] = y2;
       }
     }
 

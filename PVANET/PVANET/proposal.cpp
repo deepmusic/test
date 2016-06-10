@@ -31,8 +31,6 @@
 
 #include <time.h>
 
-#include "logger.h"
-
 static float a_time[8] = { 0, };
 static clock_t tick0, tick1, tick00;
 
@@ -369,7 +367,7 @@ void enumerate_proposals_cpu(const real* const bottom4d,
 //   num_rois: number of RoIs to be retrieved
 //   keep: "num_rois x 1" array
 //     keep[i]: index of i-th RoI in proposals
-//   rois: "num_rois x 4" array,  (x1, y1, x2, y2) for each RoI
+//   rois: "num_rois x 5" array,  (x1, y1, x2, y2, score) for each RoI
 #ifdef GPU
 __global__
 void retrieve_rois_gpu(const real* const proposals,
@@ -380,10 +378,11 @@ void retrieve_rois_gpu(const real* const proposals,
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < num_rois) {
     const real* const proposals_index = proposals + keep[index] * 5;
-    rois[index * 4 + 0] = proposals_index[0];
-    rois[index * 4 + 1] = proposals_index[1];
-    rois[index * 4 + 2] = proposals_index[2];
-    rois[index * 4 + 3] = proposals_index[3];
+    rois[index * 5 + 0] = proposals_index[0];
+    rois[index * 5 + 1] = proposals_index[1];
+    rois[index * 5 + 2] = proposals_index[2];
+    rois[index * 5 + 3] = proposals_index[3];
+    rois[index * 5 + 4] = proposals_index[4];
   }
 }
 #else
@@ -394,10 +393,11 @@ void retrieve_rois_cpu(const real* const proposals,
 {
   for (int i = 0; i < num_rois; ++i) {
     const real* const proposals_index = proposals + keep[i] * 5;
-    rois[i * 4 + 0] = proposals_index[0];
-    rois[i * 4 + 1] = proposals_index[1];
-    rois[i * 4 + 2] = proposals_index[2];
-    rois[i * 4 + 3] = proposals_index[3];
+    rois[i * 5 + 0] = proposals_index[0];
+    rois[i * 5 + 1] = proposals_index[1];
+    rois[i * 5 + 2] = proposals_index[2];
+    rois[i * 5 + 3] = proposals_index[3];
+    rois[i * 5 + 4] = proposals_index[4];
   }
 }
 #endif
@@ -423,7 +423,7 @@ void retrieve_rois_cpu(const real* const proposals,
 //     scale_W: width scale factor
 //              img_W = raw image width * scale_W
 //     raw_H, raw_W: raw image height & width
-//   top: num_RoIs x 4 tensor,  (x1, y1, x2, y2) of each RoI
+//   top: num_RoIs x 5 tensor,  (x1, y1, x2, y2, score) of each RoI
 //   anchors: num_anchors * 4 array,  (x1, y1, x2, y2) for each anchor
 //   4 temporary arrays
 //     proposals: all box proposals with their scores
@@ -572,11 +572,11 @@ void proposal_forward(const Tensor* const bottom4d,
       }
       #endif
 
-      // set top shape: num_rois x 4,  (x1, y1, x2, y2) for each RoI
+      // set top shape: num_rois x 5,  (x1, y1, x2, y2, score) for each RoI
       top2d->shape[n][0] = num_rois;
-      top2d->shape[n][1] = 4;
+      top2d->shape[n][1] = 5;
       top2d->start[n] = total_top_size;
-      total_top_size += num_rois * 4;
+      total_top_size += num_rois * 5;
     }
     tick1 = clock();
     a_time[2] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
@@ -586,7 +586,7 @@ void proposal_forward(const Tensor* const bottom4d,
       const int bottom_size = 2 * num_anchors * bottom_area;
       const int d_anchor_size = 4 * num_anchors * bottom_area;
       const int img_info_size = 6;
-      const int top_size = 4 * top2d->shape[n][0];
+      const int top_size = 5 * top2d->shape[n][0];
       p_bottom_item += bottom_size;
       p_d_anchor_item += d_anchor_size;
       p_img_info += img_info_size;
@@ -625,10 +625,10 @@ void proposal_shape(const Tensor* const bottom4d,
     const int bottom_area = bottom_H * bottom_W;
     max_area = MAX(max_area,  bottom_area);
 
-    // top shape <= post_nms_topn x 4
+    // top shape <= post_nms_topn x 5
     //   exact row size will be determined after forward-pass
     top2d->shape[n][0] = option->post_nms_topn;
-    top2d->shape[n][1] = 4;
+    top2d->shape[n][1] = 5;
     top2d->start[n] = top2d->shape[n][0] * top2d->shape[n][1];
   }
 
@@ -636,7 +636,7 @@ void proposal_shape(const Tensor* const bottom4d,
   //   in GPU mode, total space allocated for proposals should be
   //   a power of 2 >= actual number of proposals
   {
-    const int num_anchors
+    const int num_anchors 
         = option->num_concats * option->num_ratios * option->num_scales;
     const int num_proposals = num_anchors * max_area;
     int num_power_of_2 = 1;
@@ -681,8 +681,6 @@ void init_proposal_layer(void* const net_, void* const layer_)
 
 void forward_proposal_layer(void* const net_, void* const layer_)
 {
-    global_logger.start_log(FORWARD_PROPOSAL_LAYER);
-
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
 
@@ -702,8 +700,6 @@ void forward_proposal_layer(void* const net_, void* const layer_)
     printf("\n");
   }
   #endif
-
-  global_logger.stop_log(FORWARD_PROPOSAL_LAYER);
 }
 
 void shape_proposal_layer(void* const net_, void* const layer_)
@@ -922,7 +918,7 @@ int main(int argc, char* argv[])
 
     printf("verification\n");
 
-    for (; i < roi_size && i_true < roi_true_size; i += 4, i_true += 4) {
+    for (; i < roi_size && i_true < roi_true_size; i += 5, i_true += 4) {
       real diff = 0.0f;
       for (int di = 0; di < 4; ++di) {
         diff += ABS(roi_data[i + di] - roi_true_data[i_true + di]) /
@@ -949,13 +945,13 @@ int main(int argc, char* argv[])
         }
         if (diff2 < 1e-3f) {
           printf("[False Positive] RoI[%d]: %.2f %.2f %.2f %.2f\n",
-                 i / 4, roi_data[i + 0], roi_data[i + 1],
+                 i / 5, roi_data[i + 0], roi_data[i + 1],
                  roi_data[i + 2], roi_data[i + 3]);
-          i += 4;
+          i += 5;
           continue;
         }
         printf("RoI[%d]: %.2f %.2f %.2f %.2f  ",
-               i / 4, roi_data[i + 0], roi_data[i + 1],
+               i / 5, roi_data[i + 0], roi_data[i + 1],
                roi_data[i + 2], roi_data[i + 3]);
         printf("RoI_true[%d]: %.2f %.2f %.2f %.2f\n",
                i_true / 4,
@@ -963,9 +959,9 @@ int main(int argc, char* argv[])
                roi_true_data[i_true + 2], roi_true_data[i_true + 3]);
       }
     }
-    for (; i < roi_size; i += 4) {
+    for (; i < roi_size; i += 5) {
       printf("[False Positive] RoI[%d]: %.2f %.2f %.2f %.2f\n",
-             i / 4, roi_data[i + 0], roi_data[i + 1],
+             i / 5, roi_data[i + 0], roi_data[i + 1],
              roi_data[i + 2], roi_data[i + 3]);
     }
     for (; i_true < roi_true_size; i_true += 4) {

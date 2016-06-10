@@ -1,5 +1,6 @@
 import ctypes
 from scipy.ndimage import imread
+import numpy as np
 
 lib = ctypes.CDLL('libdlcpu.so')
 lib._batch_size_net.restype = ctypes.c_int
@@ -29,8 +30,16 @@ def detect(filename):
   if img is not None:
     lib._detect_net(img.tobytes(), img.shape[1], img.shape[0])
 
-def layer(layer_id, top_id):
-  return lib._layer_net(layer_id, top_id)
+def top_data(layer_id, top_id = 0):
+  try:
+    top = lib._layer_net(layer_id, top_id).contents
+    shape = np.ctypeslib.as_array(top.shape)[0, :top.ndim]
+    size = np.prod(shape)
+    p_data = ctypes.addressof(top.data.contents)
+    data = np.ctypeslib.as_array((ctypes.c_float * size).from_address(p_data)).reshape(shape)
+    return data
+  except Exception:
+    return None
 
 def logging(layer_id):
   lib._print_layer(layer_id)
