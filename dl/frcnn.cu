@@ -4,6 +4,7 @@
 //#define MSRPN
 #define FC_COMPRESS
 #define INCEPTION
+#define INCEPTION64
 
 #define DROPOUT_SCALE_TRAIN 1  // for new PVANET
 //#define DROPOUT_SCALE_TRAIN 0  // for old PVANET
@@ -58,8 +59,8 @@ void setup_conv_sub(Layer** const layers,
     layers[i]->option.kernel_w = kernels[i];
     layers[i]->option.stride_h = strides[i];
     layers[i]->option.stride_w = strides[i];
-    layers[i]->option.pad_h = kernels[i] / 2;
-    layers[i]->option.pad_w = kernels[i] / 2;
+    layers[i]->option.pad_h = (kernels[i] - 1) / 2;
+    layers[i]->option.pad_w = (kernels[i] - 1) / 2;
     layers[i]->option.out_channels = out_channels[i];
     layers[i]->option.num_groups = 1;
     layers[i]->option.bias = 1;
@@ -467,8 +468,13 @@ void setup_inception(Net* const net)
     const char* conv_names[] = {
       "conv1", "conv2", "conv3"
     };
+  #ifdef INCEPTION64
+    const int out_channels[] = { 32, 48, 96 };
+    const int kernels[] = { 4, 3, 3 };
+  #else
     const int out_channels[] = { 24, 48, 96 };
     const int kernels[] = { 7, 3, 3 };
+  #endif
     const int strides[] = { 2, 2, 2 };
 
     setup_conv_sub(
@@ -493,7 +499,11 @@ void setup_inception(Net* const net)
     const char* sub_names[] = {
       "inc3a", "inc3b", "inc3c", "inc3d", "inc3e"
     };
+  #ifdef INCEPTION64
+    const int out_channels[] = { 96, 16, 64, 16, 32, 32 };
+  #else
     const int out_channels[] = { 96, 24, 64, 12, 24, 24 };
+  #endif
 
     for (int i = 0; i < num_sub; ++i) {
       const int stride = (i == 0) ? 2 : 1;
