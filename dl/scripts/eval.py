@@ -42,7 +42,7 @@ def test_net(filename, **kwargs):
   for i in xrange(num_images):
     ndim = unpack("i", f.read(4))[0]
     shape = np.frombuffer(f.read(ndim * 4), dtype=np.int32, count=-1)
-    num_classes = 25
+    num_classes = 21
     num_boxes = shape[0] / num_classes
     data = np.frombuffer(f.read(np.prod(shape) * 4), dtype=np.float32, count=-1) \
              .reshape((num_boxes, num_classes, 6))

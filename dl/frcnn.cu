@@ -872,14 +872,20 @@ void setup_frcnn(Net* const net,
   }
 
   // RCNN score
-  layers[17]->option.out_channels = 25;
+  {
+  #ifdef DEMO
+    layers[17]->option.out_channels = 25;
+  #else
+    layers[17]->option.out_channels = 21;
+  #endif
+  }
 
   // RCNN pred
   layers[18]->num_bottoms = 2;
   layers[18]->num_params = 0;
 
   // RCNN bbox
-  layers[19]->option.out_channels = 100;
+  layers[19]->option.out_channels = layers[17]->option.out_channels * 4;
   layers[19]->num_bottoms = 2;
 
   // output
