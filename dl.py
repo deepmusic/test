@@ -10,8 +10,12 @@ def load_inception():
   #model = '../new-faster-rcnn/output/faster_rcnn_once_25anc_plus/pvtdb_pengo_80_pva/pva_inception2_2_once_iter_4720000.caffemodel'
   #proto = '../new-faster-rcnn/pva7.1.1_coco.pt'
   #model = '../new-faster-rcnn/pva7.1.1_coco_once_iter_880000.caffemodel'
-  proto = '../new-faster-rcnn/pva_inception2_4.pt'
-  model = '../new-faster-rcnn/output/faster_rcnn_once_25anc_plus/pvtdb_pengo3_24_pva/pva_inception2_4_once_iter_1050000.caffemodel'
+  #proto = '../new-faster-rcnn/pva_inception2_4.pt'
+  #model = '../new-faster-rcnn/output/faster_rcnn_once_25anc_plus/pvtdb_pengo3_24_pva/pva_inception2_4_once_iter_1750000.caffemodel'
+  #proto = '../new-faster-rcnn/models/pva_inception64_4/pva_inception64_4_test.pt'
+  #model = '../new-faster-rcnn/models/pva_inception64_4/pva_inception64_4_train_iter_1074505.caffemodel'
+  proto = '../new-faster-rcnn/models/pva_inception64_4/faster_rcnn_once/faster_rcnn_train_convert.pt'
+  model = '../new-faster-rcnn/output/faster_rcnn_once_25anc_plus/pvtdb_pengo2_84_pva/pva_inception64_4_once_iter_630000.caffemodel'
   import caffe
   caffe.set_mode_cpu()
   #caffe.set_device(1)
