@@ -6,6 +6,23 @@ import dl
 #param = [(-3, 32), (-3, 16), (-3, 8), (2, 4), (4.5, 2), (3.5, 1), (3.9, .5), (4.01, .25), (4, .125)]
 param = [(19, 10), (14, 4), (7, 2), (2, 2)]
 
+def inception(x):
+  y = {}
+  for (rf, num) in x.items():
+    if y.has_key(rf):
+      y[rf] += num * 2
+    else:
+      y[rf] = num * 2
+    if y.has_key(rf + 2):
+      y[rf + 2] += num
+    else:
+      y[rf + 2] = num
+    if y.has_key(rf + 4):
+      y[rf + 4] += num
+    else:
+      y[rf + 4] = num
+  return y
+
 def rpn_score_bbox_corr(net):
   score_names = ['rpn_cls_score1', 'rpn_cls_score3', 'rpn_cls_score5']
   bbox_names = ['rpn_bbox_pred1', 'rpn_bbox_pred3', 'rpn_bbox_pred5']
