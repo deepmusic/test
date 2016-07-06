@@ -103,10 +103,10 @@ void setup_inception_sub(Layer** const layers,
   const char* names[] = {
     "pool1", "conv1",
     "conv3_1", "conv3_2",
-    "conv5_1", "conv5_2", "conv5_3",
+    "conv5_1", "conv5_2", "conv5_3", "conv5_3_crelu",
     "concat"
   };
-  const int num_layers = 8;
+  const int num_layers = 9;
 
   for (int i = 0; i < num_layers; ++i) {
     layers[i] = (Layer*)malloc(sizeof(Layer));
@@ -171,9 +171,11 @@ void setup_inception_sub(Layer** const layers,
   layers[6]->option.pad_w = 1;
 
   // concat
-  layers[7]->option.num_concats = 3;
-  layers[7]->num_bottoms = 3;
-  layers[7]->num_tops = 1;
+  layers[8]->option.num_concats = 3;
+  layers[8]->num_bottoms = 3;
+  layers[8]->num_tops = 1;
+  layers[8]->num_params = 0;
+
   layers[7]->num_params = 0;
 
   for (int i = 0; i < num_layers; ++i) {
@@ -208,11 +210,16 @@ void setup_inception_sub(Layer** const layers,
   }
 
   // concat
-  layers[7]->p_bottoms[0] = &layers[1]->tops[0];
-  layers[7]->p_bottoms[1] = &layers[3]->tops[0];
-  layers[7]->p_bottoms[2] = &layers[6]->tops[0];
-  layers[7]->f_forward[0] = forward_concat_layer;
-  layers[7]->f_shape[0] = shape_concat_layer;
+  layers[8]->p_bottoms[0] = &layers[1]->tops[0];
+  layers[8]->p_bottoms[1] = &layers[3]->tops[0];
+  layers[8]->p_bottoms[2] = &layers[6]->tops[0];
+  layers[8]->f_forward[0] = forward_concat_layer;
+  layers[8]->f_shape[0] = shape_concat_layer;
+
+  layers[7]->p_bottoms[0] = &layers[6]->tops[0];
+  layers[7]->allocate_top_data[0] = 1;
+  layers[7]->f_forward[0] = forward_crelu_layer;
+  layers[7]->f_shape[0] = shape_crelu_layer;
 }
 
 static
@@ -375,8 +382,8 @@ void assign_inception_sub_tops(Net* const net,
   }
 
   // concat
-  if (!layers[7]->allocate_top_data[0]) {
-    layers[7]->tops[0].data = net->layer_data[4];
+  if (!layers[8]->allocate_top_data[0]) {
+    layers[8]->tops[0].data = net->layer_data[4];
   }
 }
 
@@ -420,7 +427,7 @@ void assign_inception_tops(Net* const net)
   // inc3
   {
     const int num_sub = 5;
-    const int sub_size = 8;
+    const int sub_size = 9;
 
     for (int i = 0; i < num_sub; ++i) {
       const int stride = (i == 0) ? 2 : 1;
@@ -432,7 +439,7 @@ void assign_inception_tops(Net* const net)
   // inc4
   {
     const int num_sub = 5;
-    const int sub_size = 8;
+    const int sub_size = 9;
 
     for (int i = 0; i < num_sub; ++i) {
       const int stride = (i == 0) ? 2 : 1;
@@ -495,7 +502,7 @@ void setup_inception(Net* const net)
   // inc3
   {
     const int num_sub = 5;
-    const int sub_size = 8;
+    const int sub_size = 9;
     const char* sub_names[] = {
       "inc3a", "inc3b", "inc3c", "inc3d", "inc3e"
     };
@@ -526,7 +533,7 @@ void setup_inception(Net* const net)
   // inc4
   {
     const int num_sub = 5;
-    const int sub_size = 8;
+    const int sub_size = 9;
     const char* sub_names[] = {
       "inc4a", "inc4b", "inc4c", "inc4d", "inc4e"
     };

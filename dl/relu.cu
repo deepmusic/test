@@ -159,6 +159,9 @@ void relu_forward(const Tensor* const bottom,
         top->shape[n][i] = bottom->shape[n][i];
       }
     }
+    for (int n = 0; n < bottom->num_items; ++n) {
+      top->start[n] = bottom->start[n];
+    }
   }
 
   tick1 = clock();
@@ -229,6 +232,9 @@ void relu_shape(const Tensor* const bottom,
     for (int i = 0; i < bottom->ndim; ++i) {
       top->shape[n][i] = bottom->shape[n][i];
     }
+  }
+  for (int n = 0; n < bottom->num_items; ++n) {
+    top->start[n] = bottom->start[n];
   }
 }
 

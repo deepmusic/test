@@ -166,6 +166,9 @@ typedef struct LayerOption_
   int scaled;
   int test;
   real threshold;
+
+  real scale_weight;
+  real scale_bias;
 } LayerOption;
 
 typedef struct Layer_
@@ -467,6 +470,15 @@ void shape_dropout_layer(void* const net_, void* const layer_);
 void forward_relu_layer(void* const net_, void* const layer_);
 void forward_inplace_relu_layer(void* const net_, void* const layer_);
 void shape_relu_layer(void* const net_, void* const layer_);
+
+
+
+// --------------------------------------------------------------------------
+// CReLU
+// --------------------------------------------------------------------------
+
+void forward_crelu_layer(void* const net_, void* const layer_);
+void shape_crelu_layer(void* const net_, void* const layer_);
 
 
 
