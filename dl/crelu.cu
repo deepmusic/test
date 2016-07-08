@@ -74,9 +74,8 @@ void crelu_forward(const Tensor* const bottom,
       memcpy(top->data + top->start[n],
              bottom->data + bottom->start[n],
              item_size * sizeof(real));
-      minus_inplace_cpu(
-          top->data + top->start[n] + item_size,
-          item_size);
+      minus_inplace_cpu(top->data + top->start[n] + item_size,
+                        item_size);
     }
     #endif
   }

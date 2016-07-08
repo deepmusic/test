@@ -3,11 +3,7 @@
 
 //#define MSRPN
 #define FC_COMPRESS
-#define INCEPTION
-#define INCEPTION64
-
-#define DROPOUT_SCALE_TRAIN 1  // for new PVANET
-//#define DROPOUT_SCALE_TRAIN 0  // for old PVANET
+#define DROPOUT_SCALE_TRAIN 1
 
 static
 void setup_data_layer(Net* const net)
@@ -40,6 +36,148 @@ void setup_data_layer(Net* const net)
 }
 
 static
+void setup_conv_layer(Layer* const layer,
+                      const int out_channels,
+                      const int kernel,
+                      const int stride,
+                      const Layer* const prev_layer,
+                      void* const blas_handle,
+                      const int add_bias,
+                      const int do_relu,
+                      long int const p_space_cpu)
+{
+  layer->option.kernel_h = kernel;
+  layer->option.kernel_w = kernel;
+  layer->option.stride_h = stride;
+  layer->option.stride_w = stride;
+  layer->option.pad_h = (kernel - 1) / 2;
+  layer->option.pad_w = (kernel - 1) / 2;
+  layer->option.out_channels = out_channels;
+  layer->option.num_groups = 1;
+  layer->option.bias = add_bias;
+  layer->option.handle = blas_handle;
+
+  layer->num_bottoms = 1;
+  layer->num_tops = 1;
+  layer->num_params = (add_bias) ? 2 : 1;
+
+  *p_space_cpu += malloc_layer(layer);
+
+  layer->p_bottoms[0] = &prev_layer->tops[0];
+  layer->f_forward[0] = forward_conv_layer;
+  if (do_relu) {
+    layer->f_forward[1] = forward_inplace_relu_layer;
+  }
+  layer->f_shape[0] = shape_conv_layer;
+}
+
+static
+void setup_crelu_layer(Layer* const layer,
+                       const Layer* const prev_layer,
+                       long int const p_space_cpu)
+{
+  layer->num_bottoms = 1;
+  layer->num_tops = 1;
+
+  *p_space_cpu += malloc_layer(layer);
+
+  layer->p_bottoms[0] = &prev_layer->tops[0];
+  layer->f_forward[0] = forward_crelu_layer;
+  layer->f_shape[0] = shape_crelu_layer;
+}
+
+static
+void assign_crelu_layer(Layer* const layer)
+{
+  if (!layer->allocate_top_data[0]) {
+    layer->tops[0].data = layer->p_bottoms[0]->data;
+  }
+}
+
+static
+void setup_scale_layer(Layer* const layer,
+                       const Layer* const prev_layer,
+                       const int add_bias,
+                       const int do_relu,
+                       long int const p_space_cpu)
+{
+  layer->option.bias = add_bias;
+
+  layer->num_bottoms = 1;
+  layer->num_tops = 1;
+  layer->num_params = (add_bias) ? 2 : 1;
+
+  *p_space_cpu += malloc_layer(layer);
+
+  layer->p_bottoms[0] = &prev_layer->tops[0];
+  layer->f_forward[0] = forward_scale_channel_layer;
+  if (do_relu) {
+    layer->f_forward[1] = forward_inplace_relu_layer;
+  }
+  layer->f_shape[0] = shape_scale_layer;
+}
+
+static
+void assign_scale_layer(Layer* const layer)
+{
+  if (!layer->allocate_top_data[0]) {
+    layer->tops[0].data = layer->p_bottoms[0]->data;
+  }
+}
+
+static
+int setup_conv_crelu_scale(Layer** const layers,
+                           const char* const name,
+                           const int out_channels,
+                           const int kernel,
+                           const int stride,
+                           const Layer* const prev_layer,
+                           void* const bias_handle,
+                           long int* const p_space_cpu)
+{
+  const int num_layers = 3;
+
+  const int name_len = strlen(name);
+  char name_temp[1024];
+
+  strcpy(name_temp, name);
+
+  for (int i = 0; i < num_layers; ++i) {
+    layers[i] = (Layer*)malloc(sizeof(Layer));
+    init_layer(layers[i]);
+  }
+
+  strcpy(name_temp + name_len, "_conv");
+  strcpy(layers[0]->name, name_temp);
+  setup_conv_layer(layers[0], out_channels, kernel, stride,
+                   prev_layer, blas_handle, 1, 0, p_space_cpu);
+
+  strcpy(name_temp + name_len, "_crelu");
+  strcpy(layers[1]->name, name_temp);
+  setup_crelu_layer(layers[1], layers[0], p_space_cpu);
+
+  strcpy(name_temp + name_len, "_scale");
+  strcpy(layers[2]->name, name_temp);
+  setup_scale_layer(layers[2], layers[1], 1, 1, p_space_cpu);
+
+  return num_layers;
+}
+
+static
+int assign_conv_crelu_scale(Net* const net,
+                            Layer** const layers,
+                            const int layer_data_id)
+{
+  const int num_layers = 3;
+
+  if (!layers[0]->allocate_top_data[0]) {
+    layer->tops[0].data = net->layer_data[layer_data_id];
+  }
+
+  return num_layers;
+}
+
+static
 void setup_conv_sub(Layer** const layers,
                     const char* const * const names,
                     const int num_layers,
@@ -50,45 +188,30 @@ void setup_conv_sub(Layer** const layers,
                     void* const blas_handle,
                     long int* const p_space_cpu)
 {
+  const char* names[] = {
+    "conv1_1_conv", "conv1_1_crelu", "conv1_1_scale", "pool1",
+    "conv2_1_1_conv",
+    "conv2_1_2_conv", "conv2_1_2_crelu", "conv2_1_2_scale",
+    "conv2_1_proj",
+    "conv2_1",
+  }
+
   for (int i = 0; i < num_layers; ++i) {
     layers[i] = (Layer*)malloc(sizeof(Layer));
     init_layer(layers[i]);
     strcpy(layers[i]->name, names[i]);
-
-    layers[i]->option.kernel_h = kernels[i];
-    layers[i]->option.kernel_w = kernels[i];
-    layers[i]->option.stride_h = strides[i];
-    layers[i]->option.stride_w = strides[i];
-    layers[i]->option.pad_h = (kernels[i] - 1) / 2;
-    layers[i]->option.pad_w = (kernels[i] - 1) / 2;
-    layers[i]->option.out_channels = out_channels[i];
-    layers[i]->option.num_groups = 1;
-    layers[i]->option.bias = 1;
-    layers[i]->option.handle = blas_handle;
-    layers[i]->option.negative_slope = 0;
-    layers[i]->num_bottoms = 1;
-    layers[i]->num_tops = 1;
-    layers[i]->num_params = 2;
   }
 
-  for (int i = 0; i < num_layers; ++i) {
-    *p_space_cpu += malloc_layer(layers[i]);
-  }
-
-  layers[0]->p_bottoms[0] = &prev_layer->tops[0];
+  setup_conv_layer(layers[0], out_channels[0], kernels[0], strides[0],
+                   prev_layer, blas_handle, add_bias[0], do_relu[0],
+                   p_space_cpu);
   for (int i = 1; i < num_layers; ++i) {
-    layers[i]->p_bottoms[0] = &layers[i - 1]->tops[0];
+    setup_conv_layer(layers[i], out_channels[i], kernels[i], strides[i],
+                     layers[i - 1], blas_handle, add_bias[i], do_relu[i],
+                     p_space_cpu);
   }
 
-  for (int i = 0; i < num_layers; ++i) {
-    layers[i]->f_forward[0] = forward_conv_layer;
-    layers[i]->f_forward[1] = forward_inplace_relu_layer;
-    layers[i]->f_shape[0] = shape_conv_layer;
-  }
-
-  // for space optimization
-  layers[0]->allocate_top_data[0] = 1;
-  layers[1]->allocate_top_data[0] = 1;
+  
 }
 
 static

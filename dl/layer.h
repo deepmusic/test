@@ -169,6 +169,8 @@ typedef struct LayerOption_
 
   real scale_weight;
   real scale_bias;
+
+  int num_bottoms;
 } LayerOption;
 
 typedef struct Layer_
@@ -479,6 +481,29 @@ void shape_relu_layer(void* const net_, void* const layer_);
 
 void forward_crelu_layer(void* const net_, void* const layer_);
 void shape_crelu_layer(void* const net_, void* const layer_);
+
+
+
+// --------------------------------------------------------------------------
+// scale
+// --------------------------------------------------------------------------
+
+void forward_scale_const_layer(void* const net_, void* const layer_);
+void forward_scale_channel_layer(void* const net_, void* const layer_);
+void forward_inplace_scale_const_layer(void* const net_,
+                                       void* const layer_);
+void forward_inplace_scale_channel_layer(void* const net_,
+                                         void* const layer_);
+void shape_scale_layer(void* const net_, void* const layer_);
+
+
+
+// --------------------------------------------------------------------------
+// eltwise operations
+// --------------------------------------------------------------------------
+
+void forward_eltwise_sum_layer(void* const net_, void* const layer_);
+void shape_eltwise_layer(void* const net_, void* const layer_);
 
 
 
