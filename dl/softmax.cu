@@ -285,7 +285,7 @@ void softmax_forward(const Tensor* const bottom3d,
     memcpy(top3d->data, bottom3d->data, data_size * sizeof(real));
   #endif
   }
-
+/*
   // set top shape (= bottom shape)
   {
     top3d->ndim = bottom3d->ndim;
@@ -299,7 +299,7 @@ void softmax_forward(const Tensor* const bottom3d,
       top3d->start[n] = bottom3d->start[n];
     }
   }
-
+*/
   // perform in-place operation
   softmax_inplace_forward(top3d, temp_data);
 }
@@ -472,7 +472,7 @@ void forward_rcnn_pred_layer(void* const net_, void* const layer_)
   pred->shape[0][3] = 1;
   pred->start[0] = 0;
 
-  softmax_inplace_forward(pred, net->temp_data);
+  softmax_forward(score, pred, net->temp_data);
 
   shape_rcnn_pred_layer(net, layer);
 

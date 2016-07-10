@@ -53,7 +53,7 @@ void crelu_forward(const Tensor* const bottom,
     #ifdef GPU
     {
       const int threads_per_block = 512;
-      const int num_blocks = DIV_THEN_CEIL(C * D,  threads_per_block);
+      const int num_blocks = DIV_THEN_CEIL(item_size,  threads_per_block);
       cudaMemcpyAsync(top->data + top->start[n] + item_size,
                       bottom->data + bottom->start[n],
                       item_size * sizeof(real),

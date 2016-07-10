@@ -15,10 +15,18 @@ long int malloc_tensor_data(Tensor* const tensor)
     tensor->max_data_size = flatten_size(tensor);
   }
 
+  if (tensor->data) {
+    printf("[WARNING] Reallocate memory for tensor %s\n", tensor->name);
+  }
+
   #ifdef GPU
   cudaMalloc(&tensor->data, tensor->max_data_size * sizeof(real));
   #else
   tensor->data = (real*)malloc(tensor->max_data_size * sizeof(real));
+  #endif
+
+  #ifdef DEBUG
+  printf("%s: Memory allocated for tensor\n", tensor->name);
   #endif
 
   return tensor->max_data_size * sizeof(real);
@@ -27,11 +35,14 @@ long int malloc_tensor_data(Tensor* const tensor)
 // deallocate memory
 long int free_tensor_data(Tensor* const tensor)
 {
-  #ifdef GPU
-  cudaFree(tensor->data);
-  #else
-  free(tensor->data);
-  #endif
+  if (tensor->data) {
+    #ifdef GPU
+    cudaFree(tensor->data);
+    #else
+    free(tensor->data);
+    #endif
+    tensor->data = NULL;
+  }
 
   return tensor->max_data_size * sizeof(real);
 }

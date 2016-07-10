@@ -237,3 +237,28 @@ void img2input(const unsigned char* const img,
   img_info1d->shape[n][0] = 6;
   ++img_info1d->num_items;
 }
+
+void input_init_shape(Net* const net,
+                      Tensor* const input3d,
+                      Tensor* const img_info1d)
+{
+  input3d->ndim = 3;
+  input3d->num_items = BATCH_SIZE;
+  for (int n = 0; n < input3d->num_items; ++n) {
+    input3d->shape[n][0] = 3;
+    input3d->shape[n][1] = 640;
+    input3d->shape[n][2] = 1024;
+    input3d->start[n] = n * 3 * 640 * 1024;
+  }
+
+  img_info1d->ndim = 1;
+  img_info1d->num_items = BATCH_SIZE;
+  for (int n = 0; n < img_info1d->num_items; ++n) {
+    img_info1d->shape[n][0] = 6;
+    img_info1d->start[n] = n * 6;
+  }
+
+  if (!input3d->has_own_memory) {
+    net->layer_size = MAX(net->layer_size,  flatten_size(input3d));
+  }
+}

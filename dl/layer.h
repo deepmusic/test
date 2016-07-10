@@ -73,6 +73,9 @@ typedef struct Tensor_
   int shape[BATCH_SIZE][MAX_NDIM];
   int start[BATCH_SIZE];
   real* data;
+  void* alive_until;
+  int has_own_memory;
+  int data_id;
   long int max_data_size;
 } Tensor;
 
@@ -130,7 +133,11 @@ void print_tensor_info(const char* const name,
 // layer data structure & some functions
 // --------------------------------------------------------------------------
 
-# define MAX_NUM_OPS_PER_LAYER 5
+#define MAX_NUM_BOTTOMS 4
+#define MAX_NUM_TOPS 1
+#define MAX_NUM_PARAMS 2
+#define MAX_NUM_AUXS 1
+#define MAX_NUM_OPS_PER_LAYER 5
 
 // layer options
 typedef struct LayerOption_
@@ -177,18 +184,16 @@ typedef struct Layer_
 {
   char name[32];
 
-  Tensor** p_bottoms;
+  Tensor* p_bottoms[MAX_NUM_BOTTOMS];
   int num_bottoms;
 
-  Tensor* tops;
-  int* allocate_top_data;
-  real** p_top_data_backup;
+  Tensor tops[MAX_NUM_TOPS];
   int num_tops;
 
-  Tensor* params;
+  Tensor params[MAX_NUM_PARAMS];
   int num_params;
 
-  real** p_aux_data;
+  real* p_aux_data[MAX_NUM_AUXS];
   int num_aux_data;
 
   void (*f_forward[MAX_NUM_OPS_PER_LAYER])(void*, void*);
@@ -203,13 +208,7 @@ extern "C" {
 
 void init_layer(Layer* const layer);
 
-long int malloc_layer(Layer* const layer);
-
-long int malloc_top_data(Layer* const layer,
-                         const int top_id);
-
-long int free_top_data(Layer* const layer,
-                       const int top_id);
+void set_layer_name(Layer* const layer, const char* const name);
 
 #ifdef __cplusplus
 } // end extern "C"
@@ -221,8 +220,8 @@ long int free_top_data(Layer* const layer,
 // net data structure & some functions
 // --------------------------------------------------------------------------
 
-#define MAX_NUM_LAYERS 200
-#define MAX_NUM_LAYER_DATA 5
+#define MAX_NUM_LAYERS 300
+#define MAX_NUM_LAYER_DATA 6
 #define MAX_NUM_RATIOS 10
 #define MAX_NUM_SCALES 10
 
@@ -230,11 +229,11 @@ typedef struct Net_
 {
   char param_path[1024];
 
-  Layer* layers[MAX_NUM_LAYERS];
+  Layer layers[MAX_NUM_LAYERS];
   int num_layers;
 
   real* layer_data[MAX_NUM_LAYER_DATA];
-  int reserved_layer_data[MAX_NUM_LAYER_DATA];
+  void* reserved_until[MAX_NUM_LAYER_DATA];
   long int layer_size;
   int num_layer_data;
 
@@ -254,7 +253,7 @@ typedef struct Net_
   real* const_data;
   long int const_size;
 
-  Tensor* img_info;
+  Tensor img_info;
   real anchor_ratios[MAX_NUM_RATIOS];
   real anchor_scales[MAX_NUM_SCALES];
 
@@ -272,6 +271,12 @@ typedef struct Net_
 extern "C" {
 #endif
 
+long int malloc_top_data(Net* const net, Layer* const layer,
+                         const int top_id);
+
+long int free_top_data(Net* const net, Layer* const layer,
+                       const int top_id);
+
 void init_net(Net* const net);
 
 void malloc_net(Net* const net);
@@ -283,6 +288,10 @@ void init_layers(Net* const net);
 void forward_net(Net* const net);
 
 void shape_net(Net* const net);
+
+void assign_layer_data(Net* const net, Tensor* const tensor);
+
+void deallocate_layer_data(Net* const net, Tensor* const tensor);
 
 void update_net_size(Net* const net,
                      const Layer* const layer,
@@ -546,6 +555,10 @@ void img2input(const unsigned char* const img,
                Tensor* const img_info1d,
                unsigned char* const temp_data,
                const int height, const int width);
+
+void input_init_shape(Net* const net,
+                      Tensor* const input3d,
+                      Tensor* const img_info1d);
 
 
 

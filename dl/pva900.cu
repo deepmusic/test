@@ -36,16 +36,21 @@ void setup_data_layer(Net* const net)
 }
 
 static
-void setup_conv_layer(Layer* const layer,
-                      const int out_channels,
-                      const int kernel,
-                      const int stride,
-                      const Layer* const prev_layer,
-                      void* const blas_handle,
-                      const int add_bias,
-                      const int do_relu,
-                      long int const p_space_cpu)
+int setup_conv_layer(Layer** const layers,
+                     const char* const name,
+                     const int out_channels,
+                     const int kernel,
+                     const int stride,
+                     const Layer* const prev_layer,
+                     void* const blas_handle,
+                     const int add_bias,
+                     const int do_relu,
+                     long int const p_space_cpu)
 {
+  Layer* layer = (Layer*)malloc(sizeof(Layer));
+  init_layer(layer);
+  strcpy(layer->name, name);
+
   layer->option.kernel_h = kernel;
   layer->option.kernel_w = kernel;
   layer->option.stride_h = stride;
@@ -69,13 +74,33 @@ void setup_conv_layer(Layer* const layer,
     layer->f_forward[1] = forward_inplace_relu_layer;
   }
   layer->f_shape[0] = shape_conv_layer;
+
+  layers[0] = layer;
+  return 1;
 }
 
 static
-void setup_crelu_layer(Layer* const layer,
-                       const Layer* const prev_layer,
-                       long int const p_space_cpu)
+int assign_conv_layer(Net* const net,
+                      Layer** const layers,
+                      const int layer_data_id)
 {
+  Layer* layer = layers[0];
+  if (!layer->allocate_top_data[0]) {
+    layer->tops[0].data = net->layer_data[layer_data_id];
+  }
+  return 1;
+}
+
+static
+int setup_crelu_layer(Layer** const layers,
+                      const char* const name,
+                      const Layer* const prev_layer,
+                      long int const p_space_cpu)
+{
+  Layer* layer = (Layer*)malloc(sizeof(Layer));
+  init_layer(layer);
+  strcpy(layer->name, name);
+
   layer->num_bottoms = 1;
   layer->num_tops = 1;
 
@@ -84,23 +109,33 @@ void setup_crelu_layer(Layer* const layer,
   layer->p_bottoms[0] = &prev_layer->tops[0];
   layer->f_forward[0] = forward_crelu_layer;
   layer->f_shape[0] = shape_crelu_layer;
+
+  layers[0] = layer;
+  return 1;
 }
 
 static
-void assign_crelu_layer(Layer* const layer)
+int assign_crelu_layer(Layer** const layers)
 {
+  Layer* layer = layers[0];
   if (!layer->allocate_top_data[0]) {
     layer->tops[0].data = layer->p_bottoms[0]->data;
   }
+  return 1;
 }
 
 static
-void setup_scale_layer(Layer* const layer,
-                       const Layer* const prev_layer,
-                       const int add_bias,
-                       const int do_relu,
-                       long int const p_space_cpu)
+int setup_scale_layer(Layer** const layers,
+                      const char* const name,
+                      const Layer* const prev_layer,
+                      const int add_bias,
+                      const int do_relu,
+                      long int const p_space_cpu)
 {
+  Layer* layer = (Layer*)malloc(sizeof(Layer));
+  init_layer(layer);
+  strcpy(layer->name, name);
+
   layer->option.bias = add_bias;
 
   layer->num_bottoms = 1;
@@ -115,14 +150,19 @@ void setup_scale_layer(Layer* const layer,
     layer->f_forward[1] = forward_inplace_relu_layer;
   }
   layer->f_shape[0] = shape_scale_layer;
+
+  layers[0] = layer;
+  return 1;
 }
 
 static
-void assign_scale_layer(Layer* const layer)
+int assign_scale_layer(Layer** const layers)
 {
+  Layer* layer = layers[0];
   if (!layer->allocate_top_data[0]) {
     layer->tops[0].data = layer->p_bottoms[0]->data;
   }
+  return 1;
 }
 
 static
@@ -135,30 +175,23 @@ int setup_conv_crelu_scale(Layer** const layers,
                            void* const bias_handle,
                            long int* const p_space_cpu)
 {
-  const int num_layers = 3;
-
-  const int name_len = strlen(name);
+  int num_layers = 0;
   char name_temp[1024];
-
+  const int name_len = strlen(name);
   strcpy(name_temp, name);
 
-  for (int i = 0; i < num_layers; ++i) {
-    layers[i] = (Layer*)malloc(sizeof(Layer));
-    init_layer(layers[i]);
-  }
-
   strcpy(name_temp + name_len, "_conv");
-  strcpy(layers[0]->name, name_temp);
-  setup_conv_layer(layers[0], out_channels, kernel, stride,
-                   prev_layer, blas_handle, 1, 0, p_space_cpu);
+  num_layers += setup_conv_layer(layers[num_layers], name_temp,
+                    out_channels, kernel, stride,
+                    prev_layer, blas_handle, 1, 0, p_space_cpu);
 
   strcpy(name_temp + name_len, "_crelu");
-  strcpy(layers[1]->name, name_temp);
-  setup_crelu_layer(layers[1], layers[0], p_space_cpu);
+  num_layers += setup_crelu_layer(layers[num_layers], name_temp,
+                    layers[num_layers - 1], p_space_cpu);
 
   strcpy(name_temp + name_len, "_scale");
-  strcpy(layers[2]->name, name_temp);
-  setup_scale_layer(layers[2], layers[1], 1, 1, p_space_cpu);
+  num_layers += setup_scale_layer(layers[num_layers], name_temp,
+                    layers[num_layers - 1], 1, 1, p_space_cpu);
 
   return num_layers;
 }
@@ -168,11 +201,11 @@ int assign_conv_crelu_scale(Net* const net,
                             Layer** const layers,
                             const int layer_data_id)
 {
-  const int num_layers = 3;
+  int num_layers = 0;
 
-  if (!layers[0]->allocate_top_data[0]) {
-    layer->tops[0].data = net->layer_data[layer_data_id];
-  }
+  num_layers += assign_conv_layer(net, layers[num_layers], layer_data_id);
+  num_layers += assign_crelu_layer(layers[num_layers]);
+  num_layers += assign_scale_layer(layers[num_layers]);
 
   return num_layers;
 }
@@ -189,12 +222,41 @@ void setup_conv_sub(Layer** const layers,
                     long int* const p_space_cpu)
 {
   const char* names[] = {
-    "conv1_1_conv", "conv1_1_crelu", "conv1_1_scale", "pool1",
-    "conv2_1_1_conv",
+    "conv1_1", "pool1",
+    "conv2_1_1", "conv2_1_2",
     "conv2_1_2_conv", "conv2_1_2_crelu", "conv2_1_2_scale",
     "conv2_1_proj",
     "conv2_1",
   }
+
+  int num_layer = 0;
+  int temp;
+
+  num_layers += setup_conv_crelu_scale(layers[0], "conv1_1", 16, 7, 2,
+                    prev_layer, bias_handle, p_space_cpu);
+
+  setup_pool_layer(layers[num_layers], "pool1", 3, 2,
+                   layers[num_layers - 1], p_space_cpu);
+  temp = num_layers;
+  ++num_layers;
+
+  setup_conv_layer(layers[num_layers], "conv2_1_1", 24, 1, 1,
+                   layers[num_layers - 1], p_space_cpu);
+  ++num_layers;
+
+  num_layers += setup_conv_crelu_scale(layers[num_layers], "conv2_1_2", 24, 3, 1,
+                    layers[num_layers - 1], bias_handle, p_space_cpu);
+
+  setup_conv_layer(layers[num_layers], "conv2_1_3", 64, 1, 1,
+                   layers[num_layers - 1], bias_handle, p_space_cpu);
+  ++num_layers;
+
+  setup_conv_layer(layers[num_layers], "conv2_1_proj", 64, 1, 1,
+                   layers[temp], bias_handle, p_space_cpu);
+  ++num_layers;
+
+  setup_eltwise_layer(layers[num_layers], "conv2_1", )
+
 
   for (int i = 0; i < num_layers; ++i) {
     layers[i] = (Layer*)malloc(sizeof(Layer));

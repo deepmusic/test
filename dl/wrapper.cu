@@ -41,9 +41,9 @@ void _detect_net(const unsigned char* const image_data,
 Tensor* _layer_net(const int layer_id, const int top_id)
 {
   if (layer_id >= 0 && layer_id < pvanet.num_layers &&
-      top_id >= 0 && top_id < pvanet.layers[layer_id]->num_tops)
+      top_id >= 0 && top_id < pvanet.layers[layer_id].num_tops)
   {
-    return &pvanet.layers[layer_id]->tops[top_id];
+    return &pvanet.layers[layer_id].tops[top_id];
   }
 
   return NULL;
@@ -52,14 +52,14 @@ Tensor* _layer_net(const int layer_id, const int top_id)
 void _print_layer(const int layer_id)
 {
   if (layer_id >= 0 && layer_id < pvanet.num_layers) {
-    Layer* const layer = pvanet.layers[layer_id];
+    Layer* const layer = &pvanet.layers[layer_id];
 
     for (int i = 0; i < MAX_NUM_OPS_PER_LAYER; ++i) {
       if (layer->f_forward[i] == print_layer_tops) {
         printf("[Layer %d (%s)]: Logging OFF\n", layer_id, layer->name);
         layer->f_forward[i] = NULL;
         for (int j = 0; j < layer->num_tops; ++j) {
-          pvanet.space -= free_top_data(layer, j);
+          free_top_data(&pvanet, layer, j);
         }
         return;
       }
@@ -68,7 +68,7 @@ void _print_layer(const int layer_id)
         printf("[Layer %d (%s)]: Logging ON\n", layer_id, layer->name);
         layer->f_forward[i] = print_layer_tops;
         for (int j = 0; j < layer->num_tops; ++j) {
-          pvanet.space += malloc_top_data(layer, j);
+          malloc_top_data(&pvanet, layer, j);
         }
         return;
       }
