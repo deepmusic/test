@@ -6,6 +6,48 @@ import dl
 #param = [(-3, 32), (-3, 16), (-3, 8), (2, 4), (4.5, 2), (3.5, 1), (3.9, .5), (4.01, .25), (4, .125)]
 param = [(19, 10), (14, 4), (7, 2), (2, 2)]
 
+def load_image(filename):
+  import scipy.ndimage
+  import scipy.misc
+  img = scipy.ndimage.imread(filename)
+
+  #if len(img.shape) == 3:
+  #  img = img[:,:,:3].swapaxes(0, 2).swapaxes(1, 2)[::-1]
+  #elif len(img.shape) == 2:
+  #  img = np.tile(img, (3, 1, 1))
+  #else:
+  #  raise Exception
+  #print img.shape
+
+  scale = np.float32(600.0 / min(img.shape[:1]))
+  if round(scale * max(img.shape[:1])) > 1000:
+    scale = np.float32(1000.0 / max(img.shape[:1]))
+  scale_h = np.float32(int(img.shape[0] * scale / 32) * 32.0 / img.shape[0])
+  scale_w = np.float32(int(img.shape[1] * scale / 32) * 32.0 / img.shape[1])
+  print [scale_h, scale_w]
+
+  im_h = int(round(img.shape[0] * scale_h))
+  im_w = int(round(img.shape[1] * scale_w))
+  img_scaled = scipy.misc.imresize(img, (im_h, im_w))
+  return img_scaled, np.array([im_h, im_w, scale_w, scale_h], np.float32).reshape(1, 4)
+
+def inceptions():
+  #proto = '../new-faster-rcnn/pva_inception2_3_coco.pt'
+  #model = '../new-faster-rcnn/output/faster_rcnn_once_25anc_plus/pvtdb_pengo_80_pva/pva_inception2_3_once_iter_330000.caffemodel'
+  #proto = '../new-faster-rcnn/pva_inception2_coco.pt'
+  #model = '../new-faster-rcnn/output/faster_rcnn_once_25anc_plus/pvtdb_pengo_80_pva/pva_inception2_2_once_iter_4720000.caffemodel'
+  #proto = '../new-faster-rcnn/pva7.1.1_coco.pt'
+  #model = '../new-faster-rcnn/pva7.1.1_coco_once_iter_880000.caffemodel'
+  #proto = '../new-faster-rcnn/pva_inception2_4.pt'
+  #model = '../new-faster-rcnn/output/faster_rcnn_once_25anc_plus/pvtdb_pengo3_24_pva/pva_inception2_4_once_iter_1750000.caffemodel'
+  #proto = '../new-faster-rcnn/models/pva_inception64_4/pva_inception64_4_test.pt'
+  #model = '../new-faster-rcnn/models/pva_inception64_4/pva_inception64_4_train_iter_1074505.caffemodel'
+  #proto = '../new-faster-rcnn/models/pva_inception64_4/faster_rcnn_once/faster_rcnn_train_convert.pt'
+  #model = '../new-faster-rcnn/output/faster_rcnn_once_25anc_plus/pvtdb_pengo2_84_pva/Round3/pva_inception64_4_once_iter_900000.caffemodel'
+  #proto_src = 'faster_rcnn_train_test.pt'
+  #proto_dest = 'faster_rcnn_train_test_comb.pt'
+  #model = 'pva9.0.0_fixed.caffemodel'
+
 def inception(x):
   y = {}
   for (rf, num) in x.items():
@@ -22,6 +64,67 @@ def inception(x):
     else:
       y[rf + 4] = num
   return y
+
+def test_bn(net):
+  a = net.blobs['inc3a/conv5_2'].data.copy()
+  b = net.blobs['inc3a/conv5_2/bn'].data.copy()
+  n = net.params['inc3a/conv5_2/bn'][2].data[0]
+  m = net.params['inc3a/conv5_2/bn'][0].data.copy()
+  v = net.params['inc3a/conv5_2/bn'][1].data.copy()
+  m /= n
+  v = 1 / np.sqrt(v / n)
+  for i in range(m.shape[0]):
+    a[:,i,:,:] = (a[:,i,:,:] - m[i]) * v[i]
+
+def test_scale(net):
+  a = net.blobs['inc3a/conv5_2/bn'].data.copy()
+  b = net.blobs['inc3a/conv5_2/scale'].data.copy()
+  w = net.params['inc3a/conv5_2/scale'][0].data.copy()
+  c = net.params['inc3a/conv5_2/scale'][1].data.copy()
+  for i in range(w.shape[0]):
+    a[:,i,:,:] = w[i] * a[:,i,:,:] + c[i]
+
+def test_bn_scale(net):
+  a = net.blobs['inc3a/conv5_2'].data.copy()
+  b = net.blobs['inc3a/conv5_2/scale'].data.copy()
+  n = net.params['inc3a/conv5_2/bn'][2].data[0]
+  m = net.params['inc3a/conv5_2/bn'][0].data.copy()
+  v = net.params['inc3a/conv5_2/bn'][1].data.copy()
+  w = net.params['inc3a/conv5_2/scale'][0].data.copy()
+  c = net.params['inc3a/conv5_2/scale'][1].data.copy()
+  alpha = w / np.sqrt(v / n)
+  beta = c - (m / n) * alpha
+  for i in range(m.shape[0]):
+    a[:,i,:,:] = a[:,i,:,:] * alpha[i] + beta[i]
+    #a[:,i,:,:] = (a[:,i,:,:] - m[i]) * v[i] * w[i] + c[i]
+
+def combine_conv_bn_scale(net, keyset=None):
+  def copy_double(data):
+    return np.array(data, copy=True, dtype=np.double)
+  if keyset is None:
+    keyset = [key[:-3] for key in net.params.keys() if key.endswith('/bn')]
+
+  for key in keyset:
+    weight = copy_double(net.params[key][0].data)
+    bias = copy_double(net.params[key][1].data)
+    num_bn_samples = copy_double(net.params[key + '/bn'][2].data)
+    bn_mean = copy_double(net.params[key + '/bn'][0].data)
+    bn_variance = copy_double(net.params[key + '/bn'][1].data)
+    scale_weight = copy_double(net.params[key + '/scale'][0].data)
+    scale_bias = copy_double(net.params[key + '/scale'][1].data)
+
+    if num_bn_samples[0] == 0:
+      num_bn_samples[0] = 1
+    alpha = scale_weight / np.sqrt(bn_variance / num_bn_samples[0] + np.finfo(np.double).eps)
+    net.params[key][1].data[:] = bias * alpha + (scale_bias - (bn_mean / num_bn_samples[0]) * alpha)
+    for i in range(len(alpha)):
+      net.params[key][0].data[i] = weight[i] * alpha[i]
+
+    net.params[key + '/bn'][0].data[:] = 0
+    net.params[key + '/bn'][1].data[:] = 1
+    net.params[key + '/bn'][2].data[:] = 1
+    net.params[key + '/scale'][0].data[:] = 1
+    net.params[key + '/scale'][1].data[:] = 0
 
 def rpn_score_bbox_corr(net):
   score_names = ['rpn_cls_score1', 'rpn_cls_score3', 'rpn_cls_score5']
