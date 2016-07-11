@@ -7,6 +7,26 @@ int _batch_size_net(void)
 {
   return BATCH_SIZE;
 }
+int _max_num_bottoms(void)
+{
+  return MAX_NUM_BOTTOMS;
+}
+int _max_num_tops(void)
+{
+  return MAX_NUM_TOPS;
+}
+int _max_num_params(void)
+{
+  return MAX_NUM_PARAMS;
+}
+int _max_num_auxs(void)
+{
+  return MAX_NUM_AUXS;
+}
+int _max_num_ops_per_layer(void)
+{
+  return MAX_NUM_OPS_PER_LAYER;
+}
 
 void _init_net(void)
 {

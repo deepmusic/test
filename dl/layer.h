@@ -571,6 +571,11 @@ extern "C" {
 #endif
 
 int _batch_size_net(void);
+int _max_num_bottoms(void);
+int _max_num_tops(void);
+int _max_num_params(void);
+int _max_num_auxs(void);
+int _max_num_ops_per_layer(void);
 
 void _init_net(void);
 
