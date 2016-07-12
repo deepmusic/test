@@ -9,12 +9,105 @@ void init_layer(Layer* const layer)
 void set_layer_name(Layer* const layer, const char* const name)
 {
   strcpy(layer->name, name);
-  for (int i = 0; i < layer->num_tops; ++i) {
-    sprintf(layer->tops[i].name, "%s[%d]", name, i);
+}
+
+void set_bottom(Layer* const layer, const int bottom_id,
+                Tensor* const tensor)
+{
+  if (bottom_id >= layer->num_bottoms) {
+    printf("[ERROR] Layer %s: out-of-bound input index %d\n",
+           layer->name, bottom_id);
+    return;
   }
-  for (int i = 0; i < layer->num_params; ++i) {
-    sprintf(layer->params[i].name, "%s_param%d", name, i);
+  layer->p_bottoms[bottom_id] = tensor;
+}
+
+void set_top(Layer* const layer, const int top_id,
+             Tensor* const tensor)
+{
+  if (top_id >= layer->num_tops) {
+    printf("[ERROR] Layer %s: out-of-bound output index %d\n",
+           layer->name, top_id);
+    return;
   }
+  layer->p_tops[top_id] = tensor;
+}
+
+void set_param(Layer* const layer, const int param_id,
+               Tensor* const tensor)
+{
+  if (param_id >= layer->num_params) {
+    printf("[ERROR] Layer %s: out-of-bound parameter index %d\n",
+           layer->name, param_id);
+    return;
+  }
+  layer->p_params[param_id] = tensor;
+}
+
+void add_bottom(Layer* const layer, Tensor* const tensor)
+{
+  if (layer->num_bottoms == MAX_NUM_BOTTOMS) {
+    printf("[ERROR] Layer %s: cannot add more input\n", layer->name);
+    return;
+  }
+  ++layer->num_bottoms;
+  set_bottom(layer, layer->num_bottoms - 1, tensor);
+}
+
+void add_top(Layer* const layer, Tensor* const tensor)
+{
+  if (layer->num_tops == MAX_NUM_TOPS) {
+    printf("[ERROR] Layer %s: cannot add more output\n", layer->name);
+    return;
+  }
+  ++layer->num_tops;
+  set_top(layer, layer->num_tops - 1, tensor);
+}
+
+void add_param(Layer* const layer, Tensor* const tensor)
+{
+  if (layer->num_params == MAX_NUM_PARAMS) {
+    printf("[ERROR] Layer %s: cannot add more parameter\n", layer->name);
+    return;
+  }
+  ++layer->num_params;
+  set_param(layer, layer->num_params - 1, tensor);
+}
+
+Tensor* get_bottom(const Layer* const layer, const int bottom_id)
+{
+  #ifdef DEBUG
+  if (bottom_id >= layer->num_bottoms) {
+    printf("[ERROR] Layer %s: out-of-bound input index %d\n",
+           layer->name, bottom_id);
+    return NULL;
+  }
+  #endif
+  return layer->p_bottoms[bottom_id];
+}
+
+Tensor* get_top(const Layer* const layer, const int top_id)
+{
+  #ifdef DEBUG
+  if (top_id >= layer->num_tops) {
+    printf("[ERROR] Layer %s: out-of-bound output index %d\n",
+           layer->name, top_id);
+    return NULL;
+  }
+  #endif
+  return layer->p_tops[top_id];
+}
+
+Tensor* get_param(const Layer* const layer, const int param_id)
+{
+  #ifdef DEBUG
+  if (param_id >= layer->num_params) {
+    printf("[ERROR] Layer %s: out-of-bound parameter index %d\n",
+           layer->name, param_id);
+    return NULL;
+  }
+  #endif
+  return layer->p_params[param_id];
 }
 
 long int malloc_layer(Net* const net,
@@ -27,7 +120,7 @@ long int malloc_layer(Net* const net,
   #endif
 
   for (int i = 0; i < layer->num_tops; ++i) {
-    Tensor* const tensor = &layer->tops[i];
+    Tensor* const tensor = get_top(layer, i);
 
     tensor->max_data_size = flatten_size(tensor);
 
@@ -45,7 +138,7 @@ long int malloc_layer(Net* const net,
 
   for (int i = 0; i < layer->num_params; ++i) {
     char path[1024];
-    Tensor* const tensor = &layer->params[i];
+    Tensor* const tensor = get_param(layer, i);
     tensor->max_data_size = flatten_size(tensor);
     space += malloc_tensor_data(tensor);
     sprintf(path, "%s/%s.bin", net->param_path, tensor->name);
@@ -59,7 +152,7 @@ long int malloc_top_data(Net* const net,
                          Layer* const layer,
                          const int top_id)
 {
-  Tensor* const tensor = &layer->tops[top_id];
+  Tensor* const tensor = get_top(layer, top_id);
   long int space = 0;
 
   if (!tensor->has_own_memory && tensor->data_id > 0) {
@@ -78,7 +171,7 @@ long int free_top_data(Net* const net,
                        Layer* const layer,
                        const int top_id)
 {
-  Tensor* const tensor = &layer->tops[top_id];
+  Tensor* const tensor = get_top(layer, top_id);
   long int space = 0;
 
   if (tensor->has_own_memory && tensor->data_id > 0) {
@@ -96,55 +189,187 @@ long int free_top_data(Net* const net,
 void free_layer(Layer* const layer)
 {
   for (int i = 0; i < layer->num_tops; ++i) {
-    if (layer->tops[i].has_own_memory) {
-      free_tensor_data(&layer->tops[i]);
+    Tensor* const tensor = get_top(layer, i);
+    if (tensor->has_own_memory) {
+      free_tensor_data(tensor);
     }
   }
 
   for (int i = 0; i < layer->num_params; ++i) {
-    free_tensor_data(&layer->params[i]);
+    Tensor* const tensor = get_param(layer, i);
+    free_tensor_data(tensor);
   }
 
   for (int i = 0; i < layer->num_aux_data; ++i) {
-    #ifdef GPU
-    cudaFree(layer->p_aux_data[i]);
-    #else
-    free(layer->p_aux_data[i]);
-    #endif
+    if (layer->p_aux_data[i]) {
+      #ifdef GPU
+      cudaFree(layer->p_aux_data[i]);
+      #else
+      free(layer->p_aux_data[i]);
+      #endif
+    }
   }
 
   memset(layer, 0, sizeof(Layer));
+}
+
+Tensor* get_tensor(Net* const net, const int tensor_id)
+{
+  #ifdef DEBUG
+  if (tensor_id >= net->num_tensors) {
+    printf("[ERROR] Net: out-of-bound tensor index %d\n", tensor_id);
+    return NULL;
+  }
+  #endif
+  return &net->tensors[tensor_id];
+} 
+
+Layer* get_layer(Net* const net, const int layer_id)
+{
+  #ifdef DEBUG
+  if (layer_id >= net->num_layers) {
+    printf("[ERROR] Net: out-of-bound layer index %d\n", layer_id);
+    return NULL;
+  }
+  #endif
+  return &net->layers[layer_id];
+} 
+
+Tensor* find_tensor_by_name(Net* const net, const char* const name)
+{
+  for (int i = 0; i < net->num_tensors; ++i) {
+    Tensor* const tensor = get_tensor(net, i);
+    if (strcmp(tensor->name, name) == 0) {
+      return tensor;
+    }
+  }
+  return NULL;
+}
+
+Layer* find_layer_by_name(Net* const net, const char* const name)
+{
+  for (int i = 0; i < net->num_layers; ++i) {
+    Layer* const layer = get_layer(net, i);
+    if (strcmp(layer->name, name) == 0) {
+      return layer;
+    }
+  }
+  return NULL;
+}
+
+Tensor* add_tensor(Net* const net, const char* const name)
+{
+  {
+    Tensor* const tensor = find_tensor_by_name(net, name);
+    if (tensor) {
+      printf("[ERROR] Net: Tensor %s already exists\n", name);
+      return tensor;
+    }
+  }
+
+  if (net->num_tensors == MAX_NUM_TENSORS) {
+    printf("[ERROR] Net: cannot add more tensor\n");
+    return NULL;
+  }
+  ++net->num_tensors;
+
+  {
+    Tensor* const tensor = get_tensor(net, net->num_tensors - 1);
+    set_tensor_name(tensor, name);
+    return tensor;
+  }
+}
+
+Layer* add_layer(Net* const net, const char* const name)
+{
+  {
+    Layer* const layer = find_layer_by_name(net, name);
+    if (layer) {
+      printf("[ERROR] Net: Layer %s already exists\n", name);
+      return layer;
+    }
+  }
+
+  if (net->num_layers == MAX_NUM_LAYERS) {
+    printf("[ERROR] Net: cannot add more layer\n");
+    return NULL;
+  }
+  ++net->num_layers;
+
+  {
+    Layer* const layer = get_layer(net, net->num_layers - 1);
+    set_layer_name(layer, name);
+    return layer;
+  }
+}
+
+Tensor* find_or_add_tensor(Net* const net, const char* const name)
+{
+  Tensor* tensor = find_tensor_by_name(net, name);
+  if (!tensor) {
+    tensor = add_tensor(net, name);
+  }
+  return tensor;
+}
+
+Layer* find_or_add_layer(Net* const net, const char* const name)
+{
+  Layer* layer = find_layer_by_name(net, name);
+  if (!layer) {
+    layer = add_layer(net, name);
+  }
+  return layer;
+}
+
+Tensor* get_tensor_by_name(Net* const net, const char* const name)
+{
+  Tensor* const tensor = find_tensor_by_name(net, name);
+  if (!tensor) {
+    printf("[ERROR] Cannot find tensor %s\n", name);
+  }
+  return tensor;
+}
+
+Layer* get_layer_by_name(Net* const net, const char* const name)
+{
+  Layer* const layer = find_layer_by_name(net, name);
+  if (!layer) {
+    printf("[ERROR] Cannot find layer %s\n", name);
+  }
+  return layer;
 }
 
 void assign_layer_data(Net* const net)
 {
   // compute lifetime for each tensor
   for (int layer_id = net->num_layers - 1; layer_id >= 0; --layer_id) {
-    Layer* const layer = &net->layers[layer_id];
+    Layer* const layer = get_layer(net, layer_id);
     for (int bottom_id = 0; bottom_id < layer->num_bottoms; ++bottom_id) {
-      if (!layer->p_bottoms[bottom_id]->alive_until) {
-        layer->p_bottoms[bottom_id]->alive_until = (void*)layer;
+      Tensor* const tensor = get_bottom(layer, bottom_id);
+      if (!tensor->alive_until) {
+        tensor->alive_until = (void*)layer;
       }
     }
   }
 
   // lifetime for output tensors
   for (int layer_id = 0; layer_id < net->num_layers; ++layer_id) {
-    Layer* const layer = &net->layers[layer_id];
+    Layer* const layer = get_layer(net, layer_id);
     for (int top_id = 0; top_id < layer->num_tops; ++top_id) {
-      Tensor* const tensor = &layer->tops[top_id];
+      Tensor* const tensor = get_top(layer, top_id);
       if (!tensor->alive_until) {
-        tensor->alive_until = (void*)&net->layers[net->num_layers - 1];
+        const Layer* const last_layer = get_layer(net, net->num_layers - 1);
+        tensor->alive_until = (void*)last_layer;
       }
     }
   }
 
   // assign layer_data to each tensor according to its lifetime
   for (int layer_id = 0; layer_id < net->num_layers; ++layer_id) {
-    Layer* const layer = &net->layers[layer_id];
+    Layer* const layer = get_layer(net, layer_id);
 
     for (int top_id = 0; top_id < layer->num_tops; ++top_id) {
-      Tensor* const tensor = &layer->tops[top_id];
+      Tensor* const tensor = get_top(layer, top_id);
 
       if (!tensor->has_own_memory) {
         for (int data_id = 0; data_id < net->num_layer_data; ++data_id) {
@@ -175,9 +400,6 @@ void assign_layer_data(Net* const net)
 void init_net(Net* const net)
 {
   memset(net, 0, sizeof(Net));
-  for (int i = 0; i < MAX_NUM_LAYERS; ++i) {
-    init_layer(&net->layers[i]);
-  }
 }
 
 void malloc_net(Net* const net)
@@ -243,7 +465,8 @@ void malloc_net(Net* const net)
 
   // memory allocation for layers
   for (int i = 0; i < net->num_layers; ++i) {
-    space += malloc_layer(net, &net->layers[i]);
+    Layer* const layer = get_layer(net, i);
+    space += malloc_layer(net, layer);
   }
 
   {
@@ -256,7 +479,7 @@ void malloc_net(Net* const net)
   // acquire CuBLAS handle
   #ifdef GPU
   {
-    if (cublasCreate(&net->cublas_handle) != CUBLAS_STATUS_SUCCESS) {
+    if (cublasCreate(&net->blas_handle) != CUBLAS_STATUS_SUCCESS) {
       printf("cublas creation failed\n");
     }
   }
@@ -270,8 +493,13 @@ void malloc_net(Net* const net)
 
 void free_net(Net* const net)
 {
+  if (!net->initialized) {
+    return;
+  }
+
   for (int i = 0; i < net->num_layers; ++i) {
-    free_layer(&net->layers[i]);
+    Layer* const layer = get_layer(net, i);
+    free_layer(layer);
   }
 
   for (int i = 0; i < net->num_layer_data; ++i) {
@@ -308,7 +536,7 @@ void free_net(Net* const net)
 
   #ifdef GPU
   {
-    if (cublasDestroy(net->cublas_handle) != CUBLAS_STATUS_SUCCESS) {
+    if (cublasDestroy(net->blas_handle) != CUBLAS_STATUS_SUCCESS) {
       printf("cublas destruction failed\n");
     }
   }
@@ -320,7 +548,7 @@ void free_net(Net* const net)
 void init_layers(Net* const net)
 {
   for (int i = 0; i < net->num_layers; ++i) {
-    Layer* const layer = &net->layers[i];
+    Layer* const layer = get_layer(net, i);
 
     for (int j = 0; j < MAX_NUM_OPS_PER_LAYER; ++j) {
       if (layer->f_init[j]) {
@@ -333,7 +561,7 @@ void init_layers(Net* const net)
 void forward_net(Net* const net)
 {
   for (int i = 0; i < net->num_layers; ++i) {
-    Layer* const layer = &net->layers[i];
+    Layer* const layer = get_layer(net, i);
 
     for (int j = 0; j < MAX_NUM_OPS_PER_LAYER; ++j) {
       if (layer->f_forward[j]) {
@@ -346,14 +574,15 @@ void forward_net(Net* const net)
 void shape_net(Net* const net)
 {
   for (int i = 0; i < net->num_layers; ++i) {
-    Layer* const layer = &net->layers[i];
+    Layer* const layer = get_layer(net, i);
 
     for (int j = 0; j < MAX_NUM_OPS_PER_LAYER; ++j) {
       if (layer->f_shape[j]) {
         (*layer->f_shape[j])(net, layer);
         #ifdef DEBUG
-        for (int k = 0; k < layer->num_tops; ++k) {
-          print_tensor_info(layer->name, &layer->tops[k]);
+        for (int top_id = 0; top_id < layer->num_tops; ++top_id) {
+          const Tensor* const tensor = get_top(layer, top_id);
+          print_tensor_info(layer->name, tensor);
         }
         #endif
       }
@@ -400,12 +629,14 @@ void update_net_size(Net* const net,
   if (!net->initialized) {
     long int top_size = 0, param_size = 0;
     for (int i = 0; i < layer->num_tops; ++i) {
-      if (!layer->tops[i].has_own_memory) {
-        top_size = MAX(top_size,  flatten_size(&layer->tops[i]));
+      const Tensor* const tensor = get_top(layer, i);
+      if (!tensor->has_own_memory) {
+        top_size = MAX(top_size,  flatten_size(tensor));
       }
     }
     for (int i = 0; i < layer->num_params; ++i) {
-      param_size = MAX(param_size,  flatten_size(&layer->params[i]));
+      const Tensor* const tensor = get_param(layer, i);
+      param_size = MAX(param_size,  flatten_size(tensor));
     }
 
     net->layer_size = MAX(net->layer_size,  top_size);
@@ -423,8 +654,9 @@ void save_layer_tops(void* const net_, void* const layer_)
 
   for (int i = 0; i < layer->num_tops; ++i) {
     char path[1024];
+    const Tensor* const tensor = get_top(layer, i);
     sprintf(path, "%s/%s_top%d.rt.bin", net->param_path, layer->name, i);
-    save_tensor_data(path, &layer->tops[i], net->temp_cpu_data);
+    save_tensor_data(path, tensor, net->temp_cpu_data);
   }
 }
 
@@ -434,29 +666,29 @@ void print_layer_tops(void* const net_, void* const layer_)
   const Layer* const layer = (Layer*)layer_;
 
   for (int i = 0; i < layer->num_tops; ++i) {
-    const long int size = flatten_size(&layer->tops[i]);
-    const Tensor* const t = &layer->tops[i];
+    const Tensor* const tensor = get_top(layer, i);
+    const long int size = flatten_size(tensor);
     int idx[MAX_NDIM + 1] = { 0, };
 
     #ifdef GPU
-    cudaMemcpyAsync(net->temp_cpu_data, layer->tops[i].data,
+    cudaMemcpyAsync(net->temp_cpu_data, tensor->data,
                     size * sizeof(real),
                     cudaMemcpyDeviceToHost);
     #else
-    memcpy(net->temp_cpu_data, layer->tops[i].data, size * sizeof(real));
+    memcpy(net->temp_cpu_data, tensor->data, size * sizeof(real));
     #endif
 
     for (int j = 0; j < size; ++j) {
       const int n = idx[0];
 
       printf("Layer %s / Top %d / Image %d [", layer->name, i, n);
-      for (int d = 1; d < t->ndim; ++d) {
+      for (int d = 1; d < tensor->ndim; ++d) {
         printf("%d, ", idx[d]);
       }
-      printf("%d]: %f\n", idx[t->ndim]++, net->temp_cpu_data[j]);
+      printf("%d]: %f\n", idx[tensor->ndim]++, net->temp_cpu_data[j]);
 
-      for (int d = t->ndim; d > 0; --d) {
-        if (idx[d] == t->shape[n][d - 1]) {
+      for (int d = tensor->ndim; d > 0; --d) {
+        if (idx[d] == tensor->shape[n][d - 1]) {
           idx[d] = 0;
           ++idx[d - 1];
         }

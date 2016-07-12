@@ -130,9 +130,9 @@ void forward_concat_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
 
-  concat_forward(layer->p_bottoms, &layer->tops[0], &layer->option);
+  concat_forward(layer->p_bottoms, layer->p_tops[0], &layer->option);
 
-  print_tensor_info(layer->name, &layer->tops[0]);
+  print_tensor_info(layer->name, layer->p_tops[0]);
   #ifdef DEBUG
   {
     for (int i = 0; i < 8; ++i) {
@@ -148,7 +148,7 @@ void shape_concat_layer(void* const net_, void* const layer_)
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
 
-  concat_shape(layer->p_bottoms, &layer->tops[0],
+  concat_shape(layer->p_bottoms, layer->p_tops[0],
                &layer->option);
 
   update_net_size(net, layer, 0, 0, 0);

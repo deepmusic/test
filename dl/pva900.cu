@@ -6,36 +6,6 @@
 #define DROPOUT_SCALE_TRAIN 1
 
 static
-void setup_data_layer(Net* const net)
-{
-  net->layers[0] = (Layer*)malloc(sizeof(Layer));
-  init_layer(net->layers[0]);
-  strcpy(net->layers[0]->name, "data");
-
-  net->layers[0]->num_tops = 1;
-
-  net->space_cpu += malloc_layer(net->layers[0]);
-
-  net->layers[0]->allocate_top_data[0] = 1;
-  {
-    Tensor* input = &net->layers[0]->tops[0];
-    input->num_items = BATCH_SIZE;
-    input->ndim = 3;
-    for (int n = 0; n < input->num_items; ++n) {
-      input->shape[n][0] = 3;
-      input->shape[n][1] = 640;
-      input->shape[n][2] = 1024;
-      input->start[n] = n * 3 * 640 * 1024;
-    }
-    if (!net->layers[0]->allocate_top_data[0]) {
-      net->layer_size = MAX(net->layer_size,  flatten_size(input));
-    }
-  }
-
-  net->img_info = (Tensor*)malloc(sizeof(Tensor));
-}
-
-static
 int setup_conv_layer(Layer** const layers,
                      const char* const name,
                      const int out_channels,

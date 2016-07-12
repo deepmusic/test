@@ -577,12 +577,12 @@ void forward_odout_layer(void* const net_, void* const layer_)
 
   odout_forward(layer->p_bottoms[0], layer->p_bottoms[1],
                 layer->p_bottoms[2], layer->p_bottoms[3],
-                &layer->tops[0],
+                layer->p_tops[0],
                 net->temp_cpu_data, net->tempint_cpu_data,
                 net->temp_data, net->tempint_data,
                 &layer->option);
 
-  print_tensor_info(layer->name, &layer->tops[0]);
+  print_tensor_info(layer->name, layer->p_tops[0]);
 }
 
 void shape_odout_layer(void* const net_, void* const layer_)
@@ -592,7 +592,7 @@ void shape_odout_layer(void* const net_, void* const layer_)
 
   int temp_size, tempint_size;
 
-  odout_shape(layer->p_bottoms[0], &layer->tops[0],
+  odout_shape(layer->p_bottoms[0], layer->p_tops[0],
               &temp_size, &tempint_size, &layer->option);
 
   update_net_size(net, layer, temp_size, tempint_size, 0);

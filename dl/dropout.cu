@@ -389,8 +389,8 @@ void forward_dropout_layer(void* const net_, void* const layer_)
   Layer* const layer = (Layer*)layer_;
 
   dropout_forward(layer->p_bottoms[0], (unsigned int*)net->tempint_data,
-                  &layer->tops[0], &layer->option);
-  print_tensor_info(layer->name, &layer->tops[0]);
+                  layer->p_tops[0], &layer->option);
+  print_tensor_info(layer->name, layer->p_tops[0]);
 }
 
 void forward_inplace_dropout_layer(void* const net_, void* const layer_)
@@ -398,16 +398,16 @@ void forward_inplace_dropout_layer(void* const net_, void* const layer_)
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
 
-  dropout_forward_inplace(&layer->tops[0], (unsigned int*)net->tempint_data,
+  dropout_forward_inplace(layer->p_tops[0], (unsigned int*)net->tempint_data,
                           &layer->option);
-  print_tensor_info(layer->name, &layer->tops[0]);
+  print_tensor_info(layer->name, layer->p_tops[0]);
 }
 
 void shape_dropout_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
 
-  dropout_shape(layer->p_bottoms[0], &layer->tops[0]);
+  dropout_shape(layer->p_bottoms[0], layer->p_tops[0]);
 }
 
 

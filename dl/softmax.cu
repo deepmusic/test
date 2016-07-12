@@ -379,7 +379,7 @@ void forward_rpn_pred_layer(void* const net_, void* const layer_)
   Layer* const layer = (Layer*)layer_;
 
   // 3d tensor: C x H x W
-  Tensor* const score = &layer->tops[0];
+  Tensor* const score = layer->p_tops[0];
 
   // reshape to 3d tensor: 2 x (C / 2) x (H * W)
   score->ndim = 3;
@@ -404,7 +404,7 @@ void forward_rpn_pred_layer(void* const net_, void* const layer_)
     score->shape[n][2] /= score->shape[n][3];
   }
 
-  print_tensor_info(layer->name, &layer->tops[0]);
+  print_tensor_info(layer->name, layer->p_tops[0]);
 }
 
 void shape_rpn_pred_layer(void* const net_, void* const layer_)
@@ -412,7 +412,7 @@ void shape_rpn_pred_layer(void* const net_, void* const layer_)
   Layer* const layer = (Layer*)layer_;
 
   // 3d tensor: C x H x W
-  Tensor* const score = &layer->tops[0];
+  Tensor* const score = layer->p_tops[0];
 
   // reshape to 4d tensor: 2 x (C / 2) x H x W
   score->ndim = 4;
@@ -433,7 +433,7 @@ void forward_rpn_bbox_layer(void* const net_, void* const layer_)
 
   shape_rpn_bbox_layer(net_, layer);
 
-  print_tensor_info(layer->name, &layer->tops[0]);
+  print_tensor_info(layer->name, layer->p_tops[0]);
 }
 
 void shape_rpn_bbox_layer(void* const net_, void* const layer_)
@@ -441,7 +441,7 @@ void shape_rpn_bbox_layer(void* const net_, void* const layer_)
   Layer* const layer = (Layer*)layer_;
 
   // 3d tensor: C x H x W
-  Tensor* const bbox = &layer->tops[0];
+  Tensor* const bbox = layer->p_tops[0];
 
   // reshape to 4d tensor: (C / 4) x 4 x H x W
   bbox->ndim = 4;
@@ -461,7 +461,7 @@ void forward_rcnn_pred_layer(void* const net_, void* const layer_)
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
 
-  Tensor* const pred = &layer->tops[0];
+  Tensor* const pred = layer->p_tops[0];
   const Tensor* const score = layer->p_bottoms[0];
 
   pred->ndim = 4;
@@ -476,14 +476,14 @@ void forward_rcnn_pred_layer(void* const net_, void* const layer_)
 
   shape_rcnn_pred_layer(net, layer);
 
-  print_tensor_info(layer->name, &layer->tops[0]);
+  print_tensor_info(layer->name, layer->p_tops[0]);
 }
 
 void shape_rcnn_pred_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
 
-  Tensor* const pred = &layer->tops[0];
+  Tensor* const pred = layer->p_tops[0];
   const Tensor* const score = layer->p_bottoms[0];
   const Tensor* const roi = layer->p_bottoms[1];
 
@@ -506,14 +506,14 @@ void forward_rcnn_bbox_layer(void* const net_, void* const layer_)
 
   shape_rcnn_bbox_layer(net_, layer);
 
-  print_tensor_info(layer->name, &layer->tops[0]);
+  print_tensor_info(layer->name, layer->p_tops[0]);
 }
 
 void shape_rcnn_bbox_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
 
-  Tensor* const bbox = &layer->tops[0];
+  Tensor* const bbox = layer->p_tops[0];
   const Tensor* const roi = layer->p_bottoms[1];
 
   bbox->ndim = 3;

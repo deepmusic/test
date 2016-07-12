@@ -663,6 +663,9 @@ void init_proposal_layer(void* const net_, void* const layer_)
 
   #ifdef GPU
   {
+    if (layer->p_aux_data[0]) {
+      cudaFree(layer->p_aux_data[0]);
+    }
     cudaMalloc(&layer->p_aux_data[0], num_anchors * 4 * sizeof(real));
     generate_anchors(net->param_cpu_data, &layer->option);
     cudaMemcpyAsync(layer->p_aux_data[0], net->param_cpu_data,
@@ -671,6 +674,9 @@ void init_proposal_layer(void* const net_, void* const layer_)
   }
   #else
   {
+    if (layer->p_aux_data[0]) {
+      free(layer->p_aux_data[0]);
+    }
     layer->p_aux_data[0] = (real*)malloc(num_anchors * 4 * sizeof(real));
     generate_anchors(layer->p_aux_data[0], &layer->option);
   }
@@ -686,12 +692,12 @@ void forward_proposal_layer(void* const net_, void* const layer_)
 
   proposal_forward(layer->p_bottoms[0], layer->p_bottoms[1],
                    layer->p_bottoms[2],
-                   &layer->tops[0], layer->p_aux_data[0],
+                   layer->p_tops[0], layer->p_aux_data[0],
                    net->temp_cpu_data, net->tempint_cpu_data,
                    net->temp_data, net->tempint_data,
                    &layer->option);
 
-  print_tensor_info(layer->name, &layer->tops[0]);
+  print_tensor_info(layer->name, layer->p_tops[0]);
   #ifdef DEBUG
   {
     for (int i = 0; i < 8; ++i) {
@@ -709,7 +715,7 @@ void shape_proposal_layer(void* const net_, void* const layer_)
 
   int temp_size, tempint_size;
 
-  proposal_shape(layer->p_bottoms[0], &layer->tops[0],
+  proposal_shape(layer->p_bottoms[0], layer->p_tops[0],
                  &temp_size, &tempint_size, &layer->option);
 
   update_net_size(net, layer, temp_size, tempint_size, 0);

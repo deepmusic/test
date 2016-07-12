@@ -86,6 +86,9 @@ extern "C" {
 // initialize: set all values to 0
 void init_tensor(Tensor* const tensor);
 
+// set tensor's name
+void set_tensor_name(Tensor* const tensor, const char* const name);
+
 // allocate memory for tensor
 //   allocate GPU memory in GPU mode, or CPU memory in CPU mode
 //   return memory size in bytes
@@ -187,10 +190,10 @@ typedef struct Layer_
   Tensor* p_bottoms[MAX_NUM_BOTTOMS];
   int num_bottoms;
 
-  Tensor tops[MAX_NUM_TOPS];
+  Tensor* p_tops[MAX_NUM_TOPS];
   int num_tops;
 
-  Tensor params[MAX_NUM_PARAMS];
+  Tensor* p_params[MAX_NUM_PARAMS];
   int num_params;
 
   real* p_aux_data[MAX_NUM_AUXS];
@@ -207,8 +210,22 @@ extern "C" {
 #endif
 
 void init_layer(Layer* const layer);
-
 void set_layer_name(Layer* const layer, const char* const name);
+
+void set_bottom(Layer* const layer, const int bottom_id,
+                Tensor* const tensor);
+void set_top(Layer* const layer, const int top_id,
+             Tensor* const tensor);
+void set_param(Layer* const layer, const int param_id,
+               Tensor* const tensor);
+
+void add_bottom(Layer* const layer, Tensor* const tensor);
+void add_top(Layer* const layer, Tensor* const tensor);
+void add_param(Layer* const layer, Tensor* const tensor);
+
+Tensor* get_bottom(const Layer* const layer, const int bottom_id);
+Tensor* get_top(const Layer* const layer, const int top_id);
+Tensor* get_param(const Layer* const layer, const int param_id);
 
 #ifdef __cplusplus
 } // end extern "C"
@@ -220,6 +237,7 @@ void set_layer_name(Layer* const layer, const char* const name);
 // net data structure & some functions
 // --------------------------------------------------------------------------
 
+#define MAX_NUM_TENSORS 300
 #define MAX_NUM_LAYERS 300
 #define MAX_NUM_LAYER_DATA 6
 #define MAX_NUM_RATIOS 10
@@ -228,6 +246,9 @@ void set_layer_name(Layer* const layer, const char* const name);
 typedef struct Net_
 {
   char param_path[1024];
+
+  Tensor tensors[MAX_NUM_TENSORS];
+  int num_tensors;
 
   Layer layers[MAX_NUM_LAYERS];
   int num_layers;
@@ -263,13 +284,30 @@ typedef struct Net_
   int initialized;
 
   #ifdef GPU
-  cublasHandle_t cublas_handle;
+  cublasHandle_t blas_handle;
+  #else
+  int blas_handle;
   #endif
 } Net;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+Tensor* get_tensor(Net* const net, const int tensor_id);
+Layer* get_layer(Net* const net, const int layer_id);
+
+Tensor* find_tensor_by_name(Net* const net, const char* const name);
+Layer* find_layer_by_name(Net* const net, const char* const name);
+
+Tensor* add_tensor(Net* const net, const char* const name);
+Layer* add_layer(Net* const net, const char* const name);
+
+Tensor* find_or_add_tensor(Net* const net, const char* const name);
+Layer* find_or_add_layer(Net* const net, const char* const name);
+
+Tensor* get_tensor_by_name(Net* const net, const char* const name);
+Layer* get_layer_by_name(Net* const net, const char* const name);
 
 long int malloc_top_data(Net* const net, Layer* const layer,
                          const int top_id);
@@ -312,6 +350,13 @@ void print_layer_tops(void* const net_, void* const layer_);
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+// --------------------------------------------------------------------------
+// Network generation
+// --------------------------------------------------------------------------
+
+void setup_data_layer(Net* const net);
+
 
 // --------------------------------------------------------------------------
 // PVANET
@@ -539,10 +584,6 @@ void nms(const int num_boxes, const real* const boxes,
          int* const num_out, int* const keep_out, const int base_index,
          const real nms_thresh, const int max_num_out);
 
-#ifdef __cplusplus
-} // end extern "C"
-#endif
-
 
 
 // --------------------------------------------------------------------------
@@ -559,6 +600,10 @@ void img2input(const unsigned char* const img,
 void input_init_shape(Net* const net,
                       Tensor* const input3d,
                       Tensor* const img_info1d);
+
+#ifdef __cplusplus
+} // end extern "C"
+#endif
 
 
 
@@ -577,7 +622,12 @@ int _max_num_params(void);
 int _max_num_auxs(void);
 int _max_num_ops_per_layer(void);
 
+void _generate_net(void);
 void _init_net(void);
+void _set_net_name(const char* const param_path);
+void _shape_net(void);
+void _malloc_net(void);
+void _init_layers(void);
 
 void _release_net(void);
 

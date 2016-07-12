@@ -254,10 +254,10 @@ void forward_odtest_layer(void* const net_, void* const layer_)
 
   odtest_forward(layer->p_bottoms[0], layer->p_bottoms[1],
                  layer->p_bottoms[2], layer->p_bottoms[3],
-                 &layer->tops[0],
+                 layer->p_tops[0],
                  &layer->option);
 
-  print_tensor_info(layer->name, &layer->tops[0]);
+  print_tensor_info(layer->name, layer->p_tops[0]);
 }
 
 void shape_odtest_layer(void* const net_, void* const layer_)
@@ -265,7 +265,7 @@ void shape_odtest_layer(void* const net_, void* const layer_)
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
 
-  odtest_shape(layer->p_bottoms[0], &layer->tops[0],
+  odtest_shape(layer->p_bottoms[0], layer->p_tops[0],
                &layer->option);
 
   update_net_size(net, layer, 0, 0, 0);

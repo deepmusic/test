@@ -427,13 +427,13 @@ void forward_deconv_layer(void* const net_, void* const layer_)
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
 
-  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
+  Tensor* p_bias = (layer->option.bias) ? layer->p_params[1] : NULL;
 
-  deconv_forward(layer->p_bottoms[0], &layer->tops[0],
-                 &layer->params[0], p_bias,
+  deconv_forward(layer->p_bottoms[0], layer->p_tops[0],
+                 layer->p_params[0], p_bias,
                  net->temp_data, net->const_data, &layer->option);
 
-  print_tensor_info(layer->name, &layer->tops[0]);
+  print_tensor_info(layer->name, layer->p_tops[0]);
 }
 
 void shape_deconv_layer(void* const net_, void* const layer_)
@@ -442,10 +442,10 @@ void shape_deconv_layer(void* const net_, void* const layer_)
   Layer* const layer = (Layer*)layer_;
 
   int temp_size, const_size;
-  Tensor* p_bias = (layer->option.bias) ? &layer->params[1] : NULL;
+  Tensor* p_bias = (layer->option.bias) ? layer->p_params[1] : NULL;
 
-  deconv_shape(layer->p_bottoms[0], &layer->tops[0],
-               &layer->params[0], p_bias,
+  deconv_shape(layer->p_bottoms[0], layer->p_tops[0],
+               layer->p_params[0], p_bias,
                &temp_size, &const_size, &layer->option);
 
   update_net_size(net, layer, temp_size, 0, const_size);

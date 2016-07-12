@@ -339,9 +339,9 @@ void forward_roipool_layer(void* const net_, void* const layer_)
   Layer* const layer = (Layer*)layer_;
 
   roipool_forward(layer->p_bottoms[0], layer->p_bottoms[1],
-                  &layer->tops[0],
+                  layer->p_tops[0],
                   net->tempint_data, &layer->option);
-  print_tensor_info(layer->name, &layer->tops[0]);
+  print_tensor_info(layer->name, layer->p_tops[0]);
   #ifdef DEBUG
   {
     for (int i = 0; i < 8; ++i) {
@@ -359,7 +359,7 @@ void shape_roipool_layer(void* const net_, void* const layer_)
 
   int tempint_size;
 
-  roipool_shape(layer->p_bottoms[0], layer->p_bottoms[1], &layer->tops[0],
+  roipool_shape(layer->p_bottoms[0], layer->p_bottoms[1], layer->p_tops[0],
                 &tempint_size, &layer->option);
 
   update_net_size(net, layer, 0, tempint_size, 0);

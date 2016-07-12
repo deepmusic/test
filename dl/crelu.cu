@@ -118,8 +118,8 @@ void forward_crelu_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
 
-  crelu_forward(layer->p_bottoms[0], &layer->tops[0], &layer->option);
-  print_tensor_info(layer->name, &layer->tops[0]);
+  crelu_forward(layer->p_bottoms[0], layer->p_tops[0], &layer->option);
+  print_tensor_info(layer->name, layer->p_tops[0]);
   #ifdef DEBUG
   {
     for (int i = 0; i < 8; ++i) {
@@ -134,5 +134,5 @@ void shape_crelu_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
 
-  crelu_shape(layer->p_bottoms[0], &layer->tops[0]);
+  crelu_shape(layer->p_bottoms[0], layer->p_tops[0]);
 }

@@ -7,6 +7,11 @@ void init_tensor(Tensor* const tensor)
   memset(tensor, 0, sizeof(Tensor));
 }
 
+void set_tensor_name(Tensor* const tensor, const char* const name)
+{
+  strcpy(tensor->name, name);
+}
+
 // allocate memory for tensor
 //   allocate GPU memory in GPU mode, or CPU memory in CPU mode
 long int malloc_tensor_data(Tensor* const tensor)
