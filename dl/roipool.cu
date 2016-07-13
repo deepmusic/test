@@ -16,10 +16,8 @@ static clock_t tick0, tick1;
 //       hb, wb: pooling region corresponding to (h, w)
 #ifdef GPU
 __global__
-void roi_pool_gpu(const real* const bottom3d,
-                  const real* const roi2d,
-                  real* const top4d,
-                  int* const argmax4d,
+void roi_pool_gpu(const real bottom3d[], const real roi2d[],
+                  real top4d[], int argmax4d[],
                   const int R, const int C, const int H, const int W,
                   const int top_H, const int top_W,
                   const real spatial_scale)
@@ -78,10 +76,8 @@ void roi_pool_gpu(const real* const bottom3d,
   }
 }
 #else
-void roi_pool_cpu(const real* const bottom3d,
-                  const real* const roi2d,
-                  real* const top4d,
-                  int* const argmax4d,
+void roi_pool_cpu(const real bottom3d[], const real roi2d[],
+                  real top4d[], int argmax4d[],
                   const int R, const int C, const int H, const int W,
                   const int top_H, const int top_W,
                   const real spatial_scale)
@@ -161,7 +157,7 @@ void roi_pool_cpu(const real* const bottom3d,
 void roipool_forward(const Tensor* const bottom3d,
                      const Tensor* const roi2d,
                      Tensor* const top4d,
-                     int* const argmax_data,
+                     int argmax_data[],
                      const LayerOption* option)
 {
   tick0 = clock();

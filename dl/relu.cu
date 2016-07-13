@@ -17,7 +17,7 @@ static clock_t tick0, tick1;
 //   top[i] = 0 if bottom[i] <= 0
 #ifdef GPU
 __global__
-void relu_gpu(const real* const bottom, real* const top,
+void relu_gpu(const real bottom[], real top[],
               const long int data_size)
 {
   const long int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -26,7 +26,7 @@ void relu_gpu(const real* const bottom, real* const top,
   }
 }
 #else
-void relu_cpu(const real* const bottom, real* const top,
+void relu_cpu(const real bottom[], real top[],
               const long int data_size)
 {
   for (long int index = 0; index < data_size; ++index) {
@@ -39,7 +39,7 @@ void relu_cpu(const real* const bottom, real* const top,
 //   top[i] = slope * bottom[i] if bottom[i] <= 0
 #ifdef GPU
 __global__
-void prelu_gpu(const real* const bottom, real* const top,
+void prelu_gpu(const real bottom[], real top[],
                const long int data_size, const real negative_slope)
 {
   const long int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -49,7 +49,7 @@ void prelu_gpu(const real* const bottom, real* const top,
   }
 }
 #else
-void prelu_cpu(const real* const bottom, real* const top,
+void prelu_cpu(const real bottom[], real top[],
                const long int data_size, const real negative_slope)
 {
   for (long int index = 0; index < data_size; ++index) {
@@ -62,7 +62,7 @@ void prelu_cpu(const real* const bottom, real* const top,
 // in-place ReLU transform
 #ifdef GPU
 __global__
-void relu_inplace_gpu(real* const bottom, const long int data_size)
+void relu_inplace_gpu(real bottom[], const long int data_size)
 {
   const long int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < data_size) {
@@ -70,7 +70,7 @@ void relu_inplace_gpu(real* const bottom, const long int data_size)
   }
 }
 #else
-void relu_inplace_cpu(real* const bottom, const long int data_size)
+void relu_inplace_cpu(real bottom[], const long int data_size)
 {
   for (long int index = 0; index < data_size; ++index) {
     bottom[index] = (bottom[index] > 0) ? bottom[index] : 0;
@@ -81,7 +81,7 @@ void relu_inplace_cpu(real* const bottom, const long int data_size)
 // in-place soft ReLU transform
 #ifdef GPU
 __global__
-void prelu_inplace_gpu(real* const bottom, const long int data_size,
+void prelu_inplace_gpu(real bottom[], const long int data_size,
                        const real negative_slope)
 {
   const long int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -91,7 +91,7 @@ void prelu_inplace_gpu(real* const bottom, const long int data_size,
   }
 }
 #else
-void prelu_inplace_cpu(real* const bottom, const long int data_size,
+void prelu_inplace_cpu(real bottom[], const long int data_size,
                        const real negative_slope)
 {
   for (long int index = 0; index < data_size; ++index) {

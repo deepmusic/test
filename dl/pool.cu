@@ -14,9 +14,9 @@
 //     w = (-pad_w + stride_w * w') + { 0, 1, ..., kernel_w - 1 }
 #ifdef GPU
 __global__
-void max_pool_gpu(const real* const bottom3d,
-                  real* const top3d,
-                  int* const argmax3d,
+void max_pool_gpu(const real bottom3d[],
+                  real top3d[],
+                  int argmax3d[],
                   const int C, const int bottom_H, const int bottom_W,
                   const int top_H, const int top_W,
                   const int kernel_h, const int kernel_w,
@@ -68,9 +68,9 @@ void max_pool_gpu(const real* const bottom3d,
   }
 }
 #else
-void max_pool_cpu(const real* const bottom3d,
-                  real* const top3d,
-                  int* const argmax3d,
+void max_pool_cpu(const real bottom3d[],
+                  real top3d[],
+                  int argmax3d[],
                   const int C, const int bottom_H, const int bottom_W,
                   const int top_H, const int top_W,
                   const int kernel_h, const int kernel_w,
@@ -135,7 +135,7 @@ void max_pool_cpu(const real* const bottom3d,
 //   argmax: C x H' x W' array
 void pool_forward(const Tensor* const bottom3d,
                   Tensor* const top3d,
-                  int* const argmax_data,
+                  int argmax_data[],
                   const LayerOption* const option)
 {
   // kernel size, padding size & stride size

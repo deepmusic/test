@@ -1,7 +1,7 @@
 #ifndef PVA_DL_LAYER_H
 #define PVA_DL_LAYER_H
 
-//#define DEBUG
+#define DEBUG
 //#define MKL
 #define DEMO
 
@@ -65,17 +65,22 @@
 typedef float real;
 #define MAX_NDIM 5
 
+// data_type values
+#define SHARED_DATA 0  // data uses a block of shared memory
+#define PRIVATE_DATA 1  // data has its own private memory
+#define PARAM_DATA 2  // has own memory & pre-trained parameter is loaded
+
 typedef struct Tensor_
 {
-  char name[32];
+  char name[64];
   int num_items;
   int ndim;
   int shape[BATCH_SIZE][MAX_NDIM];
   int start[BATCH_SIZE];
   real* data;
-  void* alive_until;
-  int has_own_memory;
-  int data_id;
+  int data_type;
+  int shared_block_id;
+  int alive_until;
   long int max_data_size;
 } Tensor;
 
@@ -89,35 +94,34 @@ void init_tensor(Tensor* const tensor);
 // set tensor's name
 void set_tensor_name(Tensor* const tensor, const char* const name);
 
-// allocate memory for tensor
+// allocate memory for tensor's data
 //   allocate GPU memory in GPU mode, or CPU memory in CPU mode
 //   return memory size in bytes
-long int malloc_tensor_data(Tensor* const tensor);
+long int malloc_tensor_data(Tensor* const tensor,
+                            real* const shared_blocks[]);
 
 // deallocate memory
 long int free_tensor_data(Tensor* const tensor);
 
 // load binary data from file & store to CPU memory
-//   data: pointer to CPU memory for storing data
-//         if NULL, allocate new memory & load data & return pointer
-real* load_data(const char* const filename,
-                int* const ndim,
-                int* const shape,
-                real* data);
+//   cpu_data: pointer to CPU memory for storing data
+void load_from_binary_file(const char* const filename,
+                           int* const ndim,
+                           int shape[],
+                           real cpu_data[]);
 
-// load binary data from file & copy to memory where tensor occupies
-//   temp_data: pointer to CPU memory for loading data temporarily
-//              not used (i.e., can be NULL) if tensor occupies CPU memory
-void load_tensor(const char* const filename,
-                 Tensor* const tensor,
-                 real* const temp_data);
+// load binary data from file & copy to memory where tensor data refers
+//   temp_cpu_data: pointer to CPU memory for loading data temporarily
+void load_tensor_data(const char* const filename,
+                      Tensor* const tensor,
+                      real temp_cpu_data[]);
 
 // save tensor data to binary file
-//   temp_data: pointer to CPU memory for storing data temporarily
-//              not used (i.e., can be NULL) if tensor occupies CPU memory
+//   temp_cpu_data: pointer to CPU memory for storing data temporarily
+//                  can be set NULL if tensor data refers to CPU memory
 void save_tensor_data(const char* const filename,
                       const Tensor* const tensor,
-                      real* const temp_data);
+                      real temp_cpu_data[]);
 
 // total number of elements in a tensor
 long int flatten_size(const Tensor* const tensor);
@@ -172,6 +176,8 @@ typedef struct LayerOption_
   int post_nms_topn;
   real nms_thresh;
   real score_thresh;
+  int bbox_vote;
+  real vote_thresh;
 
   int scaled;
   int test;
@@ -185,7 +191,7 @@ typedef struct LayerOption_
 
 typedef struct Layer_
 {
-  char name[32];
+  char name[64];
 
   Tensor* p_bottoms[MAX_NUM_BOTTOMS];
   int num_bottoms;
@@ -254,7 +260,7 @@ typedef struct Net_
   int num_layers;
 
   real* layer_data[MAX_NUM_LAYER_DATA];
-  void* reserved_until[MAX_NUM_LAYER_DATA];
+  int reserved_until[MAX_NUM_LAYER_DATA];
   long int layer_size;
   int num_layer_data;
 
@@ -355,7 +361,23 @@ extern "C" {
 // Network generation
 // --------------------------------------------------------------------------
 
-void setup_data_layer(Net* const net);
+void setup_data_layer(Net* const net,
+                      const char* const layer_name,
+                      const char* const top_name);
+
+void setup_conv_layer(Net* const net,
+                      const char* const layer_name,
+                      const char* const bottom_name,
+                      const char* const top_name,
+                      const char* const weight_name,
+                      const char* const bias_name,
+                      const int num_group, const int num_output,
+                      const int kernel_h, const int kernel_w,
+                      const int stride_h, const int stride_w,
+                      const int pad_h, const int pad_w,
+                      const int bias_term,
+                      const int do_relu);
+
 
 
 // --------------------------------------------------------------------------
@@ -366,9 +388,9 @@ void construct_pvanet(Net* const net,
                       const char* const param_path);
 
 void set_input_pvanet(Net* const net,
-                      const unsigned char* const * const images_data,
-                      const int* const heights,
-                      const int* const widths,
+                      const unsigned char* const images_data[],
+                      const int heights[],
+                      const int widths[],
                       const int num_images);
 
 void get_output_pvanet(Net* const net,
@@ -376,14 +398,14 @@ void get_output_pvanet(Net* const net,
                        FILE* fp);
 
 void process_pvanet(Net* const net,
-                    const unsigned char* const image_data,
+                    const unsigned char image_data[],
                     const int height, const int width,
                     FILE* fp);
 
 void process_batch_pvanet(Net* const net,
-                          const unsigned char* const * const images_data,
-                          const int* const heights,
-                          const int* const widths,
+                          const unsigned char* const images_data[],
+                          const int heights[],
+                          const int widths[],
                           const int num_images,
                           FILE* fp);
 
@@ -496,12 +518,12 @@ void shape_rcnn_bbox_layer(void* const net_, void* const layer_);
 //     e.g., temp_data[n][d] = sum_c(exp(bottom[n][c][d]))
 void softmax_forward(const Tensor* const bottom3d,
                      Tensor* const top3d,
-                     real* const temp_data);
+                     real temp_data[]);
 
 // channel-wise in-place softmax transform:
 //   bottom[n][c][d] = exp(bottom[n][c][d]) / sum_c(exp(bottom[n][c][d]))
 void softmax_inplace_forward(Tensor* const bottom3d,
-                             real* const temp_data);
+                             real temp_data[]);
 
 void softmax_shape(const Tensor* const bottom3d,
                    Tensor* const top3d,
@@ -580,9 +602,13 @@ void shape_eltwise_layer(void* const net_, void* const layer_);
 //   nms_thresh: threshold for determining "significant overlap"
 //               if "intersection area / union area > nms_thresh",
 //               two boxes are thought of as significantly overlapped
-void nms(const int num_boxes, const real* const boxes,
-         int* const num_out, int* const keep_out, const int base_index,
-         const real nms_thresh, const int max_num_out);
+//   bbox_vote: whether bounding-box voting is used (= 1) or not (= 0)
+//   vote_thresh: threshold for selecting overlapped boxes
+//                which are participated in bounding-box voting
+void nms(const int num_boxes, real boxes[],
+         int* const num_out, int keep_out[], const int base_index,
+         const real nms_thresh, const int max_num_out,
+         const int bbox_vote, const real vote_thresh);
 
 
 
@@ -591,10 +617,10 @@ void nms(const int num_boxes, const real* const boxes,
 //   img2input
 // --------------------------------------------------------------------------
 
-void img2input(const unsigned char* const img,
+void img2input(const unsigned char img[],
                Tensor* const input3d,
                Tensor* const img_info1d,
-               unsigned char* const temp_data,
+               unsigned char temp_data[],
                const int height, const int width);
 
 void input_init_shape(Net* const net,
@@ -624,14 +650,28 @@ int _max_num_ops_per_layer(void);
 
 void _generate_net(void);
 void _init_net(void);
-void _set_net_name(const char* const param_path);
+void _set_net_param_path(const char* const param_path);
+
+void _add_data_layer(const char* const layer_name,
+                     const char* const top_name);
+void _add_conv_layer(const char* const layer_name,
+                     const char* const bottom_name,
+                     const char* const top_name,
+                     const char* const weight_name,
+                     const char* const bias_name,
+                     const int num_group, const int num_output,
+                     const int kernel_h, const int kernel_w,
+                     const int stride_h, const int stride_w,
+                     const int pad_h, const int pad_w,
+                     const int bias_term);
+
 void _shape_net(void);
 void _malloc_net(void);
 void _init_layers(void);
 
 void _release_net(void);
 
-void _detect_net(const unsigned char* const image_dta, 
+void _detect_net(const unsigned char image_data[],
                  const int width, const int height);
 
 Tensor* _layer_net(const int layer_id, const int top_id);

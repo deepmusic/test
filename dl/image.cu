@@ -2,8 +2,7 @@
 
 #ifdef GPU
 __global__
-void bilinear_resize_gpu(const unsigned char* const img,
-                         real* const input3d,
+void bilinear_resize_gpu(const unsigned char img[], real input3d[],
                          const int height, const int width,
                          const int resized_height, const int resized_width,
                          const real img_scale_y, const real img_scale_x)
@@ -40,8 +39,7 @@ void bilinear_resize_gpu(const unsigned char* const img,
   }
 }
 #else
-void bilinear_resize_cpu(const unsigned char* const img,
-                         real* const input3d,
+void bilinear_resize_cpu(const unsigned char img[], real input3d[],
                          const int height, const int width,
                          const int resized_height, const int resized_width,
                          const real img_scale_y, const real img_scale_x)
@@ -107,8 +105,7 @@ void bilinear_resize_cpu(const unsigned char* const img,
 
 #ifdef GPU
 #else
-void bilinear_resize_hwc(const unsigned char* const img,
-                         real* const input3d,
+void bilinear_resize_hwc(const unsigned char img[], real input3d[],
                          const int height, const int width,
                          const int resized_height, const int resized_width,
                          const real img_scale_y, const real img_scale_x)
@@ -162,10 +159,10 @@ void bilinear_resize_hwc(const unsigned char* const img,
 }
 #endif
 
-void img2input(const unsigned char* const img,
+void img2input(const unsigned char img[],
                Tensor* const input3d,
                Tensor* const img_info1d,
-               unsigned char* const temp_data,
+               unsigned char temp_data[],
                const int height, const int width)
 {
   static const real gs_max_size = 1000.0f;
@@ -258,7 +255,7 @@ void input_init_shape(Net* const net,
     img_info1d->start[n] = n * 6;
   }
 
-  if (!input3d->has_own_memory) {
+  if (input3d->data_type == SHARED_DATA) {
     net->layer_size = MAX(net->layer_size,  flatten_size(input3d));
   }
 }

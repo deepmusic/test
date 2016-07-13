@@ -4,7 +4,7 @@
 //#define MSRPN
 #define FC_COMPRESS
 #define INCEPTION
-//#define INCEPTION64
+#define INCEPTION64
 
 #define DROPOUT_SCALE_TRAIN 1  // for new PVANET
 //#define DROPOUT_SCALE_TRAIN 0  // for old PVANET
@@ -21,16 +21,17 @@ void setup_data_layer(Net* const net,
 }
 
 void setup_conv_layer(Net* const net,
-                     const char* const layer_name,
-                     const char* const bottom_name,
-                     const char* const top_name,
-                     const char* const weight_name,
-                     const char* const bias_name,
-                     const int out_channels,
-                     const int kernel,
-                     const int stride,
-                     const int add_bias,
-                     const int do_relu)
+                      const char* const layer_name,
+                      const char* const bottom_name,
+                      const char* const top_name,
+                      const char* const weight_name,
+                      const char* const bias_name,
+                      const int num_group, const int num_output,
+                      const int kernel_h, const int kernel_w,
+                      const int stride_h, const int stride_w,
+                      const int pad_h, const int pad_w,
+                      const int bias_term,
+                      const int do_relu)
 {
   Layer* const layer = add_layer(net, layer_name);
 
@@ -46,7 +47,7 @@ void setup_conv_layer(Net* const net,
     add_param(layer, find_or_add_tensor(net, weight_name));
   }
 
-  if (add_bias) {
+  if (bias_term) {
     if (!bias_name) {
       char temp_name[64];
       sprintf(temp_name, "%s_param%d", layer_name, layer->num_params);
@@ -57,15 +58,15 @@ void setup_conv_layer(Net* const net,
     }
   }
 
-  layer->option.kernel_h = kernel;
-  layer->option.kernel_w = kernel;
-  layer->option.stride_h = stride;
-  layer->option.stride_w = stride;
-  layer->option.pad_h = (kernel - 1) / 2;
-  layer->option.pad_w = (kernel - 1) / 2;
-  layer->option.out_channels = out_channels;
-  layer->option.num_groups = 1;
-  layer->option.bias = add_bias;
+  layer->option.kernel_h = kernel_h;
+  layer->option.kernel_w = kernel_w;
+  layer->option.stride_h = stride_h;
+  layer->option.stride_w = stride_w;
+  layer->option.pad_h = pad_h;
+  layer->option.pad_w = pad_w;
+  layer->option.out_channels = num_output;
+  layer->option.num_groups = num_group;
+  layer->option.bias = bias_term;
   layer->option.handle = (void*)&net->blas_handle;
 
   layer->f_forward[0] = forward_conv_layer;
@@ -79,7 +80,7 @@ static
 void setup_inception_sub(Net* const net,
                          const char* const sub_name,
                          const char* const input_name,
-                         const int* const out_channels,
+                         const int out_channels[],
                          const int stride)
 {
   char bottom_name[64];
@@ -104,50 +105,43 @@ void setup_inception_sub(Net* const net,
     // conv1
     sprintf(bottom_name, "%s_pool1", sub_name);
     sprintf(top_name, "%s_conv1", sub_name);
-    setup_conv_layer(net, top_name,
-                     bottom_name, top_name, NULL, NULL,
-                     out_channels[0], 1, 1, 1, 1);
+    setup_conv_layer(net, top_name, bottom_name, top_name, NULL, NULL,
+                     1, out_channels[0], 1, 1, 1, 1, 0, 0, 1, 1);
   }
   else {
     // conv1
     sprintf(top_name, "%s_conv1", sub_name);
-    setup_conv_layer(net, top_name,
-                     input_name, top_name, NULL, NULL,
-                     out_channels[0], 1, 1, 1, 1);
+    setup_conv_layer(net, top_name, input_name, top_name, NULL, NULL,
+                     1, out_channels[0], 1, 1, 1, 1, 0, 0, 1, 1);
   }
 
   // conv3_1
   sprintf(top_name, "%s_conv3_1", sub_name);
-  setup_conv_layer(net, top_name,
-                   input_name, top_name, NULL, NULL,
-                   out_channels[1], 1, 1, 1, 1);
+  setup_conv_layer(net, top_name, input_name, top_name, NULL, NULL,
+                   1, out_channels[1], 1, 1, 1, 1, 0, 0, 1, 1);
 
   // conv3_2
   sprintf(bottom_name, "%s_conv3_1", sub_name);
   sprintf(top_name, "%s_conv3_2", sub_name);
-  setup_conv_layer(net, top_name,
-                   bottom_name, top_name, NULL, NULL,
-                   out_channels[2], 3, stride, 1, 1);
+  setup_conv_layer(net, top_name, bottom_name, top_name, NULL, NULL,
+                   1, out_channels[2], 3, 3, stride, stride, 1, 1, 1, 1);
 
   // conv5_1
   sprintf(top_name, "%s_conv5_1", sub_name);
-  setup_conv_layer(net, top_name,
-                   input_name, top_name, NULL, NULL,
-                   out_channels[3], 1, 1, 1, 1);
+  setup_conv_layer(net, top_name, input_name, top_name, NULL, NULL,
+                   1, out_channels[3], 1, 1, 1, 1, 0, 0, 1, 1);
 
   // conv5_2
   sprintf(bottom_name, "%s_conv5_1", sub_name);
   sprintf(top_name, "%s_conv5_2", sub_name);
-  setup_conv_layer(net, top_name,
-                   bottom_name, top_name, NULL, NULL,
-                   out_channels[4], 3, 1, 1, 1);
+  setup_conv_layer(net, top_name, bottom_name, top_name, NULL, NULL,
+                   1, out_channels[4], 3, 3, 1, 1, 1, 1, 1, 1);
 
   // conv5_2
   sprintf(bottom_name, "%s_conv5_2", sub_name);
   sprintf(top_name, "%s_conv5_3", sub_name);
-  setup_conv_layer(net, top_name,
-                   bottom_name, top_name, NULL, NULL,
-                   out_channels[5], 3, stride, 1, 1);
+  setup_conv_layer(net, top_name, bottom_name, top_name, NULL, NULL,
+                   1, out_channels[5], 3, 3, stride, stride, 1, 1, 1, 1);
 
   // concat
   {
@@ -172,7 +166,7 @@ void setup_hyper_sub(Net* const net,
                      const char* const downsample_name,
                      const char* const as_is_name,
                      const char* const upsample_name,
-                     const int* const out_channels)
+                     const int out_channels[])
 {
   // downsample
   {
@@ -239,9 +233,8 @@ void setup_hyper_sub(Net* const net,
   {
     const char* const bottom_name = "concat";
     const char* const top_name = "convf";
-    setup_conv_layer(net, top_name,
-                     bottom_name, top_name, NULL, NULL,
-                     out_channels[1], 1, 1, 1, 1);
+    setup_conv_layer(net, top_name, bottom_name, top_name, NULL, NULL,
+                     1, out_channels[1], 1, 1, 1, 1, 0, 0, 1, 1);
   }
 }
 
@@ -271,11 +264,14 @@ void setup_inception(Net* const net)
       const char* const top_name = conv_names[i];
       setup_conv_layer(net, conv_names[i],
                        bottom_name, top_name, NULL, NULL,
-                       out_channels[i], kernels[i], strides[i], 1, 1);
+                       1, out_channels[i], kernels[i], kernels[i],
+                       strides[i], strides[i],
+                       (kernels[i] - 1) / 2, (kernels[i] - 1) / 2,
+                       1, 1);
     }
 
-    get_tensor_by_name(net, "conv1")->has_own_memory = 1;
-    get_tensor_by_name(net, "conv3")->has_own_memory = 1;
+    get_tensor_by_name(net, "conv1")->data_type = PRIVATE_DATA;
+    get_tensor_by_name(net, "conv3")->data_type = PRIVATE_DATA;
   }
 
   // inc3
@@ -317,7 +313,7 @@ void setup_inception(Net* const net)
 
 static
 void setup_frcnn(Net* const net,
-                 Layer* const layers,
+                 Layer layers[],
                  const int rpn_channels,
                  Layer* const convnet_out_layer)
 {
@@ -474,6 +470,8 @@ void setup_frcnn(Net* const net,
     layers[11].option.pre_nms_topn = 6000;
     layers[11].option.post_nms_topn = 300;
     layers[11].option.nms_thresh = 0.7f;
+    layers[11].option.bbox_vote = 0;
+    layers[11].option.vote_thresh = 0.7f;
     layers[11].option.scales = &net->anchor_scales[0];
     layers[11].option.ratios = &net->anchor_ratios[0];
     layers[11].num_bottoms = 3;
@@ -486,7 +484,7 @@ void setup_frcnn(Net* const net,
     layers[12].option.flatten = 1;
     layers[12].num_bottoms = 2;
     add_top(&layers[12], add_tensor(net, names[12]));
-    layers[12].p_tops[0]->has_own_memory = 1;
+    layers[12].p_tops[0]->data_type = PRIVATE_DATA;
   }
 
   // fc6, fc7, RCNN score, RCNN bbox
@@ -552,7 +550,9 @@ void setup_frcnn(Net* const net,
   // output
   layers[20].option.min_size = 16;
   layers[20].option.score_thresh = 0.7f;
-  layers[20].option.nms_thresh = 0.3f;
+  layers[20].option.nms_thresh = 0.4f;
+  layers[20].option.bbox_vote = 1;
+  layers[20].option.vote_thresh = 0.5f;
   layers[20].num_bottoms = 4;
   add_top(&layers[20], add_tensor(net, names[20]));
 
@@ -741,9 +741,9 @@ void construct_pvanet(Net* const pvanet,
 }
 
 void set_input_pvanet(Net* const net,
-                      const unsigned char* const * const images_data,
-                      const int* const heights,
-                      const int* const widths,
+                      const unsigned char* const images_data[],
+                      const int heights[],
+                      const int widths[],
                       const int num_images)
 {
 
@@ -852,8 +852,9 @@ void get_output_pvanet(Net* const net,
 }
 
 void process_pvanet(Net* const net,
-                    const unsigned char* const image_data,
-                    const int height, const int width,
+                    const unsigned char image_data[],
+                    const int height,
+                    const int width,
                     FILE* fp)
 {
   set_input_pvanet(net, &image_data, &height, &width, 1);
@@ -864,9 +865,9 @@ void process_pvanet(Net* const net,
 }
 
 void process_batch_pvanet(Net* const net,
-                          const unsigned char* const * const images_data,
-                          const int* const heights,
-                          const int* const widths,
+                          const unsigned char* const images_data[],
+                          const int heights[],
+                          const int widths[],
                           const int num_images,
                           FILE* fp)
 {

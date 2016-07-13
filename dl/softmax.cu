@@ -28,7 +28,7 @@
 // compute max2d[n][d] = max_c(data3d[n][c][d])
 #ifdef GPU
 __global__
-void channel_max_gpu(const real* const data3d, real* const max2d,
+void channel_max_gpu(const real data3d[], real max2d[],
                      const int N, const int C, const int D)
 {
   const long int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -46,7 +46,7 @@ void channel_max_gpu(const real* const data3d, real* const max2d,
   }
 }
 #else
-void channel_max_cpu(const real* const data3d, real* const max2d,
+void channel_max_cpu(const real data3d[], real max2d[],
                      const int N, const int C, const int D)
 {
   for (int n = 0; n < N; ++n) {
@@ -66,7 +66,7 @@ void channel_max_cpu(const real* const data3d, real* const max2d,
 // in-place subtraction: data3d[n][c][d] = data3d[n][c][d] - max2d[n][d]
 #ifdef GPU
 __global__
-void subtract_max_gpu(real* const data3d, const real* const max2d,
+void subtract_max_gpu(real data3d[], const real max2d[],
                       const int N, const int C, const int D)
 {
   const long int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -79,7 +79,7 @@ void subtract_max_gpu(real* const data3d, const real* const max2d,
   }
 }
 #else
-void subtract_max_cpu(real* const data3d, const real* const max2d,
+void subtract_max_cpu(real data3d[], const real max2d[],
                       const int N, const int C, const int D)
 {
   for (int n = 0; n < N; ++n) {
@@ -97,7 +97,7 @@ void subtract_max_cpu(real* const data3d, const real* const max2d,
 // in-place element-wise exp: data3d[n][c][d] = exp(data[n][c][d])
 #ifdef GPU
 __global__
-void exp_gpu(real* const data, const long int data_size)
+void exp_gpu(real data[], const long int data_size)
 {
   const long int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < data_size) {
@@ -105,7 +105,7 @@ void exp_gpu(real* const data, const long int data_size)
   }
 }
 #else
-void exp_cpu(real* const data, const long int data_size)
+void exp_cpu(real data[], const long int data_size)
 {
   for (long int index = 0; index < data_size; ++index) {
     data[index] = exp(data[index]);
@@ -116,7 +116,7 @@ void exp_cpu(real* const data, const long int data_size)
 // compute sum2d[n][d] = sum_c(data3d[n][c][d])
 #ifdef GPU
 __global__
-void channel_sum_gpu(const real* const data3d, real* const sum2d,
+void channel_sum_gpu(const real data3d[], real sum2d[],
                      const int N, const int C, const int D)
 {
   const long int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -134,7 +134,7 @@ void channel_sum_gpu(const real* const data3d, real* const sum2d,
   }
 }
 #else
-void channel_sum_cpu(const real* const data3d, real* const sum2d,
+void channel_sum_cpu(const real data3d[], real sum2d[],
                      const int N, const int C, const int D)
 {
   for (int n = 0; n < N; ++n) {
@@ -154,7 +154,7 @@ void channel_sum_cpu(const real* const data3d, real* const sum2d,
 // in-place division: data3d[n][c][d] = data3d[n][c][d] / sum2d[n][d]
 #ifdef GPU
 __global__
-void div_sum_gpu(real* const data3d, const real* const sum2d,
+void div_sum_gpu(real data3d[], const real sum2d[],
                  const int N, const int C, const int D)
 {
   const long int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -166,7 +166,7 @@ void div_sum_gpu(real* const data3d, const real* const sum2d,
   }
 }
 #else
-void div_sum_cpu(real* const data3d, const real* const sum2d,
+void div_sum_cpu(real data3d[], const real sum2d[],
                  const int N, const int C, const int D)
 {
   for (int n = 0; n < N; ++n) {
@@ -186,8 +186,7 @@ void div_sum_cpu(real* const data3d, const real* const sum2d,
 //   bottom3d: N x C x D array
 //   temp_data: N * D array,  temporary space for channel-wise sum or max
 //     e.g., temp_data[n][d] = sum_c(exp(bottom3d[n][c][d]))
-void softmax_inplace(real* const bottom3d,
-                     real* const temp_data,
+void softmax_inplace(real bottom3d[], real temp_data[],
                      const int N, const int C, const int D)
 {
   // 1. max[n][d] = max_c(bottom[n][c][d])
@@ -271,7 +270,7 @@ void softmax_inplace(real* const bottom3d,
 //     e.g., temp_data[n][d] = sum_c(exp(bottom[n][c][d]))
 void softmax_forward(const Tensor* const bottom3d,
                      Tensor* const top3d,
-                     real* const temp_data)
+                     real temp_data[])
 {
   // copy bottom -> top, and then perform inplace operation
   const long int data_size = flatten_size(bottom3d);
@@ -306,8 +305,7 @@ void softmax_forward(const Tensor* const bottom3d,
 
 // channel-wise in-place softmax transform:
 //   bottom[n][c][d] = exp(bottom[n][c][d]) / sum_c(exp(bottom[n][c][d]))
-void softmax_inplace_forward(Tensor* const bottom3d,
-                             real* const temp_data)
+void softmax_inplace_forward(Tensor* const bottom3d, real temp_data[])
 {
   // do forward-pass for each item in the batch
   if (bottom3d->ndim == 4) {

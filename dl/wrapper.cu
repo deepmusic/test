@@ -54,10 +54,43 @@ void _init_net(void)
   }
 }
 
-void _set_net_name(const char* const param_path)
+void _set_net_param_path(const char* const param_path)
 {
   if (!initialized) {
     strcpy(pvanet.param_path, param_path);
+  }
+  else {
+    printf("[ERROR] Release the current network first\n");
+  }
+}
+
+void _add_data_layer(const char* const layer_name,
+                     const char* const top_name)
+{
+  if (!initialized) {
+    setup_data_layer(&pvanet, layer_name, top_name);
+  }
+  else {
+    printf("[ERROR] Release the current network first\n");
+  }
+}
+
+void _add_conv_layer(const char* const layer_name,
+                     const char* const bottom_name,
+                     const char* const top_name,
+                     const char* const weight_name,
+                     const char* const bias_name,
+                     const int num_group, const int num_output,
+                     const int kernel_h, const int kernel_w,
+                     const int stride_h, const int stride_w,
+                     const int pad_h, const int pad_w,
+                     const int bias_term)
+{
+  if (!initialized) {
+    setup_conv_layer(&pvanet, layer_name, bottom_name, top_name,
+                     weight_name, bias_name, num_group, num_output,
+                     kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w,
+                     bias_term, 0);
   }
   else {
     printf("[ERROR] Release the current network first\n");
@@ -101,7 +134,7 @@ void _release_net(void)
   }
 }
 
-void _detect_net(const unsigned char* const image_data,
+void _detect_net(const unsigned char image_data[],
                  const int width, const int height)
 {
   if (initialized) {

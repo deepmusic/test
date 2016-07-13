@@ -15,7 +15,7 @@ static clock_t tick0, tick1;
 //   bottom[i] = -bottom[i]
 #ifdef GPU
 __global__
-void minus_inplace_gpu(real* const bottom, const int item_size)
+void minus_inplace_gpu(real bottom[], const int item_size)
 {
   const long int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < item_size) {
@@ -23,7 +23,7 @@ void minus_inplace_gpu(real* const bottom, const int item_size)
   }
 }
 #else
-void minus_inplace_cpu(real* const bottom, const int item_size)
+void minus_inplace_cpu(real bottom[], const int item_size)
 {
   for (int index = 0; index < item_size; ++index) {
     bottom[index] = -bottom[index];

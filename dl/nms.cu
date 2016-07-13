@@ -12,7 +12,7 @@
 __device__
 #endif
 static
-real iou(const real* const A, const real* const B)
+real iou(const real A[], const real B[])
 {
   #ifndef GPU
   if (A[0] > B[2] || A[1] > B[3] || A[2] < B[0] || A[3] < B[1]) {
@@ -66,8 +66,7 @@ typedef unsigned long long uint64;
 #define NMS_BLOCK_SIZE 64
 #ifdef GPU
 __global__
-void nms_mask_gpu(const real* const boxes,
-                  uint64* const mask,
+void nms_mask_gpu(const real boxes[], uint64 mask[],
                   const int num_boxes, const real nms_thresh)
 {
   // block region
@@ -133,8 +132,8 @@ void nms_mask_gpu(const real* const boxes,
 }
 
 __global__
-void nms_sub(const int num_boxes, const real* const boxes,
-             const real nms_thresh, unsigned char* const is_dead,
+void nms_sub(const int num_boxes, const real boxes[],
+             const real nms_thresh, unsigned char is_dead[],
              int i)
 {
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -146,9 +145,10 @@ void nms_sub(const int num_boxes, const real* const boxes,
   }
 }
 
-void nms_(const int num_boxes, const real* const boxes,
-         int* const num_out, int* const keep_out, const int base_index,
-         const real nms_thresh, const int max_num_out)
+void nms_(const int num_boxes, const real boxes[],
+         int* const num_out, int keep_out[], const int base_index,
+         const real nms_thresh, const int max_num_out,
+         const int bbox_vote)
 {
   unsigned char *is_dead_dev;
   unsigned char is_dead;
@@ -187,9 +187,10 @@ void nms_(const int num_boxes, const real* const boxes,
 }
 
 #else
-void nms(const int num_boxes, const real* const boxes,
-         int* const num_out, int* const keep_out, const int base_index,
-         const real nms_thresh, const int max_num_out)
+void nms(const int num_boxes, real boxes[],
+         int* const num_out, int keep_out[], const int base_index,
+         const real nms_thresh, const int max_num_out,
+         const int bbox_vote, const real vote_thresh)
 {
   unsigned char* const is_dead =
       (unsigned char*)calloc(num_boxes, sizeof(unsigned char));
@@ -200,14 +201,55 @@ void nms(const int num_boxes, const real* const boxes,
     }
 
     keep_out[num_to_keep++] = base_index + i;
-    if (num_to_keep == max_num_out) {
-      break;
+
+    if (bbox_vote) {
+      real sum_score = boxes[i * 5 + 4];
+      real sum_box[4] = {
+          sum_score * boxes[i * 5 + 0], sum_score * boxes[i * 5 + 1],
+          sum_score * boxes[i * 5 + 2], sum_score * boxes[i * 5 + 3]
+      };
+
+      for (int j = 0; j < i; ++j) {
+        if (is_dead[j] && iou(&boxes[i * 5], &boxes[j * 5]) > vote_thresh) {
+          real score = boxes[j * 5 + 4];
+          sum_box[0] += score * boxes[j * 5 + 0];
+          sum_box[1] += score * boxes[j * 5 + 1];
+          sum_box[2] += score * boxes[j * 5 + 2];
+          sum_box[3] += score * boxes[j * 5 + 3];
+          sum_score += score;
+        }
+      }
+      for (int j = i + 1; j < num_boxes; ++j) {
+        real iou_val = iou(&boxes[i * 5], &boxes[j * 5]);
+        if (!is_dead[j] && iou_val > nms_thresh) {
+          is_dead[j] = 1;
+        }
+        if (iou_val > vote_thresh) {
+          real score = boxes[j * 5 + 4];
+          sum_box[0] += score * boxes[j * 5 + 0];
+          sum_box[1] += score * boxes[j * 5 + 1];
+          sum_box[2] += score * boxes[j * 5 + 2];
+          sum_box[3] += score * boxes[j * 5 + 3];
+          sum_score += score;
+        }
+      }
+
+      boxes[i * 5 + 0] = sum_box[0] / sum_score;
+      boxes[i * 5 + 1] = sum_box[1] / sum_score;
+      boxes[i * 5 + 2] = sum_box[2] / sum_score;
+      boxes[i * 5 + 3] = sum_box[3] / sum_score;
     }
 
-    for (int j = i + 1; j < num_boxes; ++j) {
-      if (!is_dead[j] && iou(&boxes[i * 5], &boxes[j * 5]) > nms_thresh) {
-        is_dead[j] = 1;
+    else {
+      for (int j = i + 1; j < num_boxes; ++j) {
+        if (!is_dead[j] && iou(&boxes[i * 5], &boxes[j * 5]) > nms_thresh) {
+          is_dead[j] = 1;
+        }
       }
+    }
+
+    if (num_to_keep == max_num_out) {
+      break;
     }
   }
 
@@ -216,8 +258,7 @@ void nms(const int num_boxes, const real* const boxes,
   free(is_dead);
 }
 
-void nms_mask_cpu(const real* const boxes,
-                  uint64* const mask,
+void nms_mask_cpu(const real boxes[], uint64 mask[],
                   const int num_boxes, const real nms_thresh)
 {
   // number of blocks along each dimension
@@ -291,9 +332,13 @@ void nms_mask_cpu(const real* const boxes,
 //   nms_thresh: threshold for determining "significant overlap"
 //               if "intersection area / union area > nms_thresh",
 //               two boxes are thought of as significantly overlapped
-void nms(const int num_boxes, const real* const boxes,
-         int* const num_out, int* const keep_out, const int base_index,
-         const real nms_thresh, const int max_num_out)
+//   bbox_vote: whether bounding-box voting is used (= 1) or not (= 0)
+//   vote_thresh: threshold for selecting overlapped boxes
+//                which are participated in bounding-box voting
+void nms(const int num_boxes, real boxes[],
+         int* const num_out, int keep_out[], const int base_index,
+         const real nms_thresh, const int max_num_out,
+         const int bbox_vote, const real vote_thresh)
 {
   const int num_blocks = DIV_THEN_CEIL(num_boxes,  NMS_BLOCK_SIZE);
   uint64* const mask

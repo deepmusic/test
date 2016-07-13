@@ -13,7 +13,7 @@
 __device__
 #endif
 static
-void transform_box(real* const box,
+void transform_box(real box[],
                    const real dx, const real dy,
                    const real d_log_w, const real d_log_h,
                    const real img_W, const real img_H)
@@ -51,13 +51,13 @@ void transform_box(real* const box,
 #ifdef GPU
 __global__
 static
-void enumerate_output_gpu(const real* const bottom2d,
-                          const real* const d_anchor3d,
-                          const real* const roi2d,
+void enumerate_output_gpu(const real bottom2d[],
+                          const real d_anchor3d[],
+                          const real roi2d[],
                           const int num_rois, const int num_classes,
                           const real img_H, const real img_W,
                           const real scale_H, const real scale_W,
-                          real* const top2d)
+                          real top2d[])
 {
   // index = c * num_rois + r
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -91,13 +91,13 @@ void enumerate_output_gpu(const real* const bottom2d,
 }
 #else
 static
-void enumerate_output_cpu(const real* const bottom2d,
-                          const real* const d_anchor3d,
-                          const real* const roi2d,
+void enumerate_output_cpu(const real bottom2d[],
+                          const real d_anchor3d[],
+                          const real roi2d[],
                           const int num_rois, const int num_classes,
                           const real img_H, const real img_W,
                           const real scale_H, const real scale_W,
-                          real* const top2d)
+                          real top2d[])
 {
   for (int r = 0; r < num_rois; ++r) {
     for (int c = 0; c < num_classes; ++c) {

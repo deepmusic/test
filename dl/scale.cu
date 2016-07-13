@@ -16,10 +16,8 @@ static clock_t tick0, tick1;
 //   top[i] = bottom[i] * weight + bias
 #ifdef GPU
 __global__
-void scale_const_gpu(const real* const bottom,
-                     real* const top,
-                     const real weight,
-                     const real bias,
+void scale_const_gpu(const real bottom[], real top[],
+                     const real weight, const real bias,
                      const long int data_size)
 {
   const long int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -28,10 +26,8 @@ void scale_const_gpu(const real* const bottom,
   }
 }
 #else
-void scale_const_cpu(const real* const bottom,
-                     real* const top,
-                     const real weight,
-                     const real bias,
+void scale_const_cpu(const real bottom[], real top[],
+                     const real weight, const real bias,
                      const long int data_size)
 {
   for (long int index = 0; index < data_size; ++index) {
@@ -44,10 +40,8 @@ void scale_const_cpu(const real* const bottom,
 //   top[c][i] = bottom[c][i] * weight[c] + bias[c]
 #ifdef GPU
 __global__
-void scale_channel_gpu(const real* const bottom,
-                       real* const top,
-                       const real* const weight,
-                       const real* const bias,
+void scale_channel_gpu(const real bottom[], real top[],
+                       const real weight[], const real bias[],
                        const int C, const int D)
 {
   // thread index (c, d) = c * D + d
@@ -58,10 +52,8 @@ void scale_channel_gpu(const real* const bottom,
   }
 }
 #else
-void scale_channel_cpu(const real* const bottom,
-                       real* const top,
-                       const real* const weight,
-                       const real* const bias,
+void scale_channel_cpu(const real bottom[], real top[],
+                       const real weight[], const real bias[],
                        const int C, const int D)
 {
   for (int c = 0; c < C; ++c) {
@@ -76,9 +68,8 @@ void scale_channel_cpu(const real* const bottom,
 //   top[c][i] = bottom[c][i] * weight[c]
 #ifdef GPU
 __global__
-void scale_channel_nobias_gpu(const real* const bottom,
-                              real* const top,
-                              const real* const weight,
+void scale_channel_nobias_gpu(const real bottom[], real top[],
+                              const real weight[],
                               const int C, const int D)
 {
   // thread index (c, d) = c * D + d
@@ -89,9 +80,8 @@ void scale_channel_nobias_gpu(const real* const bottom,
   }
 }
 #else
-void scale_channel_nobias_cpu(const real* const bottom,
-                              real* const top,
-                              const real* const weight,
+void scale_channel_nobias_cpu(const real bottom[], real top[],
+                              const real weight[],
                               const int C, const int D)
 {
   for (int c = 0; c < C; ++c) {

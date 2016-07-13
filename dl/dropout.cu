@@ -16,9 +16,9 @@
 //   top[i] = bottom[i] if mask[i] > uint_thresh, otherwise 0
 #ifdef GPU
 __global__
-void dropout_gpu(const real* const bottom,
-                 const unsigned int* const mask,
-                 real* const top,
+void dropout_gpu(const real bottom[],
+                 const unsigned int mask[],
+                 real top[],
                  const long int data_size,
                  const unsigned int uint_thresh)
 {
@@ -28,9 +28,9 @@ void dropout_gpu(const real* const bottom,
   }
 }
 #else
-void dropout_cpu(const real* const bottom,
-                 const unsigned int* const mask,
-                 real* const top,
+void dropout_cpu(const real bottom[],
+                 const unsigned int mask[],
+                 real top[],
                  const long int data_size,
                  const unsigned int uint_thresh)
 {
@@ -46,9 +46,9 @@ void dropout_cpu(const real* const bottom,
 //   top[i] = inv_scale * bottom[i] if mask[i] > uint_thresh
 #ifdef GPU
 __global__
-void dropout_scaled_gpu(const real* const bottom,
-                        const unsigned int* const mask,
-                        real* const top,
+void dropout_scaled_gpu(const real bottom[],
+                        const unsigned int mask[],
+                        real top[],
                         const long int data_size,
                         const unsigned int uint_thresh,
                         const real inv_scale)
@@ -60,9 +60,9 @@ void dropout_scaled_gpu(const real* const bottom,
   }
 }
 #else
-void dropout_scaled_cpu(const real* const bottom,
-                        const unsigned int* const mask,
-                        real* const top,
+void dropout_scaled_cpu(const real bottom[],
+                        const unsigned int mask[],
+                        real top[],
                         const long int data_size,
                         const unsigned int uint_thresh,
                         const real inv_scale)
@@ -79,8 +79,7 @@ void dropout_scaled_cpu(const real* const bottom,
 //   top[i] = scale * bottom[i]
 #ifdef GPU
 __global__
-void dropout_test_gpu(const real* const bottom,
-                      real* const top,
+void dropout_test_gpu(const real bottom[], real top[],
                       const long int data_size,
                       const real scale)
 {
@@ -90,8 +89,7 @@ void dropout_test_gpu(const real* const bottom,
   }
 }
 #else
-void dropout_test_cpu(const real* const bottom,
-                      real* const top,
+void dropout_test_cpu(const real bottom[], real top[],
                       const long int data_size,
                       const real scale)
 {
@@ -104,8 +102,8 @@ void dropout_test_cpu(const real* const bottom,
 // in-place dropout transform
 #ifdef GPU
 __global__
-void dropout_inplace_gpu(real* const bottom,
-                         const unsigned int* const mask,
+void dropout_inplace_gpu(real bottom[],
+                         const unsigned int mask[],
                          const long int data_size,
                          const unsigned int uint_thresh)
 {
@@ -115,8 +113,8 @@ void dropout_inplace_gpu(real* const bottom,
   }
 }
 #else
-void dropout_inplace_cpu(real* const bottom,
-                         const unsigned int* const mask,
+void dropout_inplace_cpu(real bottom[],
+                         const unsigned int mask[],
                          const long int data_size,
                          const unsigned int uint_thresh)
 {
@@ -129,8 +127,8 @@ void dropout_inplace_cpu(real* const bottom,
 // in-place scaled dropout transform
 #ifdef GPU
 __global__
-void dropout_scaled_inplace_gpu(real* const bottom,
-                                const unsigned int* const mask,
+void dropout_scaled_inplace_gpu(real bottom[],
+                                const unsigned int mask[],
                                 const long int data_size,
                                 const unsigned int uint_thresh,
                                 const real inv_scale)
@@ -141,8 +139,8 @@ void dropout_scaled_inplace_gpu(real* const bottom,
   }
 }
 #else
-void dropout_scaled_inplace_cpu(real* const bottom,
-                                const unsigned int* const mask,
+void dropout_scaled_inplace_cpu(real bottom[],
+                                const unsigned int mask[],
                                 const long int data_size,
                                 const unsigned int uint_thresh,
                                 const real inv_scale)
@@ -156,7 +154,7 @@ void dropout_scaled_inplace_cpu(real* const bottom,
 // testing-time in-place dropout transform
 #ifdef GPU
 __global__
-void dropout_test_inplace_gpu(real* const bottom,
+void dropout_test_inplace_gpu(real bottom[],
                               const long int data_size,
                               const real scale)
 {
@@ -166,7 +164,7 @@ void dropout_test_inplace_gpu(real* const bottom,
   }
 }
 #else
-void dropout_test_inplace_cpu(real* const bottom,
+void dropout_test_inplace_cpu(real bottom[],
                               const long int data_size,
                               const real scale)
 {
@@ -193,7 +191,7 @@ void dropout_test_inplace_cpu(real* const bottom,
 //   data size: total number of nodes (N * C * H * W or something)
 //   mask: data_size x 1 temporary array
 void dropout_forward(const Tensor* const bottom,
-                     unsigned int* const mask,
+                     unsigned int mask[],
                      Tensor* const top,
                      const LayerOption* const option)
 {
@@ -284,7 +282,7 @@ void dropout_forward(const Tensor* const bottom,
 
 // in-place dropout transform: bottom -> bottom
 void dropout_forward_inplace(Tensor* const bottom,
-                             unsigned int* const mask,
+                             unsigned int mask[],
                              const LayerOption* const option)
 {
   const long int data_size = flatten_size(bottom);

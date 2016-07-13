@@ -15,8 +15,7 @@ static clock_t tick0, tick1;
 //   top[i] = top[i] + bottom[i]
 #ifdef GPU
 __global__
-void eltwise_add_gpu(const real* const bottom,
-                     real* const top,
+void eltwise_add_gpu(const real bottom[], real top[],
                      const long int data_size)
 {
   const long int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -25,8 +24,7 @@ void eltwise_add_gpu(const real* const bottom,
   }
 }
 #else
-void eltwise_add_cpu(const real* const bottom,
-                     real* const top,
+void eltwise_add_cpu(const real bottom[], real top[],
                      const long int data_size)
 {
   for (long int index = 0; index < data_size; ++index) {

@@ -67,18 +67,18 @@ class LayerOption(ctypes.Structure):
 
 class Layer(ctypes.Structure):
   _fields_ = [('name', ctypes.c_char * 32),
-              ('p_bottoms', ctypes.POINTER(ctypes.Tensor) * max_num_bottoms),
+              ('p_bottoms', ctypes.POINTER(Tensor) * max_num_bottoms),
               ('num_bottoms', ctypes.c_int),
-              ('tops', ctypes.Tensor * max_num_tops),
+              ('tops', ctypes.POINTER(Tensor) * max_num_tops),
               ('num_tops', ctypes.c_int),
-              ('params', ctypes.Tensor * max_num_params),
+              ('params', ctypes.POINTER(Tensor) * max_num_params),
               ('num_params', ctypes.c_int),
               ('p_aux_data', ctypes.POINTER(ctypes.c_float) * max_num_auxs),
               ('num_aux_data', ctypes.c_int),
               ('f_forward', ctypes.c_void_p * max_num_ops_per_layer),
               ('f_shape', ctypes.c_void_p * max_num_ops_per_layer),
               ('f_init', ctypes.c_void_p * max_num_ops_per_layer),
-              ('option', ctypes.LayerOption)]
+              ('option', LayerOption)]
 
 lib._detect_net.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]
 lib._layer_net.argtypes = [ctypes.c_int, ctypes.c_int]

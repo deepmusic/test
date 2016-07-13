@@ -37,7 +37,7 @@ const char* gs_class_names[] = {
 
 static
 void draw_boxes(cv::Mat* const image,
-                const real* const out_data,
+                const real out_data[],
                 const int num_boxes,
                 const float time)
 {

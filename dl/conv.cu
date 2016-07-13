@@ -8,10 +8,10 @@ static float a_time[8] = { 0, };
 static clock_t tick0, tick1, tick00, tick01;
 
 #ifndef GPU
-void conv_k3s1p1(const real* const bottom3d,
-                 const real* const weight4d,
-                 real* const temp_data,
-                 real* const top3d,
+void conv_k3s1p1(const real bottom3d[],
+                 const real weight4d[],
+                 real temp_data[],
+                 real top3d[],
                  const int top_C, const int bottom_C,
                  const int H, const int W)
 {
@@ -158,9 +158,9 @@ void conv_k3s1p1(const real* const bottom3d,
   a_time[4] = (float)(tick1 - tick01) / CLOCKS_PER_SEC;
 }
 
-void conv_str1(const real* const bottom3d,
-               const real* const weight4d,
-               real* const top3d,
+void conv_str1(const real bottom3d[],
+               const real weight4d[],
+               real top3d[],
                const int C, const int H, const int W,
                const int C5, const int H5, const int W5,
                const int pad_h, const int pad_w)
@@ -284,8 +284,8 @@ void conv_str1(const real* const bottom3d,
   a_time[4] += (float)(tick1 - tick00) / CLOCKS_PER_SEC;
 }
 
-void convert_bottom_hwc(const real* const bottom3d,
-                        real* const bottom5d,
+void convert_bottom_hwc(const real bottom3d[],
+                        real bottom5d[],
                         const int C, const int H, const int W,
                         const int H5, const int W5,
                         const int kernel_h, const int kernel_w,
@@ -382,8 +382,8 @@ void convert_bottom_hwc(const real* const bottom3d,
 //       if !(0 <= h < H) or !(0 <= w < W), assign 0
 #ifdef GPU
 __global__
-void convert_bottom_gpu(const real* const bottom3d,
-                        real* const bottom5d,
+void convert_bottom_gpu(const real bottom3d[],
+                        real bottom5d[],
                         const int C, const int H, const int W,
                         const int H5, const int W5,
                         const int kernel_h, const int kernel_w,
@@ -422,8 +422,8 @@ void convert_bottom_gpu(const real* const bottom3d,
   }
 }
 #else
-void convert_bottom_cpu(const real* const bottom3d,
-                        real* const bottom5d,
+void convert_bottom_cpu(const real bottom3d[],
+                        real bottom5d[],
                         const int C, const int H, const int W,
                         const int H5, const int W5,
                         const int kernel_h, const int kernel_w,
@@ -500,8 +500,8 @@ void conv_forward(const Tensor* const bottom3d,
                   Tensor* const top3d,
                   const Tensor* const weight5d,
                   const Tensor* const bias1d,
-                  real* const temp_data,
-                  const real* const const_data,
+                  real temp_data[],
+                  const real const_data[],
                   const LayerOption* const option)
 {
   tick00 = clock();

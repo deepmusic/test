@@ -15,7 +15,7 @@
 __device__
 #endif
 static
-int transform_box(real* const box,
+int transform_box(real box[],
                   const real dx, const real dy,
                   const real d_log_w, const real d_log_h,
                   const real img_W, const real img_H,
@@ -59,7 +59,7 @@ int transform_box(real* const box,
 // quick-sort a list of boxes in descending order of their scores,
 //   list: num_boxes x 5 array,  (x1, y1, x2, y2, score) for each box
 static
-void sort_box(real* const list, const int start, const int end)
+void sort_box(real list[], const int start, const int end)
 {
   const real pivot_score = list[start * 5 + 4];
   int left = start + 1, right = end;
@@ -105,7 +105,7 @@ void sort_box(real* const list, const int start, const int end)
 // discard boxes whose scores < threshold
 //   list: num_boxes x 5 array,  (x1, y1, x2, y2, score) for each box
 static
-int filter_box(real* const list, const int num_boxes, const real threshold)
+int filter_box(real list[], const int num_boxes, const real threshold)
 {
   int left = 0, right = num_boxes - 1;
   while (left <= right) {
@@ -127,14 +127,14 @@ int filter_box(real* const list, const int num_boxes, const real threshold)
 #ifdef GPU
 __global__
 static
-void enumerate_output_gpu(const real* const bottom2d,
-                          const real* const d_anchor3d,
-                          const real* const roi2d,
+void enumerate_output_gpu(const real bottom2d[],
+                          const real d_anchor3d[],
+                          const real roi2d[],
                           const int num_rois, const int num_classes,
                           const real img_H, const real img_W,
                           const real min_box_H, const real min_box_W,
                           const real scale_H, const real scale_W,
-                          real* const proposals)
+                          real proposals[])
 {
   // index = c * num_rois + r
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -164,14 +164,14 @@ void enumerate_output_gpu(const real* const bottom2d,
 }
 #else
 static
-void enumerate_output_cpu(const real* const bottom2d,
-                          const real* const d_anchor3d,
-                          const real* const roi2d,
+void enumerate_output_cpu(const real bottom2d[],
+                          const real d_anchor3d[],
+                          const real roi2d[],
                           const int num_rois, const int num_classes,
                           const real img_H, const real img_W,
                           const real min_box_H, const real min_box_W,
                           const real scale_H, const real scale_W,
-                          real* const proposals)
+                          real proposals[])
 {
   // skip background class (c = 0)
   for (int c = 1; c < num_classes; ++c) {
@@ -206,7 +206,7 @@ void enumerate_output_cpu(const real* const bottom2d,
 __device__
 #endif
 static
-real iou(const real* const A, const real* const B)
+real iou(const real A[], const real B[])
 {
   #ifndef GPU
   if (A[0] > B[2] || A[1] > B[3] || A[2] < B[0] || A[3] < B[1]) {
@@ -242,9 +242,9 @@ real iou(const real* const A, const real* const B)
 #ifdef GPU
 __global__
 static
-void retrieve_output_gpu(const real* const proposals,
-                         const int* const keep,
-                         real* const top2d,
+void retrieve_output_gpu(const real proposals[],
+                         const int keep[],
+                         real top2d[],
                          const int num_output, const int num_rois,
                          const real scale_H, const real scale_W)
 {
@@ -264,9 +264,9 @@ void retrieve_output_gpu(const real* const proposals,
 }
 #else
 static
-void retrieve_output_cpu(const real* const proposals,
-                         const int* const keep,
-                         real* const top2d,
+void retrieve_output_cpu(const real proposals[],
+                         const int keep[],
+                         real top2d[],
                          const int num_output, const int num_rois,
                          const real scale_H, const real scale_W)
 {
@@ -288,12 +288,12 @@ void retrieve_output_cpu(const real* const proposals,
 #ifdef GPU
 #else
 static
-void retrieve_unknown_cpu(const real* const proposals,
-                          int* const keep,
-                          const real* const roi2d,
-                          real* const top2d,
+void retrieve_unknown_cpu(const real proposals[],
+                          int keep[],
+                          const real roi2d[],
+                          real top2d[],
                           const int num_output, const int num_rois,
-                          int* num_output_with_unknown,
+                          int* const num_output_with_unknown,
                           const real scale_H, const real scale_W,
                           const real score_thresh, const real nms_thresh)
 {
@@ -340,19 +340,20 @@ void retrieve_unknown_cpu(const real* const proposals,
 #endif
 // remove duplicated boxes, and select final output boxes
 static
-void filter_output(const real* const bottom2d,
-                   const real* const d_anchor3d,
-                   const real* const roi2d,
-                   const real* const img_info1d,
-                   real* const top2d,
-                   int* num_output,
-                   real* const proposals,
-                   int* const keep,
-                   real* const proposals_dev,
-                   int* const keep_dev,
+void filter_output(const real bottom2d[],
+                   const real d_anchor3d[],
+                   const real roi2d[],
+                   const real img_info1d[],
+                   real top2d[],
+                   int* const num_output,
+                   real proposals[],
+                   int keep[],
+                   real proposals_dev[],
+                   int keep_dev[],
                    const int num_rois, const int num_classes,
                    const int min_size,
-                   const real score_thresh, const real nms_thresh)
+                   const real score_thresh, const real nms_thresh,
+                   const int bbox_vote, const real vote_thresh)
 {
   // input image height & width
   const real img_H = img_info1d[0];
@@ -408,7 +409,7 @@ void filter_output(const real* const bottom2d,
         int num_post_nms = 0;
         sort_box(p_proposals, 0, num_pre_nms - 1);
         nms(num_pre_nms,  p_proposals,  &num_post_nms,  p_keep,  base,
-            nms_thresh,  num_pre_nms);
+            nms_thresh,  num_pre_nms,  bbox_vote,  vote_thresh);
         num_out += num_post_nms;
       }
       else {
@@ -461,10 +462,10 @@ void odout_forward(const Tensor* const bottom2d,
                    const Tensor* const roi2d,
                    const Tensor* const img_info1d,
                    Tensor* const top2d,
-                   real* const proposals,
-                   int* const keep,
-                   real* const proposals_dev,
-                   int* const keep_dev,
+                   real proposals[],
+                   int keep[],
+                   real proposals_dev[],
+                   int keep_dev[],
                    const LayerOption* const option)
 {
   // do forward-pass for each item in the batch
@@ -485,7 +486,8 @@ void odout_forward(const Tensor* const bottom2d,
           p_top_item,  &num_output,
           proposals,  keep,  proposals_dev,  keep_dev,
           num_rois,  num_classes,
-          option->min_size,  option->score_thresh,  option->nms_thresh);
+          option->min_size,  option->score_thresh,  option->nms_thresh,
+          option->bbox_vote,  option->vote_thresh);
 
       // set top shape: num_output x 6
       //   (class index, x1, y1, x2, y2, score) for each output

@@ -329,8 +329,8 @@ void free_hash_table(HashEntry* const entries)
   }
 }
 
-void generate_key(char (*p_block_names)[32],
-                  const int* const block_ids,
+void generate_key(char (*p_block_names)[64],
+                  const int block_ids[],
                   const int block_level,
                   char* const p_key)
 {
@@ -351,8 +351,8 @@ void parse_prototxt(const char* const filename)
 {
   FILE* fp = fopen(filename, "r");
 
-  char a_buf[32];
-  char a_block_names[10][32];
+  char a_buf[64];
+  char a_block_names[10][64];
   int block_ids[10] = { 0, };
   int block_level = 0;
   char a_key[4096];

@@ -10,8 +10,7 @@
 //   TODO: detailed description
 #ifdef GPU
 __global__
-void convert_top_gpu(const real* const top5d,
-                     real* const top3d,
+void convert_top_gpu(const real top5d[], real top3d[],
                      const int C, const int H, const int W,
                      const int H5, const int W5,
                      const int kernel_h, const int kernel_w,
@@ -35,7 +34,7 @@ void convert_top_gpu(const real* const top5d,
     const int h5_end = MIN(h / stride_h + 1,  H5);
     const int w5_start = (w >= kernel_w) * ((w - kernel_w) / stride_w + 1);
     const int w5_end = MIN(w / stride_w + 1,  W5);
-    const real* p_top5d = top5d +
+    const real* const p_top5d = top5d +
                   (c * kernel_h * kernel_w + h * kernel_w + w) * H5 * W5;
     const int h5_coef = (1 - stride_h * kernel_w * H5) * W5;
     const int w5_coef = 1 - stride_w * H5 * W5;
@@ -51,8 +50,7 @@ void convert_top_gpu(const real* const top5d,
   }
 }
 #else
-void convert_top_cpu(const real* const top5d,
-                     real* const top3d,
+void convert_top_cpu(const real top5d[], real top3d[],
                      const int C, const int H, const int W,
                      const int H5, const int W5,
                      const int kernel_h, const int kernel_w,
@@ -75,7 +73,7 @@ void convert_top_cpu(const real* const top5d,
     const int h5_end = MIN(h / stride_h + 1,  H5);
     const int w5_start = (w >= kernel_w) * ((w - kernel_w) / stride_w + 1);
     const int w5_end = MIN(w / stride_w + 1,  W5);
-    const real* p_top5d = top5d +
+    const real* const p_top5d = top5d +
                   (c * kernel_h * kernel_w + h * kernel_w + w) * H5 * W5;
     const int h5_coef = (1 - stride_h * kernel_w * H5) * W5;
     const int w5_coef = 1 - stride_w * H5 * W5;
@@ -111,8 +109,8 @@ void deconv_forward(const Tensor* const bottom3d,
                     Tensor* const top3d,
                     const Tensor* const weight5d,
                     const Tensor* const bias1d,
-                    real* const temp_data,
-                    const real* const const_data,
+                    real temp_data[],
+                    const real const_data[],
                     const LayerOption* const option)
 {
   // weight shape: G x C' x C x kernel_h x kernel_w

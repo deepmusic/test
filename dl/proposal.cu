@@ -55,7 +55,7 @@ static clock_t tick0, tick1, tick00;
 //     num_boxes = total number of transformations
 //         = option->num_scales * option->num_ratios * option->num_concats
 #define MAX_NUM_RATIO_SCALE 10
-void generate_anchors(real* const anchors,
+void generate_anchors(real anchors[],
                       const LayerOption* const option)
 {
   // base box's width & height & center location
@@ -100,7 +100,7 @@ void generate_anchors(real* const anchors,
 __device__
 #endif
 static
-int transform_box(real* const box,
+int transform_box(real box[],
                   const real dx, const real dy,
                   const real d_log_w, const real d_log_h,
                   const real img_W, const real img_H,
@@ -149,7 +149,7 @@ int transform_box(real* const box,
 //     should be set smaller than mininum score of actual boxes
 #ifdef GPU
 __global__
-void bitonic_sort_step(real* list, const int idx_major, const int idx_minor)
+void bitonic_sort_step(real list[], const int idx_major, const int idx_minor)
 {
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
   const int index_xor = index ^ idx_minor;
@@ -187,7 +187,7 @@ void bitonic_sort_step(real* list, const int idx_major, const int idx_minor)
     }
   }
 }
-void bitonic_sort_box(real* const list, const int num_boxes)
+void bitonic_sort_box(real list[], const int num_boxes)
 {
   int num_power_of_2 = 1;
   while (num_power_of_2 < num_boxes) num_power_of_2 *= 2;
@@ -211,7 +211,7 @@ void bitonic_sort_box(real* const list, const int num_boxes)
 //   if num_top <= end,  only top-k results are guaranteed to be sorted
 //   (for efficient computation)
 static
-void sort_box(real* const list, const int start, const int end,
+void sort_box(real list[], const int start, const int end,
               const int num_top)
 {
   const real pivot_score = list[start * 5 + 4];
@@ -271,15 +271,15 @@ void sort_box(real* const list, const int start, const int end,
 //     (x1, y1, x2, y2, score) for each proposal
 #ifdef GPU
 __global__
-void enumerate_proposals_gpu(const real* const bottom4d,
-                             const real* const d_anchor4d,
-                             const real* const anchors,
+void enumerate_proposals_gpu(const real bottom4d[],
+                             const real d_anchor4d[],
+                             const real anchors[],
                              const int num_anchors,
                              const int bottom_H, const int bottom_W,
                              const real img_H, const real img_W,
                              const real min_box_H, const real min_box_W,
                              const int feat_stride,
-                             real* const proposals)
+                             real proposals[])
 {
   const int bottom_area = bottom_H * bottom_W;
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -322,15 +322,15 @@ void enumerate_proposals_gpu(const real* const bottom4d,
   }
 }
 #else
-void enumerate_proposals_cpu(const real* const bottom4d,
-                             const real* const d_anchor4d,
-                             const real* const anchors,
+void enumerate_proposals_cpu(const real bottom4d[],
+                             const real d_anchor4d[],
+                             const real anchors[],
                              const int num_anchors,
                              const int bottom_H, const int bottom_W,
                              const real img_H, const real img_W,
                              const real min_box_H, const real min_box_W,
                              const int feat_stride,
-                             real* const proposals)
+                             real proposals[])
 {
   const int bottom_area = bottom_H * bottom_W;
   for (int h = 0; h < bottom_H; ++h) {
@@ -370,9 +370,9 @@ void enumerate_proposals_cpu(const real* const bottom4d,
 //   rois: "num_rois x 5" array,  (x1, y1, x2, y2, score) for each RoI
 #ifdef GPU
 __global__
-void retrieve_rois_gpu(const real* const proposals,
-                       const int* const keep,
-                       real* const rois,
+void retrieve_rois_gpu(const real proposals[],
+                       const int keep[],
+                       real rois[],
                        const int num_rois)
 {
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -386,9 +386,9 @@ void retrieve_rois_gpu(const real* const proposals,
   }
 }
 #else
-void retrieve_rois_cpu(const real* const proposals,
-                       const int* const keep,
-                       real* const rois,
+void retrieve_rois_cpu(const real proposals[],
+                       const int keep[],
+                       real rois[],
                        const int num_rois)
 {
   for (int i = 0; i < num_rois; ++i) {
@@ -441,11 +441,11 @@ void proposal_forward(const Tensor* const bottom4d,
                       const Tensor* const d_anchor4d,
                       const Tensor* const img_info1d,
                       Tensor* const top2d,
-                      const real* const anchors,
-                      real* const proposals,
-                      int* const keep,
-                      real* const proposals_dev,
-                      int* const keep_dev,
+                      const real anchors[],
+                      real proposals[],
+                      int keep[],
+                      real proposals_dev[],
+                      int keep_dev[],
                       const LayerOption* const option)
 {
   tick00 = clock();
@@ -549,7 +549,8 @@ void proposal_forward(const Tensor* const bottom4d,
           = MIN(num_anchors * bottom_area,  option->pre_nms_topn);
       int num_rois = 0;
       nms(num_proposals,  proposals,  &num_rois,  keep,  0,
-          option->nms_thresh,  option->post_nms_topn);
+          option->nms_thresh,  option->post_nms_topn,
+          option->bbox_vote,  option->vote_thresh);
 
       // RoI retrieval
       #ifdef GPU

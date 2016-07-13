@@ -20,7 +20,7 @@ void fc_forward(const Tensor* const bottom2d,
                 Tensor* const top2d,
                 const Tensor* const weight2d,
                 const Tensor* const bias1d,
-                const real* const const_data,
+                const real const_data[],
                 const LayerOption* const option)
 {
   tick00 = clock();
