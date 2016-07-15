@@ -245,29 +245,74 @@ void test_database(Net* const net,
 static
 void print_usage(void)
 {
-  printf("[Usage] ./demo_gpu.bin <command> <model path> <arg1> <arg2> ...\n");
-  printf("  1. [Live demo using WebCam] ./demo_gpu.bin live <model path> <camera id> <width> <height>\n");
-  printf("  2. [Image file] ./demo_gpu.bin snapshot <model path> <image filename>\n");
-  printf("  3. [Video file] ./demo_gpu.bin video <model path> <video filename>\n");
-  printf("  4. [List of images] ./demo_gpu.bin database <model path> <DB filename> <output filename>\n");
+  #ifdef GPU
+  const char* const postfix1 = "_gpu";
+  #else
+  const char* const postfix1 = "_cpu";
+  #endif
+
+  #ifdef LIGHT_MODEL
+  const char* const postfix2 = "_light";
+  #else
+  const char* const postfix2 = "";
+  #endif
+
+  #ifdef COMPRESS
+  const char* const postfix3 = "_compress";
+  #else
+  const char* const postfix3 = "";
+  #endif
+
+  printf("[Usage] ./demo%s%s%s.bin <pre_nms_topn> <post_nms_topn> <input_scale> <command> <arg1> <arg2> ...\n\n",
+         postfix1, postfix2, postfix3);
+  printf("  Common settings for <pre_nms_topn> <post_nms_topn> <input_scale>:\n");
+  printf("    pre_nms_topn = 6000 or 12000\n");
+  printf("    post_nms_topn = 100, 200, or 300\n");
+  printf("    input_scale = 480, 576, 720, or 960\n\n");
+  printf("  Settings for <command> <arg1> <arg2> ...:\n");
+  printf("  1. [Live demo using WebCam] live <camera id> <width> <height>\n");
+  printf("  2. [Image file] snapshot <image filename>\n");
+  printf("  3. [Video file] video <video filename>\n");
+
+  #ifdef DEMO
+  printf("  4. [List of images] database <DB filename> <output filename>\n");
+  #else
+  printf("  4. [List of images] database <DB filename> <output filename>\n");
+  #endif
 }
 
 static
 int test(const char* const args[], const int num_args)
 {
   Net pvanet;
-  const char* const command = args[0];
-  const char* const model_path = args[1];
+  const int pre_nms_topn = atoi(args[0]);
+  const int post_nms_topn = atoi(args[1]);
+  const int input_scale = atoi(args[2]);
+  const char* const command = args[3];
 
   #ifdef GPU
   cudaSetDevice(0);
   #endif
 
+  #ifdef LIGHT_MODEL
+  const int is_light_model = 1;
+  const char* const model_path = "data/pvanet_light";
+  #else
+  const int is_light_model = 0;
+  const char* const model_path = "data/pvanet";
+  #endif
+
+  #ifdef COMPRESS
+  const int fc_compress = 1;
+  #else
+  const int fc_compress = 0;
+  #endif
+
   if (strcmp(command, "live") == 0) {
-    if (num_args >= 5) {
-      const int camera_id = atoi(args[2]);
-      const int frame_width = atoi(args[3]);
-      const int frame_height = atoi(args[4]);
+    if (num_args >= 7) {
+      const int camera_id = atoi(args[4]);
+      const int frame_width = atoi(args[5]);
+      const int frame_height = atoi(args[6]);
 
       cv::imshow("faster-rcnn", 0);
       cv::VideoCapture vc(camera_id);
@@ -279,7 +324,10 @@ int test(const char* const args[], const int num_args)
       vc.set(CV_CAP_PROP_FRAME_WIDTH, frame_width);
       vc.set(CV_CAP_PROP_FRAME_HEIGHT, frame_height);
 
-      construct_pvanet(&pvanet, model_path);
+      construct_pvanet(&pvanet, model_path,
+                       is_light_model, fc_compress,
+                       pre_nms_topn, post_nms_topn,
+                       input_scale);
       test_stream(&pvanet, vc);
       free_net(&pvanet);
 
@@ -292,11 +340,14 @@ int test(const char* const args[], const int num_args)
   }
 
   else if (strcmp(command, "snapshot") == 0) {
-    if (num_args > 2) {
-      const char* const filename = args[2];
+    if (num_args >= 5) {
+      const char* const filename = args[4];
       cv::imshow("faster-rcnn", 0);
 
-      construct_pvanet(&pvanet, model_path);
+      construct_pvanet(&pvanet, model_path,
+                       is_light_model, fc_compress,
+                       pre_nms_topn, post_nms_topn,
+                       input_scale);
       test_image(&pvanet, filename);
       free_net(&pvanet);
 
@@ -309,8 +360,8 @@ int test(const char* const args[], const int num_args)
   }
 
   else if (strcmp(command, "video") == 0) {
-    if (num_args > 2) {
-      const char* const filename = args[2];
+    if (num_args >= 5) {
+      const char* const filename = args[4];
 
       cv::imshow("faster-rcnn", 0);
       cv::VideoCapture vc(filename);
@@ -320,7 +371,10 @@ int test(const char* const args[], const int num_args)
         return -1;
       }
 
-      construct_pvanet(&pvanet, model_path);
+      construct_pvanet(&pvanet, model_path,
+                       is_light_model, fc_compress,
+                       pre_nms_topn, post_nms_topn,
+                       input_scale);
       test_stream(&pvanet, vc);
       free_net(&pvanet);
 
@@ -333,11 +387,24 @@ int test(const char* const args[], const int num_args)
   }
 
   else if (strcmp(command, "database") == 0) {
-    if (num_args > 3) {
-      const char* const db_filename = args[2];
-      const char* const out_filename = args[3];
+    #ifdef DEMO
+    const int arg_thresh = 5;
+    #else
+    const int arg_thresh = 6;
+    #endif
+    if (num_args >= arg_thresh) {
+      const char* const db_filename = args[4];
 
-      construct_pvanet(&pvanet, model_path);
+      #ifdef DEMO
+      const char* const out_filename = NULL;
+      #else
+      const char* const out_filename = args[5];
+      #endif
+
+      construct_pvanet(&pvanet, model_path,
+                       is_light_model, fc_compress,
+                       pre_nms_topn, post_nms_topn,
+                       input_scale);
       test_database(&pvanet, db_filename, out_filename);
       free_net(&pvanet);
     }
@@ -358,7 +425,7 @@ int test(const char* const args[], const int num_args)
 #ifdef TEST
 int main(int argc, char* argv[])
 {
-  if (argc >= 3) {
+  if (argc >= 6) {
     test(argv + 1, argc - 1);
   }
   else {

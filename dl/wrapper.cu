@@ -63,20 +63,6 @@ Net* _net(void)
   return &pvanet;
 }
 
-void _generate_net(void)
-{
-  if (!pvanet.initialized) {
-    #ifdef GPU
-    cudaSetDevice(0);
-    #endif
-
-    construct_pvanet(&pvanet, "scripts/params3");
-  }
-  else {
-    printf("[ERROR] Release the current network first\n");
-  }
-}
-
 void _init_net(void)
 {
   if (!pvanet.initialized) {

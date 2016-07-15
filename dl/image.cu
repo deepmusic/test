@@ -163,10 +163,11 @@ void img2input(const unsigned char img[],
                Tensor* const input3d,
                Tensor* const img_info1d,
                unsigned char temp_data[],
-               const int height, const int width)
+               const int height, const int width,
+               const int input_scale)
 {
-  static const real gs_max_size = 1000.0f;
-  static const real gs_base_size = 600.0f;
+  static const real gs_max_size = (real)(input_scale * 10 / 6);
+  static const real gs_base_size = (real)input_scale;
 
   const int img_size_min = MIN(height,  width);
   const int img_size_max = MAX(height,  width);
@@ -243,9 +244,10 @@ void init_input_layer(Net* const net,
   input3d->num_items = BATCH_SIZE;
   for (int n = 0; n < input3d->num_items; ++n) {
     input3d->shape[n][0] = 3;
-    input3d->shape[n][1] = 640;
-    input3d->shape[n][2] = 1024;
-    input3d->start[n] = n * 3 * 640 * 1024;
+    input3d->shape[n][1] = net->input_scale;
+    input3d->shape[n][2] = net->input_scale * 10 / 6;
+    input3d->start[n]
+        = n * 3 * input3d->shape[n][1] * input3d->shape[n][2];
   }
 
   img_info1d->data_type = CPU_DATA;

@@ -3,7 +3,7 @@
 
 //#define DEBUG
 //#define MKL
-//#define DEMO
+#define DEMO
 
 #ifdef DEMO
   #define BATCH_SIZE 1
@@ -286,6 +286,8 @@ typedef struct Net_
 
   int initialized;
 
+  int input_scale;
+
   #ifdef GPU
   cublasHandle_t blas_handle;
   #else
@@ -451,14 +453,17 @@ Layer* add_dropout_layer(Net* const net,
                          const int is_test,
                          const int is_scaled);
 
-void setup_shared_conv_sub(Net* const net);
+void setup_shared_cnn(Net* const net);
+void setup_shared_cnn_light(Net* const net);
 
 void setup_frcnn(Net* const net,
                  const char* const rpn_input_name,
                  const char* const rcnn_input_name,
                  const int rpn_channels,
                  const int rpn_kernel_h, const int rpn_kernel_w,
-                 const int fc6_channels, const int fc7_channels);
+                 const int fc_compress,
+                 const int fc6_channels, const int fc7_channels,
+                 const int pre_nms_topn, const int post_nms_topn);
 
 
 // --------------------------------------------------------------------------
@@ -466,7 +471,12 @@ void setup_frcnn(Net* const net,
 // --------------------------------------------------------------------------
 
 void construct_pvanet(Net* const net,
-                      const char* const param_path);
+                      const char* const param_path,
+                      const int is_light_model,
+                      const int fc_compress,
+                      const int pre_nms_topn,
+                      const int post_nms_topn,
+                      const int input_scale);
 
 void set_input_pvanet(Net* const net,
                       const unsigned char* const images_data[],
@@ -703,7 +713,8 @@ void img2input(const unsigned char img[],
                Tensor* const input3d,
                Tensor* const img_info1d,
                unsigned char temp_data[],
-               const int height, const int width);
+               const int height, const int width,
+               const int input_scale);
 
 void init_input_layer(Net* const net,
                       Tensor* const input3d,
@@ -741,7 +752,6 @@ int _max_num_scales(void);
 
 Net* _net(void);
 
-void _generate_net(void);
 void _init_net(void);
 void _set_net_param_path(const char* const param_path);
 

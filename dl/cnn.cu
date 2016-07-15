@@ -1,5 +1,6 @@
 #include "layer.h"
-void setup_shared_conv_sub(Net* const net)
+
+void setup_shared_cnn(Net* const net)
 {
   add_data_layer(net, "input-data", "data", "img_info");
   add_conv_layer(net, "conv1_1_conv", "data", "conv1_1_conv", NULL, NULL, 1, 16, 7, 7, 2, 2, 3, 3, 1, 0);

@@ -4,11 +4,12 @@ import ctypes
 from pvanet import lib as pvalib
 
 generate = False
-net_mode = 'PVA9.0.0'
+#net_mode = 'PVA9.0.0'
+net_mode = '3.3'
 if net_mode == 'PVA9.0.0':
   proto_name = '../pvanet/9.0.0_mod1_tuned/9.0.0_mod1.custom.pt'
 else:
-  proto_name = 'faster_rcnn_train.pt'
+  proto_name = '3.3.custom.pt'
 
 proto = caffe_pb2.NetParameter()
 f = open(proto_name, 'r')
@@ -186,7 +187,7 @@ if generate:
   if net_mode == 'PVA9.0.0':
     pvalib.setup_frcnn(net, 'convf_rpn', 'convf', 384, 3, 3, 512, 512)
     net.contents.param_path = '../temp'
-  elif net_mode == 'PVA3.3':
+  else:
     pvalib.setup_inception(net)
     pvalib.setup_frcnn(net, 'convf', 'convf', 256, 1, 1, 512, 128)
     pvalib.get_tensor_by_name(net, 'conv1').contents.data_type = 1

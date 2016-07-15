@@ -472,7 +472,9 @@ void setup_frcnn(Net* const net,
                  const char* const rcnn_input_name,
                  const int rpn_channels,
                  const int rpn_kernel_h, const int rpn_kernel_w,
-                 const int fc6_channels, const int fc7_channels)
+                 const int fc_compress,
+                 const int fc6_channels, const int fc7_channels,
+                 const int pre_nms_topn, const int post_nms_topn)
 {
   add_conv_layer(net, "rpn_conv1", rpn_input_name, "rpn_conv1", NULL, NULL,
                  1, rpn_channels, rpn_kernel_h, rpn_kernel_w, 1, 1,
@@ -511,8 +513,8 @@ void setup_frcnn(Net* const net,
     layer->option.base_size = 16;
     layer->option.feat_stride = 16;
     layer->option.min_size = 16;
-    layer->option.pre_nms_topn = 6000;
-    layer->option.post_nms_topn = 300;
+    layer->option.pre_nms_topn = pre_nms_topn;
+    layer->option.post_nms_topn = post_nms_topn;
     layer->option.nms_thresh = 0.7f;
     layer->option.bbox_vote = 0;
     layer->option.vote_thresh = 0.7f;
@@ -542,22 +544,39 @@ void setup_frcnn(Net* const net,
     layer->f_shape[0] = shape_roipool_layer;
   }
 
-  add_fc_layer(net, "fc6_L", "rcnn_roipool", "fc6_L", NULL, NULL,
-               fc6_channels, 0, 0);
-  add_fc_layer(net, "fc6_U", "fc6_L", "fc6_U", NULL, NULL,
-               4096, 1, 0);
-  add_relu_layer(net, "relu6", "fc6_U", "fc6_U", 0);
-  add_dropout_layer(net, "drop6", "fc6_U", "fc6_U", 1, 1);
+  if (fc_compress) {
+    add_fc_layer(net, "fc6_L", "rcnn_roipool", "fc6_L", NULL, NULL,
+                 fc6_channels, 0, 0);
+    add_fc_layer(net, "fc6_U", "fc6_L", "fc6_U", NULL, NULL,
+                 4096, 1, 0);
+    add_relu_layer(net, "relu6", "fc6_U", "fc6_U", 0);
+    add_dropout_layer(net, "drop6", "fc6_U", "fc6_U", 1, 1);
 
-  add_fc_layer(net, "fc7_L", "fc6_U", "fc7_L", NULL, NULL,
-               fc7_channels, 0, 0);
-  add_fc_layer(net, "fc7_U", "fc7_L", "fc7_U", NULL, NULL,
-               4096, 1, 0);
-  add_relu_layer(net, "relu7", "fc7_U", "fc7_U", 0);
-  add_dropout_layer(net, "drop7", "fc7_U", "fc7_U", 1, 1);
+    add_fc_layer(net, "fc7_L", "fc6_U", "fc7_L", NULL, NULL,
+                 fc7_channels, 0, 0);
+    add_fc_layer(net, "fc7_U", "fc7_L", "fc7_U", NULL, NULL,
+                 4096, 1, 0);
+    add_relu_layer(net, "relu7", "fc7_U", "fc7_U", 0);
+    add_dropout_layer(net, "drop7", "fc7_U", "fc7_U", 1, 1);
 
-  add_fc_layer(net, "cls_score", "fc7_U", "cls_score", NULL, NULL,
-               21, 1, 0);
+    add_fc_layer(net, "cls_score", "fc7_U", "cls_score", NULL, NULL,
+                 21, 1, 0);
+  }
+  else {
+    add_fc_layer(net, "fc6", "rcnn_roipool", "fc6", NULL, NULL,
+                 4096, 1, 0);
+    add_relu_layer(net, "relu6", "fc6", "fc6", 0);
+    add_dropout_layer(net, "drop6", "fc6", "fc6", 1, 1);
+
+    add_fc_layer(net, "fc7", "fc6", "fc7", NULL, NULL,
+                 4096, 1, 0);
+    add_relu_layer(net, "relu7", "fc7", "fc7", 0);
+    add_dropout_layer(net, "drop7", "fc7", "fc7", 1, 1);
+
+    add_fc_layer(net, "cls_score", "fc7", "cls_score", NULL, NULL,
+                 21, 1, 0);
+  }
+
   {
     Layer* const layer = add_layer(net, "cls_pred");
     add_bottom(layer, get_tensor_by_name(net, "cls_score"));
@@ -569,8 +588,12 @@ void setup_frcnn(Net* const net,
         = shape_rcnn_pred_layer;
   }
   {
-    Layer* const layer = add_fc_layer(net, "bbox_pred",
-                 "fc7_U", "bbox_pred", NULL, NULL, 84, 1, 0);
+    Layer* const layer = (fc_compress) ?
+        add_fc_layer(net, "bbox_pred",
+                     "fc7_U", "bbox_pred", NULL, NULL, 84, 1, 0)
+        : add_fc_layer(net, "bbox_pred",
+                       "fc7", "bbox_pred", NULL, NULL, 84, 1, 0);
+
     add_bottom(layer, get_tensor_by_name(net, "rpn_roi"));
     get_layer_by_name(net, "bbox_pred")->f_forward[1]
         = forward_rcnn_bbox_layer;
@@ -607,15 +630,28 @@ void setup_frcnn(Net* const net,
 }
 
 void construct_pvanet(Net* const pvanet,
-                      const char* const param_path)
+                      const char* const param_path,
+                      const int is_light_model,
+                      const int fc_compress,
+                      const int pre_nms_topn,
+                      const int post_nms_topn,
+                      const int input_scale)
 {
   init_net(pvanet);
 
   strcpy(pvanet->param_path, param_path);
+  pvanet->input_scale = input_scale;
 
-  setup_shared_conv_sub(pvanet);
-  //setup_frcnn(pvanet, "convf", "convf", 256, 1, 1, 512, 128);
-  setup_frcnn(pvanet, "convf_rpn", "convf", 384, 3, 3, 512, 512);
+  if (is_light_model) {
+    setup_shared_cnn_light(pvanet);
+    setup_frcnn(pvanet, "convf", "convf", 256, 1, 1,
+                fc_compress, 512, 128, pre_nms_topn, post_nms_topn);
+  }
+  else {
+    setup_shared_cnn(pvanet);
+    setup_frcnn(pvanet, "convf_rpn", "convf", 384, 3, 3,
+                fc_compress, 512, 512, pre_nms_topn, post_nms_topn);
+  }
 
   shape_net(pvanet);
 
@@ -675,7 +711,7 @@ void set_input_pvanet(Net* const net,
   for (int n = 0; n < num_images; ++n) {
     img2input(images_data[n], input, img_info,
               (unsigned char*)net->temp_data,
-              heights[n], widths[n]);
+              heights[n], widths[n], net->input_scale);
   }
 
   if (shape_changed) {

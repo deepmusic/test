@@ -74,7 +74,7 @@ def test_net(filename, **kwargs):
       all_boxes[j][i] = all_boxes[j][i][inds, :]
 
   print 'Applying NMS to all detections'
-  nms_dets = apply_nms(all_boxes, 0.3)
+  nms_dets = apply_nms(all_boxes, 0.4)
 
   print 'Evaluating detections'
   imdb.evaluate_detections(nms_dets, outdir)
