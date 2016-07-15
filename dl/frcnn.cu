@@ -1,26 +1,93 @@
 #include "layer.h"
 #include <string.h>
 
-//#define MSRPN
-#define FC_COMPRESS
-#define INCEPTION
-#define INCEPTION64
-
-#define DROPOUT_SCALE_TRAIN 1  // for new PVANET
-//#define DROPOUT_SCALE_TRAIN 0  // for old PVANET
-
-void setup_data_layer(Net* const net,
+Layer* add_data_layer(Net* const net,
                       const char* const layer_name,
-                      const char* const top_name)
+                      const char* const data_name,
+                      const char* const img_info_name)
+{
+  Layer* const layer = add_layer(net, layer_name);
+  Tensor* const data = add_tensor(net, data_name);
+  Tensor* const img_info = add_tensor(net, img_info_name);
+
+  add_top(layer, data);
+  add_top(layer, img_info);
+
+  img_info->data_type = CPU_DATA;
+  init_input_layer(net, data, img_info);
+
+  return layer;
+}
+
+Layer* add_chain_layer(Net* const net,
+                       const char* const layer_name,
+                       const char* const bottom_name,
+                       const char* const top_name)
+{
+  Layer* const layer = add_layer(net, layer_name);
+  Tensor* const bottom = get_tensor_by_name(net, bottom_name);
+  Tensor* const top = (strcmp(bottom_name, top_name) != 0)
+                      ? add_tensor(net, top_name) : bottom;
+
+  add_bottom(layer, bottom);
+  add_top(layer, top);
+
+  return layer;
+}
+
+Layer* add_hub_layer(Net* const net,
+                     const char* const layer_name,
+                     const char* const p_bottom_names[],
+                     const char* const top_name,
+                     const int num_bottoms)
 {
   Layer* const layer = add_layer(net, layer_name);
 
+  for (int i = 0; i < num_bottoms; ++i) {
+    add_bottom(layer, get_tensor_by_name(net, p_bottom_names[i]));
+  }
   add_top(layer, add_tensor(net, top_name));
 
-  input_init_shape(net, get_top(layer, 0), &net->img_info);
+  layer->option.num_bottoms = num_bottoms;
+
+  return layer;
 }
 
-void setup_conv_layer(Net* const net,
+Layer* add_param_layer(Net* const net,
+                       const char* const layer_name,
+                       const char* const bottom_name,
+                       const char* const top_name,
+                       const char* const weight_name,
+                       const char* const bias_name,
+                       const int bias_term)
+{
+  Layer* const layer =
+      add_chain_layer(net, layer_name, bottom_name, top_name);
+
+  if (!weight_name) {
+    char temp_name[MAX_NAME_LEN];
+    sprintf(temp_name, "%s_param%d", layer_name, layer->num_params);
+    add_param(layer, add_tensor(net, temp_name));
+  }
+  else {
+    add_param(layer, find_or_add_tensor(net, weight_name));
+  }
+
+  if (bias_term) {
+    if (!bias_name) {
+      char temp_name[MAX_NAME_LEN];
+      sprintf(temp_name, "%s_param%d", layer_name, layer->num_params);
+      add_param(layer, add_tensor(net, temp_name));
+    }
+    else {
+      add_param(layer, find_or_add_tensor(net, bias_name));
+    }
+  }
+
+  return layer;
+}
+
+Layer* add_conv_layer(Net* const net,
                       const char* const layer_name,
                       const char* const bottom_name,
                       const char* const top_name,
@@ -33,30 +100,8 @@ void setup_conv_layer(Net* const net,
                       const int bias_term,
                       const int do_relu)
 {
-  Layer* const layer = add_layer(net, layer_name);
-
-  add_bottom(layer, get_tensor_by_name(net, bottom_name));
-  add_top(layer, add_tensor(net, top_name));
-
-  if (!weight_name) {
-    char temp_name[64];
-    sprintf(temp_name, "%s_param%d", layer_name, layer->num_params);
-    add_param(layer, add_tensor(net, temp_name));
-  }
-  else {
-    add_param(layer, find_or_add_tensor(net, weight_name));
-  }
-
-  if (bias_term) {
-    if (!bias_name) {
-      char temp_name[64];
-      sprintf(temp_name, "%s_param%d", layer_name, layer->num_params);
-      add_param(layer, add_tensor(net, temp_name));
-    }
-    else {
-      add_param(layer, find_or_add_tensor(net, bias_name));
-    }
-  }
+  Layer* const layer = add_param_layer(net, layer_name,
+      bottom_name, top_name, weight_name, bias_name, bias_term);
 
   layer->option.kernel_h = kernel_h;
   layer->option.kernel_w = kernel_w;
@@ -74,6 +119,188 @@ void setup_conv_layer(Net* const net,
     layer->f_forward[1] = forward_inplace_relu_layer;
   }
   layer->f_shape[0] = shape_conv_layer;
+
+  return layer;
+}
+
+Layer* add_deconv_layer(Net* const net,
+                        const char* const layer_name,
+                        const char* const bottom_name,
+                        const char* const top_name,
+                        const char* const weight_name,
+                        const char* const bias_name,
+                        const int num_group, const int num_output,
+                        const int kernel_h, const int kernel_w,
+                        const int stride_h, const int stride_w,
+                        const int pad_h, const int pad_w,
+                        const int bias_term,
+                        const int do_relu)
+{
+  Layer* const layer = add_conv_layer(net, layer_name,
+      bottom_name, top_name, weight_name, bias_name, num_group, num_output,
+      kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w,
+      bias_term, do_relu);
+
+  layer->f_forward[0] = forward_deconv_layer;
+  layer->f_shape[0] = shape_deconv_layer;
+
+  return layer;
+}
+
+Layer* add_fc_layer(Net* const net,
+                    const char* const layer_name,
+                    const char* const bottom_name,
+                    const char* const top_name,
+                    const char* const weight_name,
+                    const char* const bias_name,
+                    const int num_output,
+                    const int bias_term,
+                    const int do_relu)
+{
+  Layer* const layer = add_param_layer(net, layer_name,
+      bottom_name, top_name, weight_name, bias_name, bias_term);
+
+  layer->option.out_channels = num_output;
+  layer->option.bias = bias_term;
+  layer->option.handle = (void*)&net->blas_handle;
+
+  layer->f_forward[0] = forward_fc_layer;
+  if (do_relu) {
+    layer->f_forward[1] = forward_inplace_relu_layer;
+  }
+  layer->f_shape[0] = shape_fc_layer;
+
+  return layer;
+}
+
+Layer* add_pool_layer(Net* const net,
+                      const char* const layer_name,
+                      const char* const bottom_name,
+                      const char* const top_name,
+                      const int kernel_h, const int kernel_w,
+                      const int stride_h, const int stride_w,
+                      const int pad_h, const int pad_w)
+{
+  Layer* const layer =
+      add_chain_layer(net, layer_name, bottom_name, top_name);
+
+  layer->option.kernel_h = kernel_h;
+  layer->option.kernel_w = kernel_w;
+  layer->option.stride_h = stride_h;
+  layer->option.stride_w = stride_w;
+  layer->option.pad_h = pad_h;
+  layer->option.pad_w = pad_w;
+
+  layer->f_forward[0] = forward_pool_layer;
+  layer->f_shape[0] = shape_pool_layer;
+
+  return layer;
+}
+
+Layer* add_scale_const_layer(Net* const net,
+                             const char* const layer_name,
+                             const char* const bottom_name,
+                             const char* const top_name,
+                             const real weight,
+                             const real bias,
+                             const int bias_term)
+{
+  Layer* const layer =
+      add_chain_layer(net, layer_name, bottom_name, top_name);
+
+  layer->option.scale_weight = weight;
+  layer->option.scale_bias = bias;
+  layer->option.bias = bias_term;
+
+  layer->f_forward[0] = forward_scale_const_layer;
+  layer->f_shape[0] = shape_scale_const_layer;
+
+  return layer;
+}
+
+Layer* add_scale_channel_layer(Net* const net,
+                               const char* const layer_name,
+                               const char* const bottom_name,
+                               const char* const top_name,
+                               const char* const weight_name,
+                               const char* const bias_name,
+                               const int bias_term)
+{
+  Layer* const layer = add_param_layer(net, layer_name,
+      bottom_name, top_name, weight_name, bias_name, bias_term);
+
+  layer->option.bias = bias_term;
+
+  layer->f_forward[0] = forward_scale_channel_layer;
+  layer->f_shape[0] = shape_scale_channel_layer;
+
+  return layer;
+}
+
+Layer* add_concat_layer(Net* const net,
+                        const char* const layer_name,
+                        const char* const p_bottom_names[],
+                        const char* const top_name,
+                        const int num_bottoms)
+{
+  Layer* const layer = add_hub_layer(net, layer_name,
+      p_bottom_names, top_name, num_bottoms);
+
+  layer->f_forward[0] = forward_concat_layer;
+  layer->f_shape[0] = shape_concat_layer;
+
+  return layer;
+}
+
+Layer* add_eltwise_layer(Net* const net,
+                         const char* const layer_name,
+                         const char* const p_bottom_names[],
+                         const char* const top_name,
+                         const int num_bottoms)
+{
+  Layer* const layer = add_hub_layer(net, layer_name,
+      p_bottom_names, top_name, num_bottoms);
+
+  layer->f_forward[0] = forward_eltwise_sum_layer;
+  layer->f_shape[0] = shape_eltwise_layer;
+
+  return layer;
+}
+
+Layer* add_relu_layer(Net* const net,
+                      const char* const layer_name,
+                      const char* const bottom_name,
+                      const char* const top_name,
+                      const real negative_slope)
+{
+  Layer* const layer =
+      add_chain_layer(net, layer_name, bottom_name, top_name);
+
+  layer->option.negative_slope = negative_slope;
+
+  layer->f_forward[0] = forward_relu_layer;
+  layer->f_shape[0] = shape_relu_layer;
+
+  return layer;
+}
+
+Layer* add_dropout_layer(Net* const net,
+                         const char* const layer_name,
+                         const char* const bottom_name,
+                         const char* const top_name,
+                         const int is_test,
+                         const int is_scaled)
+{
+  Layer* const layer =
+      add_chain_layer(net, layer_name, bottom_name, top_name);
+
+  layer->option.test = is_test;
+  layer->option.scaled = is_scaled;
+
+  layer->f_forward[0] = forward_dropout_layer;
+  layer->f_shape[0] = shape_dropout_layer;
+
+  return layer;
 }
 
 static
@@ -83,82 +310,79 @@ void setup_inception_sub(Net* const net,
                          const int out_channels[],
                          const int stride)
 {
-  char bottom_name[64];
-  char top_name[64];
-  Layer* layer;
+  char bottom_name[MAX_NAME_LEN];
+  char top_name[MAX_NAME_LEN];
+  char top_name2[MAX_NAME_LEN];
 
   if (stride > 1) {
     // pool1
     sprintf(top_name, "%s_pool1", sub_name);
-    layer = add_layer(net, top_name);
-    add_bottom(layer, get_tensor_by_name(net, input_name));
-    add_top(layer, add_tensor(net, top_name));
-    layer->option.kernel_h = 3;
-    layer->option.kernel_w = 3;
-    layer->option.stride_h = stride;
-    layer->option.stride_w = stride;
-    layer->option.pad_h = 0;
-    layer->option.pad_w = 0;
-    layer->f_forward[0] = forward_pool_layer;
-    layer->f_shape[0] = shape_pool_layer;
-
+    add_pool_layer(net, top_name, input_name, top_name,
+                   3, 3, stride, stride, 0, 0);
     // conv1
     sprintf(bottom_name, "%s_pool1", sub_name);
     sprintf(top_name, "%s_conv1", sub_name);
-    setup_conv_layer(net, top_name, bottom_name, top_name, NULL, NULL,
-                     1, out_channels[0], 1, 1, 1, 1, 0, 0, 1, 1);
+    add_conv_layer(net, top_name, bottom_name, top_name, NULL, NULL,
+                     1, out_channels[0], 1, 1, 1, 1, 0, 0, 1, 0);
   }
   else {
     // conv1
     sprintf(top_name, "%s_conv1", sub_name);
-    setup_conv_layer(net, top_name, input_name, top_name, NULL, NULL,
-                     1, out_channels[0], 1, 1, 1, 1, 0, 0, 1, 1);
+    add_conv_layer(net, top_name, input_name, top_name, NULL, NULL,
+                     1, out_channels[0], 1, 1, 1, 1, 0, 0, 1, 0);
   }
+  sprintf(top_name2, "%s_relu1", sub_name);
+  add_relu_layer(net, top_name2, top_name, top_name, 0);
 
   // conv3_1
   sprintf(top_name, "%s_conv3_1", sub_name);
-  setup_conv_layer(net, top_name, input_name, top_name, NULL, NULL,
-                   1, out_channels[1], 1, 1, 1, 1, 0, 0, 1, 1);
+  add_conv_layer(net, top_name, input_name, top_name, NULL, NULL,
+                   1, out_channels[1], 1, 1, 1, 1, 0, 0, 1, 0);
+  sprintf(top_name2, "%s_relu3_1", sub_name);
+  add_relu_layer(net, top_name2, top_name, top_name, 0);
 
   // conv3_2
   sprintf(bottom_name, "%s_conv3_1", sub_name);
   sprintf(top_name, "%s_conv3_2", sub_name);
-  setup_conv_layer(net, top_name, bottom_name, top_name, NULL, NULL,
-                   1, out_channels[2], 3, 3, stride, stride, 1, 1, 1, 1);
+  add_conv_layer(net, top_name, bottom_name, top_name, NULL, NULL,
+                   1, out_channels[2], 3, 3, stride, stride, 1, 1, 1, 0);
+  sprintf(top_name2, "%s_relu3_2", sub_name);
+  add_relu_layer(net, top_name2, top_name, top_name, 0);
 
   // conv5_1
   sprintf(top_name, "%s_conv5_1", sub_name);
-  setup_conv_layer(net, top_name, input_name, top_name, NULL, NULL,
-                   1, out_channels[3], 1, 1, 1, 1, 0, 0, 1, 1);
+  add_conv_layer(net, top_name, input_name, top_name, NULL, NULL,
+                   1, out_channels[3], 1, 1, 1, 1, 0, 0, 1, 0);
+  sprintf(top_name2, "%s_relu5_1", sub_name);
+  add_relu_layer(net, top_name2, top_name, top_name, 0);
 
   // conv5_2
   sprintf(bottom_name, "%s_conv5_1", sub_name);
   sprintf(top_name, "%s_conv5_2", sub_name);
-  setup_conv_layer(net, top_name, bottom_name, top_name, NULL, NULL,
-                   1, out_channels[4], 3, 3, 1, 1, 1, 1, 1, 1);
+  add_conv_layer(net, top_name, bottom_name, top_name, NULL, NULL,
+                   1, out_channels[4], 3, 3, 1, 1, 1, 1, 1, 0);
+  sprintf(top_name2, "%s_relu5_2", sub_name);
+  add_relu_layer(net, top_name2, top_name, top_name, 0);
 
   // conv5_2
   sprintf(bottom_name, "%s_conv5_2", sub_name);
   sprintf(top_name, "%s_conv5_3", sub_name);
-  setup_conv_layer(net, top_name, bottom_name, top_name, NULL, NULL,
-                   1, out_channels[5], 3, 3, stride, stride, 1, 1, 1, 1);
+  add_conv_layer(net, top_name, bottom_name, top_name, NULL, NULL,
+                   1, out_channels[5], 3, 3, stride, stride, 1, 1, 1, 0);
+  sprintf(top_name2, "%s_relu5_3", sub_name);
+  add_relu_layer(net, top_name2, top_name, top_name, 0);
 
   // concat
   {
-    sprintf(top_name, "%s_concat", sub_name);
-    layer = add_layer(net, top_name);
-
-    sprintf(bottom_name, "%s_conv1", sub_name);
-    add_bottom(layer, get_tensor_by_name(net, bottom_name));
-    sprintf(bottom_name, "%s_conv3_2", sub_name);
-    add_bottom(layer, get_tensor_by_name(net, bottom_name));
-    sprintf(bottom_name, "%s_conv5_3", sub_name);
-    add_bottom(layer, get_tensor_by_name(net, bottom_name));
-
-    add_top(layer, add_tensor(net, top_name));
-    layer->option.num_concats = layer->num_bottoms;
-    layer->f_forward[0] = forward_concat_layer;
-    layer->f_shape[0] = shape_concat_layer;
+    char bottom_names[3][MAX_NAME_LEN];
+    char* const p_bottom_names[3] = {
+        bottom_names[0], bottom_names[1], bottom_names[2]
+    };
+    sprintf(p_bottom_names[0], "%s_conv1", sub_name);
+    sprintf(p_bottom_names[1], "%s_conv3_2", sub_name);
+    sprintf(p_bottom_names[2], "%s_conv5_3", sub_name);
+    sprintf(top_name, "%s", sub_name);
+    add_concat_layer(net, top_name, p_bottom_names, top_name, 3);
   }
 }
 
@@ -168,534 +392,218 @@ void setup_hyper_sub(Net* const net,
                      const char* const upsample_name,
                      const int out_channels[])
 {
+  const char* const p_hyper_names[3] = {
+      "downsample", as_is_name, "upsample"
+  };
+
   // downsample
-  {
-    const char* const bottom_name = downsample_name;
-    const char* const top_name = "downsample";
-    Layer* const layer = add_layer(net, top_name);
-
-    add_bottom(layer, get_tensor_by_name(net, bottom_name));
-    add_top(layer, add_tensor(net, top_name));
-
-    layer->option.kernel_h = 3;
-    layer->option.kernel_w = 3;
-    layer->option.stride_h = 2;
-    layer->option.stride_w = 2;
-    layer->option.pad_h = 0;
-    layer->option.pad_w = 0;
-    layer->f_forward[0] = forward_pool_layer;
-    layer->f_shape[0] = shape_pool_layer;
-  }
+  add_pool_layer(net, p_hyper_names[0], downsample_name, p_hyper_names[0],
+                 3, 3, 2, 2, 0, 0);
 
   // upsample
-  {
-    const char* const bottom_name = upsample_name;
-    const char* const top_name = "upsample";
-    Layer* const layer = add_layer(net, top_name);
-
-    add_bottom(layer, get_tensor_by_name(net, bottom_name));
-    add_top(layer, add_tensor(net, top_name));
-    {
-      char param_name[64];
-      sprintf(param_name, "%s_param%d", top_name, layer->num_params);
-      add_param(layer, add_tensor(net, param_name));
-    }
-
-    layer->option.kernel_h = 4;
-    layer->option.kernel_w = 4;
-    layer->option.stride_h = 2;
-    layer->option.stride_w = 2;
-    layer->option.pad_h = 1;
-    layer->option.pad_w = 1;
-    layer->option.out_channels = out_channels[0];
-    layer->option.num_groups = out_channels[0];
-    layer->option.handle = (void*)&net->blas_handle;
-    layer->f_forward[0] = forward_deconv_layer;
-    layer->f_shape[0] = shape_deconv_layer;
-  }
+  add_deconv_layer(net, p_hyper_names[2], upsample_name, p_hyper_names[2],
+                   NULL, NULL, out_channels[0], out_channels[0],
+                   4, 4, 2, 2, 1, 1, 0, 0);
 
   // concat
-  {
-    const char* const top_name = "concat";
-    Layer* const layer = add_layer(net, top_name);
-
-    add_bottom(layer, get_tensor_by_name(net, "downsample"));
-    add_bottom(layer, get_tensor_by_name(net, as_is_name));
-    add_bottom(layer, get_tensor_by_name(net, "upsample"));
-    add_top(layer, add_tensor(net, top_name));
-
-    layer->option.num_concats = layer->num_bottoms;
-    layer->f_forward[0] = forward_concat_layer;
-    layer->f_shape[0] = shape_concat_layer;
-  }
+  add_concat_layer(net, "concat", p_hyper_names, "concat", 3);
 
   // convf
-  {
-    const char* const bottom_name = "concat";
-    const char* const top_name = "convf";
-    setup_conv_layer(net, top_name, bottom_name, top_name, NULL, NULL,
-                     1, out_channels[1], 1, 1, 1, 1, 0, 0, 1, 1);
-  }
+  add_conv_layer(net, "convf", "concat", "convf", NULL, NULL,
+                 1, out_channels[1], 1, 1, 1, 1, 0, 0, 1, 0);
+  add_relu_layer(net, "reluf", "convf", "convf", 0);
 }
 
-static
 void setup_inception(Net* const net)
 {
   // data
-  setup_data_layer(net, "data", "data");
+  add_data_layer(net, "data", "data", "img_info");
 
-  // conv1, conv2, conv3
-  {
-    const int sub_size = 3;
-    const char* conv_names[] = {
-      "conv1", "conv2", "conv3"
-    };
-  #ifdef INCEPTION64
-    const int out_channels[] = { 32, 48, 96 };
-    const int kernels[] = { 4, 3, 3 };
-  #else
-    const int out_channels[] = { 24, 48, 96 };
-    const int kernels[] = { 7, 3, 3 };
-  #endif
-    const int strides[] = { 2, 2, 2 };
+  // conv1
+  add_conv_layer(net, "conv1", "data", "conv1", NULL, NULL,
+                 1, 32, 4, 4, 2, 2, 1, 1, 1, 0);
+  add_relu_layer(net, "relu1", "conv1", "conv1", 0);
+  get_tensor_by_name(net, "conv1")->data_type = PRIVATE_DATA;
 
-    for (int i = 0; i < sub_size; ++i) {
-      const char* const bottom_name = (i > 0) ? conv_names[i - 1] : "data";
-      const char* const top_name = conv_names[i];
-      setup_conv_layer(net, conv_names[i],
-                       bottom_name, top_name, NULL, NULL,
-                       1, out_channels[i], kernels[i], kernels[i],
-                       strides[i], strides[i],
-                       (kernels[i] - 1) / 2, (kernels[i] - 1) / 2,
-                       1, 1);
-    }
+  // conv2
+  add_conv_layer(net, "conv2", "conv1", "conv2", NULL, NULL,
+                 1, 48, 3, 3, 2, 2, 1, 1, 1, 0);
+  add_relu_layer(net, "relu2", "conv2", "conv2", 0);
 
-    get_tensor_by_name(net, "conv1")->data_type = PRIVATE_DATA;
-    get_tensor_by_name(net, "conv3")->data_type = PRIVATE_DATA;
-  }
+  // conv3
+  add_conv_layer(net, "conv3", "conv2", "conv3", NULL, NULL,
+                 1, 96, 3, 3, 2, 2, 1, 1, 1, 0);
+  add_relu_layer(net, "relu3", "conv3", "conv3", 0);
+  get_tensor_by_name(net, "conv3")->data_type = PRIVATE_DATA;
 
   // inc3
   {
-  #ifdef INCEPTION64
     const int out_channels[] = { 96, 16, 64, 16, 32, 32 };
-  #else
-    const int out_channels[] = { 96, 24, 64, 12, 24, 24 };
-  #endif
 
     setup_inception_sub(net, "inc3a", "conv3", out_channels, 2);
-    setup_inception_sub(net, "inc3b", "inc3a_concat", out_channels, 1);
-    setup_inception_sub(net, "inc3c", "inc3b_concat", out_channels, 1);
-    setup_inception_sub(net, "inc3d", "inc3c_concat", out_channels, 1);
-    setup_inception_sub(net, "inc3e", "inc3d_concat", out_channels, 1);
+    setup_inception_sub(net, "inc3b", "inc3a", out_channels, 1);
+    setup_inception_sub(net, "inc3c", "inc3b", out_channels, 1);
+    setup_inception_sub(net, "inc3d", "inc3c", out_channels, 1);
+    setup_inception_sub(net, "inc3e", "inc3d", out_channels, 1);
   }
 
   // inc4
   {
     const int out_channels[] = { 128, 32, 96, 16, 32, 32 };
 
-    setup_inception_sub(net, "inc4a", "inc3e_concat", out_channels, 2);
-    setup_inception_sub(net, "inc4b", "inc4a_concat", out_channels, 1);
-    setup_inception_sub(net, "inc4c", "inc4b_concat", out_channels, 1);
-    setup_inception_sub(net, "inc4d", "inc4c_concat", out_channels, 1);
-    setup_inception_sub(net, "inc4e", "inc4d_concat", out_channels, 1);
+    setup_inception_sub(net, "inc4a", "inc3e", out_channels, 2);
+    setup_inception_sub(net, "inc4b", "inc4a", out_channels, 1);
+    setup_inception_sub(net, "inc4c", "inc4b", out_channels, 1);
+    setup_inception_sub(net, "inc4d", "inc4c", out_channels, 1);
+    setup_inception_sub(net, "inc4e", "inc4d", out_channels, 1);
   }
 
   // hypercolumn
   {
     const int out_channels[] = { 256, 256 };
 
-    setup_hyper_sub(net, "conv3", "inc3e_concat", "inc4e_concat",
+    setup_hyper_sub(net, "conv3", "inc3e", "inc4e",
                     out_channels);
   }
-
-  net->num_layer_data = 5;
 }
 
-static
 void setup_frcnn(Net* const net,
-                 Layer layers[],
+                 const char* const rpn_input_name,
+                 const char* const rcnn_input_name,
                  const int rpn_channels,
-                 Layer* const convnet_out_layer)
+                 const int rpn_kernel_h, const int rpn_kernel_w,
+                 const int fc6_channels, const int fc7_channels)
 {
-  const char* names[] = {
-    // RPN
-    #ifdef MSRPN
-      "rpn_conv1", "rpn_cls_score1", "rpn_bbox_pred1",
-      "rpn_conv3", "rpn_cls_score3", "rpn_bbox_pred3",
-      "rpn_conv5", "rpn_cls_score5", "rpn_bbox_pred5",
-      "rpn_score", "rpn_bbox",
-    #else
-      "rpn_conv1", "rpn_cls_score", "rpn_bbox_pred",
-      "null", "null", "null",
-      "null", "null", "null",
-      "null", "null",
-    #endif
-      "rpn_roi",
+  add_conv_layer(net, "rpn_conv1", rpn_input_name, "rpn_conv1", NULL, NULL,
+                 1, rpn_channels, rpn_kernel_h, rpn_kernel_w, 1, 1,
+                 (rpn_kernel_h - 1) / 2, (rpn_kernel_w - 1) / 2, 1, 0);
+  add_relu_layer(net, "rpn_relu1", "rpn_conv1", "rpn_conv1", 0);
 
-    // R-CNN
-      "rcnn_roipool",
-    #ifdef FC_COMPRESS
-      "fc6_L", "fc6_U", "fc7_L", "fc7_U",
-    #else
-      "null", "fc6", "null", "fc7",
-    #endif
-      "cls_score", "cls_pred", "bbox_pred",
+  add_conv_layer(net, "rpn_cls_score", "rpn_conv1", "rpn_cls_score",
+                 NULL, NULL,
+                 1, 50, 1, 1, 1, 1, 0, 0, 1, 0);
+  get_layer_by_name(net, "rpn_cls_score")->f_forward[1]
+      = forward_rpn_pred_layer;
+  get_layer_by_name(net, "rpn_cls_score")->f_shape[1]
+      = shape_rpn_pred_layer;
 
-    // output & test
-    #ifdef DEMO
-      "out"
-    #else
-      "out", "test"
-    #endif
-  };
-
-  #ifdef DEMO
-  const int sub_size = 21;
-  #else
-  const int sub_size = 22;
-  #endif
-
-  char temp_name[64];
-
-  for (int i = 0; i < sub_size; ++i) {
-    set_layer_name(&layers[i], names[i]);
-  }
-
-  {
-    #ifdef MSRPN
-    const int num_conv_layers = 9;
-    #else
-    const int num_conv_layers = 3;
-    #endif
-
-    for (int i = 0; i < num_conv_layers; ++i) {
-      layers[i].option.kernel_h = 1;
-      layers[i].option.kernel_w = 1;
-      layers[i].option.stride_h = 1;
-      layers[i].option.stride_w = 1;
-      layers[i].option.pad_h = 0;
-      layers[i].option.pad_w = 0;
-      layers[i].option.num_groups = 1;
-      layers[i].option.bias = 1;
-      layers[i].option.negative_slope = 0;
-      #ifdef GPU
-      layers[i].option.handle = (void*)&net->blas_handle;
-      #endif
-
-      layers[i].num_bottoms = 1;
-      add_top(&layers[i], add_tensor(net, names[i]));
-      sprintf(temp_name, "%s_param%d", names[i], 0);
-      add_param(&layers[i], add_tensor(net, temp_name));
-      sprintf(temp_name, "%s_param%d", names[i], 1);
-      add_param(&layers[i], add_tensor(net, temp_name));
-    }
-  }
-
-  #ifdef MSRPN
-  {
-    // 1x1 RPN
-    layers[0].option.out_channels = rpn_channels / 4;
-    layers[1].option.out_channels = 18;
-    layers[2].option.out_channels = 36;
-
-    // 3x3 RPN
-    layers[3].option.kernel_h = 3;
-    layers[3].option.kernel_w = 3;
-    layers[3].option.pad_h = 1;
-    layers[3].option.pad_w = 1;
-    layers[3].option.out_channels = rpn_channels / 2;
-    layers[4].option.out_channels = 18;
-    layers[5].option.out_channels = 36;
-
-    // 5x5 RPN
-    layers[6].option.kernel_h = 5;
-    layers[6].option.kernel_w = 5;
-    layers[6].option.pad_h = 2;
-    layers[6].option.pad_w = 2;
-    layers[6].option.out_channels = rpn_channels / 4;
-    layers[7].option.out_channels = 18;
-    layers[8].option.out_channels = 36;
-
-    // score concat
-    layers[9].option.num_concats = 3;
-    layers[9].num_bottoms = 3;
-    layers[9].num_tops = 1;
-
-    // bbox concat
-    layers[10].option.num_concats = 3;
-    layers[10].num_bottoms = 3;
-    layers[10].num_tops = 1;
-  }
-  #else
-  {
-    // 3x3 RPN if using PVA-7.1.1
-    #ifndef INCEPTION
-    layers[0].option.kernel_h = 3;
-    layers[0].option.kernel_w = 3;
-    layers[0].option.pad_h = 1;
-    layers[0].option.pad_w = 1;
-    #endif
-
-    layers[0].option.out_channels = rpn_channels;
-    layers[1].option.out_channels = 50;
-    layers[2].option.out_channels = 100;
-  }
-  #endif
+  add_conv_layer(net, "rpn_bbox_pred", "rpn_conv1", "rpn_bbox_pred",
+                 NULL, NULL,
+                 1, 100, 1, 1, 1, 1, 0, 0, 1, 0);
+  get_layer_by_name(net, "rpn_bbox_pred")->f_forward[1]
+      = forward_rpn_bbox_layer;
+  get_layer_by_name(net, "rpn_bbox_pred")->f_shape[1]
+      = shape_rpn_bbox_layer;
 
   // proposal, RoI-pooling
   {
-  #ifdef MSRPN
-    real anchor_scales[9] = { 3.0f, 6.0f, 9.0f,
-                              4.0f, 8.0f, 16.0f,
-                              7.0f, 13.0f, 32.0f };
-    real anchor_ratios[3] = { 0.5f, 1.0f, 2.0f };
-    layers[11].option.num_scales = 9;
-    layers[11].option.num_ratios = 3;
-  #else
     real anchor_scales[5] = { 3.0f, 6.0f, 9.0f, 16.0f, 32.0f };
     real anchor_ratios[5] = { 0.5f, 0.667f, 1.0f, 1.5f, 2.0f };
-    layers[11].option.num_scales = 5;
-    layers[11].option.num_ratios = 5;
-  #endif
+    Layer* const layer = add_layer(net, "proposal");
+    layer->option.num_scales = 5;
+    layer->option.num_ratios = 5;
 
     memcpy(net->anchor_scales, anchor_scales,
-           layers[11].option.num_scales * sizeof(real));
+           layer->option.num_scales * sizeof(real));
     memcpy(net->anchor_ratios, anchor_ratios,
-           layers[11].option.num_ratios * sizeof(real));
+           layer->option.num_ratios * sizeof(real));
 
-    layers[11].option.num_concats = 1;
-    layers[11].option.base_size = 16;
-    layers[11].option.feat_stride = 16;
-    layers[11].option.min_size = 16;
-    layers[11].option.pre_nms_topn = 6000;
-    layers[11].option.post_nms_topn = 300;
-    layers[11].option.nms_thresh = 0.7f;
-    layers[11].option.bbox_vote = 0;
-    layers[11].option.vote_thresh = 0.7f;
-    layers[11].option.scales = &net->anchor_scales[0];
-    layers[11].option.ratios = &net->anchor_ratios[0];
-    layers[11].num_bottoms = 3;
-    add_top(&layers[11], add_tensor(net, names[11]));
-    layers[11].num_aux_data = 1;
-
-    layers[12].option.pooled_height = 6;
-    layers[12].option.pooled_width = 6;
-    layers[12].option.spatial_scale = 0.0625;
-    layers[12].option.flatten = 1;
-    layers[12].num_bottoms = 2;
-    add_top(&layers[12], add_tensor(net, names[12]));
-    layers[12].p_tops[0]->data_type = PRIVATE_DATA;
+    layer->option.base_size = 16;
+    layer->option.feat_stride = 16;
+    layer->option.min_size = 16;
+    layer->option.pre_nms_topn = 6000;
+    layer->option.post_nms_topn = 300;
+    layer->option.nms_thresh = 0.7f;
+    layer->option.bbox_vote = 0;
+    layer->option.vote_thresh = 0.7f;
+    layer->option.scales = &net->anchor_scales[0];
+    layer->option.ratios = &net->anchor_ratios[0];
+    add_bottom(layer, get_tensor_by_name(net, "rpn_cls_score"));
+    add_bottom(layer, get_tensor_by_name(net, "rpn_bbox_pred"));
+    add_bottom(layer, get_tensor_by_name(net, "img_info"));
+    add_top(layer, add_tensor(net, "rpn_roi"));
+    layer->num_aux_data = 1;
+    layer->f_forward[0] = forward_proposal_layer;
+    layer->f_shape[0] = shape_proposal_layer;
+    layer->f_init[0] = init_proposal_layer;
   }
-
-  // fc6, fc7, RCNN score, RCNN bbox
-  for (int i = 13; i <= 19; ++i) {
-    layers[i].option.bias = 1;
-    layers[i].option.negative_slope = 0;
-    layers[i].option.threshold = 0.5f;
-    layers[i].option.test = 1;
-    layers[i].option.scaled = DROPOUT_SCALE_TRAIN;
-    #ifdef GPU
-    layers[i].option.handle = (void*)&net->blas_handle;
-    #endif
-
-    layers[i].num_bottoms = 1;
-    if (i != 13 && i != 15 && i != 18) {
-      add_top(&layers[i], add_tensor(net, names[i]));
-      sprintf(temp_name, "%s_param%d", names[i], 0);
-      add_param(&layers[i], add_tensor(net, temp_name));
-      sprintf(temp_name, "%s_param%d", names[i], 1);
-      add_param(&layers[i], add_tensor(net, temp_name));
-    }
-  }
-
-  // fc6, fc7
   {
-  #ifdef FC_COMPRESS
-    layers[13].option.out_channels = 512;
-    layers[13].option.bias = 0;
-    add_top(&layers[13], add_tensor(net, names[13]));
-    sprintf(temp_name, "%s_param%d", names[13], 0);
-    add_param(&layers[13], add_tensor(net, temp_name));
-
-    layers[15].option.out_channels = 128;
-    layers[15].option.bias = 0;
-    add_top(&layers[15], add_tensor(net, names[15]));
-    sprintf(temp_name, "%s_param%d", names[15], 0);
-    add_param(&layers[15], add_tensor(net, temp_name));
-  #else
-    layers[13].num_bottoms = 0;
-    layers[15].num_bottoms = 0;
-  #endif
-    layers[14].option.out_channels = 4096;
-    layers[16].option.out_channels = 4096;
+    Layer* const layer = add_layer(net, "rcnn_roipool");
+    Tensor* const top = add_tensor(net, "rcnn_roipool");
+    layer->option.pooled_height = 6;
+    layer->option.pooled_width = 6;
+    layer->option.spatial_scale = 0.0625;
+    layer->option.flatten = 1;
+    add_bottom(layer, get_tensor_by_name(net, rcnn_input_name));
+    add_bottom(layer, get_tensor_by_name(net, "rpn_roi"));
+    add_top(layer, top);
+    top->data_type = PRIVATE_DATA;
+    layer->f_forward[0] = forward_roipool_layer;
+    layer->f_shape[0] = shape_roipool_layer;
   }
 
-  // RCNN score
+  add_fc_layer(net, "fc6_L", "rcnn_roipool", "fc6_L", NULL, NULL,
+               fc6_channels, 0, 0);
+  add_fc_layer(net, "fc6_U", "fc6_L", "fc6_U", NULL, NULL,
+               4096, 1, 0);
+  add_relu_layer(net, "relu6", "fc6_U", "fc6_U", 0);
+  add_dropout_layer(net, "drop6", "fc6_U", "fc6_U", 1, 1);
+
+  add_fc_layer(net, "fc7_L", "fc6_U", "fc7_L", NULL, NULL,
+               fc7_channels, 0, 0);
+  add_fc_layer(net, "fc7_U", "fc7_L", "fc7_U", NULL, NULL,
+               4096, 1, 0);
+  add_relu_layer(net, "relu7", "fc7_U", "fc7_U", 0);
+  add_dropout_layer(net, "drop7", "fc7_U", "fc7_U", 1, 1);
+
+  add_fc_layer(net, "cls_score", "fc7_U", "cls_score", NULL, NULL,
+               21, 1, 0);
   {
-  #ifdef DEMO
-    layers[17].option.out_channels = 25;
-  #else
-    layers[17].option.out_channels = 21;
-  #endif
+    Layer* const layer = add_layer(net, "cls_pred");
+    add_bottom(layer, get_tensor_by_name(net, "cls_score"));
+    add_bottom(layer, get_tensor_by_name(net, "rpn_roi"));
+    add_top(layer, add_tensor(net, "cls_pred"));
+    get_layer_by_name(net, "cls_pred")->f_forward[0]
+        = forward_rcnn_pred_layer;
+    get_layer_by_name(net, "cls_pred")->f_shape[0]
+        = shape_rcnn_pred_layer;
   }
-
-  // RCNN pred
-  layers[18].num_bottoms = 2;
-  add_top(&layers[18], add_tensor(net, names[18]));
-
-  // RCNN bbox
-  layers[19].option.out_channels = layers[17].option.out_channels * 4;
-  layers[19].num_bottoms = 2;
-
-  // output
-  layers[20].option.min_size = 16;
-  layers[20].option.score_thresh = 0.7f;
-  layers[20].option.nms_thresh = 0.4f;
-  layers[20].option.bbox_vote = 1;
-  layers[20].option.vote_thresh = 0.5f;
-  layers[20].num_bottoms = 4;
-  add_top(&layers[20], add_tensor(net, names[20]));
-
-  // test
+  {
+    Layer* const layer = add_fc_layer(net, "bbox_pred",
+                 "fc7_U", "bbox_pred", NULL, NULL, 84, 1, 0);
+    add_bottom(layer, get_tensor_by_name(net, "rpn_roi"));
+    get_layer_by_name(net, "bbox_pred")->f_forward[1]
+        = forward_rcnn_bbox_layer;
+    get_layer_by_name(net, "bbox_pred")->f_shape[1]
+        = shape_rcnn_bbox_layer;
+  }
+  {
+    Layer* const layer = add_layer(net, "out");
+    layer->option.min_size = 16;
+    layer->option.score_thresh = 0.3f;
+    layer->option.nms_thresh = 0.4f;
+    layer->option.bbox_vote = 1;
+    layer->option.vote_thresh = 0.5f;
+    add_bottom(layer, get_tensor_by_name(net, "cls_pred"));
+    add_bottom(layer, get_tensor_by_name(net, "bbox_pred"));
+    add_bottom(layer, get_tensor_by_name(net, "rpn_roi"));
+    add_bottom(layer, get_tensor_by_name(net, "img_info"));
+    add_top(layer, add_tensor(net, "out"));
+    layer->f_forward[0] = forward_odout_layer;
+    layer->f_shape[0] = shape_odout_layer;
+  }
   #ifndef DEMO
   {
-    layers[21].num_bottoms = 4;
-    add_top(&layers[21], add_tensor(net, names[21]));
+    Layer* const layer = add_layer(net, "test");
+    add_bottom(layer, get_tensor_by_name(net, "cls_pred"));
+    add_bottom(layer, get_tensor_by_name(net, "bbox_pred"));
+    add_bottom(layer, get_tensor_by_name(net, "rpn_roi"));
+    add_bottom(layer, get_tensor_by_name(net, "img_info"));
+    add_top(layer, add_tensor(net, "test"));
+    layer->f_forward[0] = forward_odtest_layer;
+    layer->f_shape[0] = shape_odtest_layer;
   }
   #endif
-
-  // RPN
-  {
-    #ifdef MSRPN
-    const int num_conv_layers = 9;
-    #else
-    const int num_conv_layers = 3;
-    #endif
-
-    for (int i = 0; i < num_conv_layers; i += 3) {
-      // conv
-      layers[i].p_bottoms[0] = convnet_out_layer->p_tops[0];
-      layers[i].f_forward[0] = forward_conv_layer;
-      layers[i].f_forward[1] = forward_inplace_relu_layer;
-      layers[i].f_shape[0] = shape_conv_layer;
-
-      // score
-      layers[i + 1].p_bottoms[0] = layers[i].p_tops[0];
-      layers[i + 1].f_forward[0] = forward_conv_layer;
-      layers[i + 1].f_shape[0] = shape_conv_layer;
-
-      // bbox
-      layers[i + 2].p_bottoms[0] = layers[i].p_tops[0];
-      layers[i + 2].f_forward[0] = forward_conv_layer;
-      layers[i + 2].f_shape[0] = shape_conv_layer;
-    }
-  }
-
-  #ifdef MSRPN
-  {
-    // score concat
-    layers[9].p_bottoms[0] = layers[1].p_tops[0];
-    layers[9].p_bottoms[1] = layers[4].p_tops[0];
-    layers[9].p_bottoms[2] = layers[7].p_tops[0];
-    layers[9].f_forward[0] = forward_concat_layer;
-    layers[9].f_forward[1] = forward_rpn_pred_layer;
-    layers[9].f_shape[0] = shape_concat_layer;
-    layers[9].f_shape[1] = shape_rpn_pred_layer;
-
-    // bbox concat
-    layers[10].p_bottoms[0] = layers[2].p_tops[0];
-    layers[10].p_bottoms[1] = layers[5].p_tops[0];
-    layers[10].p_bottoms[2] = layers[8].p_tops[0];
-    layers[10].f_forward[0] = forward_concat_layer;
-    layers[10].f_forward[1] = forward_rpn_bbox_layer;
-    layers[10].f_shape[0] = shape_concat_layer;
-    layers[10].f_shape[1] = shape_rpn_bbox_layer;
-  }
-  #else
-  {
-    layers[1].f_forward[1] = forward_rpn_pred_layer;
-    layers[1].f_shape[1] = shape_rpn_pred_layer;
-    layers[2].f_forward[1] = forward_rpn_bbox_layer;
-    layers[2].f_shape[1] = shape_rpn_bbox_layer;
-  }
-  #endif
-
-  // proposal & RoI-pooling
-  {
-  #ifdef MSRPN
-    layers[11].p_bottoms[0] = layers[9].p_tops[0];
-    layers[11].p_bottoms[1] = layers[10].p_tops[0];
-  #else
-    layers[11].p_bottoms[0] = layers[1].p_tops[0];
-    layers[11].p_bottoms[1] = layers[2].p_tops[0];
-  #endif
-    layers[11].p_bottoms[2] = &net->img_info;
-    layers[11].f_forward[0] = forward_proposal_layer;
-    layers[11].f_shape[0] = shape_proposal_layer;
-    layers[11].f_init[0] = init_proposal_layer;
-
-    layers[12].p_bottoms[0] = convnet_out_layer->p_tops[0];
-    layers[12].p_bottoms[1] = layers[11].p_tops[0];
-    layers[12].f_forward[0] = forward_roipool_layer;
-    layers[12].f_shape[0] = shape_roipool_layer;
-  }
-
-  // fc6_L, 6_U, 7_L, 7_U
-  for (int i = 13; i <= 16; i += 2) {
-  #ifdef FC_COMPRESS
-    layers[i].p_bottoms[0] = layers[i - 1].p_tops[0];
-    layers[i].f_forward[0] = forward_fc_layer;
-    layers[i].f_shape[0] = shape_fc_layer;
-    layers[i + 1].p_bottoms[0] = layers[i].p_tops[0];
-  #else
-    layers[i + 1].p_bottoms[0] = layers[i - 1].p_tops[0];
-  #endif
-    layers[i + 1].f_forward[0] = forward_fc_layer;
-    layers[i + 1].f_forward[1] = forward_inplace_relu_layer;
-    layers[i + 1].f_forward[2] = forward_inplace_dropout_layer;
-    layers[i + 1].f_shape[0] = shape_fc_layer;
-  }
-
-  // RCNN score
-  layers[17].p_bottoms[0] = layers[16].p_tops[0];
-  layers[17].f_forward[0] = forward_fc_layer;
-  layers[17].f_shape[0] = shape_fc_layer;
-
-  // RCNN pred
-  layers[18].p_bottoms[0] = layers[17].p_tops[0];
-  layers[18].p_bottoms[1] = layers[11].p_tops[0];
-  layers[18].f_forward[0] = forward_rcnn_pred_layer;
-  layers[18].f_shape[0] = shape_rcnn_pred_layer;
-
-  // RCNN bbox
-  layers[19].p_bottoms[0] = layers[16].p_tops[0];
-  layers[19].p_bottoms[1] = layers[11].p_tops[0];
-  layers[19].f_forward[0] = forward_fc_layer;
-  layers[19].f_forward[1] = forward_rcnn_bbox_layer;
-  layers[19].f_shape[0] = shape_fc_layer;
-  layers[19].f_shape[1] = shape_rcnn_bbox_layer;
-
-  // output
-  layers[20].p_bottoms[0] = layers[18].p_tops[0];
-  layers[20].p_bottoms[1] = layers[19].p_tops[0];
-  layers[20].p_bottoms[2] = layers[11].p_tops[0];
-  layers[20].p_bottoms[3] = &net->img_info;
-  layers[20].f_forward[0] = forward_odout_layer;
-  layers[20].f_shape[0] = shape_odout_layer;
-
-  // test
-  #ifndef DEMO
-  {
-    layers[21].p_bottoms[0] = layers[18].p_tops[0];
-    layers[21].p_bottoms[1] = layers[19].p_tops[0];
-    layers[21].p_bottoms[2] = layers[11].p_tops[0];
-    layers[21].p_bottoms[3] = &net->img_info;
-    layers[21].f_forward[0] = forward_odtest_layer;
-    layers[21].f_shape[0] = shape_odtest_layer;
-  }
-  #endif
-
-  net->num_layers += sub_size;
 }
 
 void construct_pvanet(Net* const pvanet,
@@ -705,14 +613,8 @@ void construct_pvanet(Net* const pvanet,
 
   strcpy(pvanet->param_path, param_path);
 
-  #ifdef INCEPTION
   setup_inception(pvanet);
-  #else
-  setup_pva711(pvanet);
-  #endif
-  setup_frcnn(pvanet, &pvanet->layers[pvanet->num_layers],
-              pvanet->layers[pvanet->num_layers - 1].option.out_channels,
-              &pvanet->layers[pvanet->num_layers - 1]);
+  setup_frcnn(pvanet, "convf", "convf", 256, 1, 1, 512, 128);
 
   shape_net(pvanet);
 
@@ -747,8 +649,8 @@ void set_input_pvanet(Net* const net,
                       const int num_images)
 {
 
-  Tensor* const input = net->layers[0].p_tops[0];
-  Tensor* const img_info = &net->img_info;
+  Tensor* const input = get_tensor_by_name(net, "data");
+  Tensor* const img_info = get_tensor_by_name(net, "img_info");
   int shape_changed = (input->num_items != num_images);
 
   if (!shape_changed) {
@@ -777,8 +679,6 @@ void set_input_pvanet(Net* const net,
 
   if (shape_changed) {
     printf("shape changed\n");
-    print_tensor_info("data", input);
-    print_tensor_info("img_info", img_info);
     shape_net(net);
   }
 }
@@ -790,7 +690,7 @@ void get_output_pvanet(Net* const net,
   // retrieve & save test output for measuring performance
   #ifndef DEMO
   {
-    const Tensor* const out = net->layers[net->num_layers - 1].p_tops[0];
+    const Tensor* const out = get_tensor_by_name(net, "test");
     const long int output_size = flatten_size(out);
 
   #ifdef GPU
@@ -815,13 +715,7 @@ void get_output_pvanet(Net* const net,
 
   // retrieve & print output
   {
-    #ifdef DEMO
-    const int out_layer_idx = net->num_layers - 1;
-    #else
-    const int out_layer_idx = net->num_layers - 2;
-    #endif
-
-    const Tensor* const out = net->layers[out_layer_idx].p_tops[0];
+    const Tensor* const out = get_tensor_by_name(net, "out");
     const long int output_size = flatten_size(out);
 
   #ifdef GPU

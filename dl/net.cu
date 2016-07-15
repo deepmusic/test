@@ -49,6 +49,10 @@ void add_bottom(Layer* const layer, Tensor* const tensor)
 {
   if (layer->num_bottoms == MAX_NUM_BOTTOMS) {
     printf("[ERROR] Layer %s: cannot add more input\n", layer->name);
+    for (int bottom_id = 0; bottom_id < layer->num_bottoms; ++bottom_id) {
+      printf("  %s[%d]: %s\n",
+             layer->name, bottom_id, get_bottom(layer, bottom_id)->name);
+    }
     return;
   }
   ++layer->num_bottoms;
@@ -59,6 +63,10 @@ void add_top(Layer* const layer, Tensor* const tensor)
 {
   if (layer->num_tops == MAX_NUM_TOPS) {
     printf("[ERROR] Layer %s: cannot add more output\n", layer->name);
+    for (int top_id = 0; top_id < layer->num_tops; ++top_id) {
+      printf("  %s[%d]: %s\n",
+             layer->name, top_id, get_top(layer, top_id)->name);
+    }
     return;
   }
   ++layer->num_tops;
@@ -69,6 +77,10 @@ void add_param(Layer* const layer, Tensor* const tensor)
 {
   if (layer->num_params == MAX_NUM_PARAMS) {
     printf("[ERROR] Layer %s: cannot add more parameter\n", layer->name);
+    for (int param_id = 0; param_id < layer->num_params; ++param_id) {
+      printf("  %s[%d]: %s\n",
+             layer->name, param_id, get_param(layer, param_id)->name);
+    }
     return;
   }
   ++layer->num_params;
@@ -174,7 +186,7 @@ void free_layer(Layer* const layer)
       #endif
     }
     else {
-      printf("[ERROR] Layer %s: Memory for aux_data %d was not allocated\n",
+      printf("[ERROR] Layer %s: memory for aux_data %d was not allocated\n",
              layer->name, i);
     }
   }
@@ -203,6 +215,42 @@ Layer* get_layer(Net* const net, const int layer_id)
   #endif
   return &net->layers[layer_id];
 } 
+
+int get_tensor_id(Net* const net, const Tensor* const tensor)
+{
+  const int tensor_id = tensor - net->tensors;
+
+  #ifdef DEBUG
+  if (tensor_id < 0 || tensor_id >= net->num_tensors) {
+    printf("[ERROR] Tensor %s: located at out-of-bound index %d\n",
+           tensor->name, tensor_id);
+  }
+  else if (tensor != get_tensor(net, tensor_id)) {
+    printf("[ERROR] Tensor %s: collision with tensor %s\n",
+           tensor->name, get_tensor(net, tensor_id)->name);
+  }
+  #endif
+
+  return tensor_id;
+}
+
+int get_layer_id(Net* const net, const Layer* const layer)
+{
+  const int layer_id = layer - net->layers;
+
+  #ifdef DEBUG
+  if (layer_id < 0 || layer_id >= net->num_layers) {
+    printf("[ERROR] Layer %s: located at out-of-bound index %d\n",
+           layer->name, layer_id);
+  }
+  else if (layer != get_layer(net, layer_id)) {
+    printf("[ERROR] Layer %s: collision with layer %s\n",
+           layer->name, get_layer(net, layer_id)->name);
+  }
+  #endif
+
+  return layer_id;
+}
 
 Tensor* find_tensor_by_name(Net* const net, const char* const name)
 {
@@ -310,13 +358,19 @@ Layer* get_layer_by_name(Net* const net, const char* const name)
 
 void assign_layer_data(Net* const net)
 {
+  int is_assigned[MAX_NUM_TENSORS] = { 0, };
+  int alive_until[MAX_NUM_TENSORS] = { 0, };
+  int reserved_until[MAX_NUM_LAYER_DATA] = { 0, };
+
   // compute lifetime for each tensor
   for (int layer_id = net->num_layers - 1; layer_id >= 0; --layer_id) {
     Layer* const layer = get_layer(net, layer_id);
     for (int bottom_id = 0; bottom_id < layer->num_bottoms; ++bottom_id) {
       Tensor* const tensor = get_bottom(layer, bottom_id);
-      if (!tensor->alive_until) {
-        tensor->alive_until = layer_id;
+      const int tensor_id = get_tensor_id(net, tensor);
+
+      if (!alive_until[tensor_id]) {
+        alive_until[tensor_id] = layer_id;
       }
     }
   }
@@ -326,8 +380,10 @@ void assign_layer_data(Net* const net)
     Layer* const layer = get_layer(net, layer_id);
     for (int top_id = 0; top_id < layer->num_tops; ++top_id) {
       Tensor* const tensor = get_top(layer, top_id);
-      if (!tensor->alive_until) {
-        tensor->alive_until = net->num_layers - 1;
+      const int tensor_id = get_tensor_id(net, tensor);
+
+      if (!alive_until[tensor_id]) {
+        alive_until[tensor_id] = net->num_layers - 1;
       }
     }
   }
@@ -338,35 +394,47 @@ void assign_layer_data(Net* const net)
 
     for (int top_id = 0; top_id < layer->num_tops; ++top_id) {
       Tensor* const tensor = get_top(layer, top_id);
+      const int tensor_id = get_tensor_id(net, tensor);
 
-      if (tensor->data_type == SHARED_DATA) {
-        int assigned = 0;
+      if (tensor->data_type == SHARED_DATA && !is_assigned[tensor_id]) {
         for (int block_id = 0; block_id < net->num_layer_data; ++block_id) {
-          if (!net->reserved_until[block_id]) {
+          if (!reserved_until[block_id]) {
             tensor->shared_block_id = block_id;
-            net->reserved_until[block_id] = tensor->alive_until;
-            assigned = 1;
+            reserved_until[block_id] = alive_until[tensor_id];
+            is_assigned[tensor_id] = 1;
             break;
           }
         }
 
-        if (!assigned) {
-          printf("[ERROR] Failed to assign layer_data for %s\n",
-                 tensor->name);
-        }
-        else {
-          printf("Tensor %s: Assigned shared memory block %d, ",
-                 tensor->name, tensor->shared_block_id);
-          printf("reserved until layer %s\n",
-                 get_layer(net, tensor->alive_until)->name);
+        if (!is_assigned[tensor_id]) {
+          if (net->num_layer_data == MAX_NUM_LAYER_DATA) {
+            printf("[ERROR] Failed to assign layer_data for %s\n",
+                   tensor->name);
+          }
+          else {
+            const int block_id = net->num_layer_data++;
+            tensor->shared_block_id = block_id;
+            reserved_until[block_id] = alive_until[tensor_id];
+            is_assigned[tensor_id] = 1;
+          }          
         }
       }
 
       for (int block_id = 0; block_id < net->num_layer_data; ++block_id) {
-        if (net->reserved_until[block_id] == layer_id) {
-          net->reserved_until[block_id] = 0;
+        if (reserved_until[block_id] == layer_id) {
+          reserved_until[block_id] = 0;
         }
       }
+    }
+  }
+
+  for (int tensor_id = 0; tensor_id < net->num_tensors; ++tensor_id) {
+    if (is_assigned[tensor_id]) {
+      const Tensor* const tensor = get_tensor(net, tensor_id);
+      printf("Tensor %s: Assigned shared memory block %d, ",
+             tensor->name, tensor->shared_block_id);
+      printf("reserved until layer %s\n",
+             get_layer(net, alive_until[tensor_id])->name);
     }
   }
 }
@@ -380,17 +448,6 @@ void malloc_net(Net* const net)
 {
   long int space_cpu = 0;
   long int space = 0;
-
-  space_cpu += net->num_layers * sizeof(Layer);
-
-  for (int i = 0; i < net->num_layer_data; ++i) {
-    #ifdef GPU
-    cudaMalloc(&net->layer_data[i], net->layer_size * sizeof(real));
-    #else
-    net->layer_data[i] = (real*)malloc(net->layer_size * sizeof(real));
-    #endif
-  }
-  space += net->num_layer_data * net->layer_size * sizeof(real);
 
   {
   #ifdef GPU
@@ -428,16 +485,33 @@ void malloc_net(Net* const net)
   #endif
   }
 
+  // memory allocation for shared memory blocks
   assign_layer_data(net);
+  for (int i = 0; i < net->num_layer_data; ++i) {
+    #ifdef GPU
+    cudaMalloc(&net->layer_data[i], net->layer_size * sizeof(real));
+    #else
+    net->layer_data[i] = (real*)malloc(net->layer_size * sizeof(real));
+    #endif
+  }
+  space += net->num_layer_data * net->layer_size * sizeof(real);
 
   // memory allocation for tensors
   for (int i = 0; i < net->num_tensors; ++i) {
     Tensor* const tensor = get_tensor(net, i);
-    space += malloc_tensor_data(tensor, net->layer_data);
+    const int tensor_size = malloc_tensor_data(tensor, net->layer_data);
+
     if (tensor->data_type == PARAM_DATA) {
       char path[1024];
       sprintf(path, "%s/%s.bin", net->param_path, tensor->name);
       load_tensor_data(path, tensor, net->param_cpu_data);
+    }
+
+    if (tensor->data_type == CPU_DATA) {
+      space_cpu += tensor_size;
+    }
+    else {
+      space += tensor_size;
     }
   }
 
@@ -446,14 +520,7 @@ void malloc_net(Net* const net)
     Layer* const layer = get_layer(net, i);
     space += malloc_layer(net, layer);
   }
-
-  // memory allocation for image info data
-  {
-    Tensor* img_info = &net->img_info;
-    const long int img_info_size = flatten_size(img_info);
-    img_info->data = (real*)malloc(img_info_size * sizeof(real));
-    space_cpu += sizeof(real) * img_info_size;
-  }
+  space_cpu += net->num_layers * sizeof(Layer);
 
   // acquire CuBLAS handle
   #ifdef GPU
@@ -476,14 +543,6 @@ void free_net(Net* const net)
     return;
   }
 
-  for (int i = 0; i < net->num_layer_data; ++i) {
-    #ifdef GPU
-    cudaFree(net->layer_data[i]);
-    #else
-    free(net->layer_data[i]);
-    #endif
-  }
-
   {
   #ifdef GPU
     cudaFree(net->temp_data);
@@ -499,6 +558,14 @@ void free_net(Net* const net)
     free(net->tempint_cpu_data);
   }
 
+  for (int i = 0; i < net->num_layer_data; ++i) {
+    #ifdef GPU
+    cudaFree(net->layer_data[i]);
+    #else
+    free(net->layer_data[i]);
+    #endif
+  }
+
   for (int i = 0; i < net->num_tensors; ++i) {
     Tensor* const tensor = get_tensor(net, i);
     free_tensor_data(tensor);
@@ -508,8 +575,6 @@ void free_net(Net* const net)
     Layer* const layer = get_layer(net, i);
     free_layer(layer);
   }
-
-  free(net->img_info.data);
 
   #ifdef GPU
   {
@@ -553,13 +618,17 @@ void shape_net(Net* const net)
   for (int i = 0; i < net->num_layers; ++i) {
     Layer* const layer = get_layer(net, i);
 
+    #ifdef DEBUG
+    printf("[Layer %s]\n", layer->name);
+    #endif
+
     for (int j = 0; j < MAX_NUM_OPS_PER_LAYER; ++j) {
       if (layer->f_shape[j]) {
         (*layer->f_shape[j])(net, layer);
         #ifdef DEBUG
         for (int top_id = 0; top_id < layer->num_tops; ++top_id) {
           const Tensor* const tensor = get_top(layer, top_id);
-          print_tensor_info(layer->name, tensor);
+          print_tensor_info(tensor);
         }
         #endif
       }
@@ -614,8 +683,12 @@ void print_layer_tops(void* const net_, void* const layer_)
 
   for (int i = 0; i < layer->num_tops; ++i) {
     const Tensor* const tensor = get_top(layer, i);
-    const long int size = flatten_size(tensor);
+    long int size = flatten_size(tensor);
     int idx[MAX_NDIM + 1] = { 0, };
+
+    if (size > 1000) {
+      size = 1000;
+    }
 
     #ifdef GPU
     cudaMemcpyAsync(net->temp_cpu_data, tensor->data,

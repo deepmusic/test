@@ -388,7 +388,6 @@ void forward_dropout_layer(void* const net_, void* const layer_)
 
   dropout_forward(layer->p_bottoms[0], (unsigned int*)net->tempint_data,
                   layer->p_tops[0], &layer->option);
-  print_tensor_info(layer->name, layer->p_tops[0]);
 }
 
 void forward_inplace_dropout_layer(void* const net_, void* const layer_)
@@ -398,7 +397,6 @@ void forward_inplace_dropout_layer(void* const net_, void* const layer_)
 
   dropout_forward_inplace(layer->p_tops[0], (unsigned int*)net->tempint_data,
                           &layer->option);
-  print_tensor_info(layer->name, layer->p_tops[0]);
 }
 
 void shape_dropout_layer(void* const net_, void* const layer_)
@@ -407,139 +405,3 @@ void shape_dropout_layer(void* const net_, void* const layer_)
 
   dropout_shape(layer->p_bottoms[0], layer->p_tops[0]);
 }
-
-
-
-// --------------------------------------------------------------------------
-// test code
-// --------------------------------------------------------------------------
-
-#ifdef TEST
-
-int main(int argc, char* argv[])
-{
-  // variable declaration & memory allocation
-  Tensor X, Y;
-  real *X_data = NULL, *Y_data = NULL;
-  unsigned int *mask_data = NULL;
-  LayerOption option;
-
-  // set option
-  {
-    option.scaled = 0;
-    option.test = 1;
-    option.threshold = 0.7f;
-  }
-
-  // load data
-  {
-    int ndim;
-    int shape[g_max_ndim];
-    int total_size;
-
-    X_data = load_data("../data/temp/conv_bottom0.bin",
-                       &ndim, shape, NULL);
-    X.num_items = shape[0];
-    X.ndim = ndim - 1;
-    total_size = 0;
-    for (int n = 0; n < X.num_items; ++n) {
-      int size_n = 1;
-      for (int i = 0; i < X.ndim; ++i) {
-        X.shape[n][i] = shape[i + 1];
-        size_n *= shape[i + 1];
-      }
-      X.start[n] = total_size;
-      total_size += size_n;
-    }
-
-    dropout_shape(&X, &Y);
-
-    Y_data = (real*)malloc(flatten_size(&Y) * sizeof(real));
-  }
- 
-  // CUDA initialization
-  #ifdef GPU
-  {
-    printf("set device\n");
-    cudaSetDevice(0);
-  }
-  #endif
-
-  // bind loaded data to corresponding tensors
-  #ifdef GPU
-  {
-    const long int X_size = flatten_size(&X);
-    const long int Y_size = flatten_size(&Y);
-
-    printf("gpu malloc\n");
-    cudaMalloc(&X.data, X_size * sizeof(real));
-    cudaMalloc(&mask_data, X_size * sizeof(unsigned int));
-    cudaMalloc(&Y.data, Y_size * sizeof(real));
-
-    printf("memcpy: cpu -> gpu\n");
-    cudaMemcpyAsync(X.data, X_data, X_size * sizeof(real),
-                    cudaMemcpyHostToDevice);
-  }
-  #else
-  {
-    const long int X_size = flatten_size(&X);
-
-    X.data = X_data;
-    Y.data = Y_data;
-    mask_data = (unsigned int*)malloc(X_size * sizeof(unsigned int));
-  }
-  #endif
-
-  // do forward operation
-  {
-    printf("do forward (testing-time dropout)\n");
-    dropout_forward(&X, mask_data, &Y, &option);
-  }
-
-  // copy GPU data to main memory
-  #ifdef GPU
-  {
-    const long int Y_size = flatten_size(&Y);
-
-    printf("memcpy: cpu <- gpu\n");
-    cudaMemcpyAsync(Y_data, Y.data, Y_size * sizeof(real),
-                    cudaMemcpyDeviceToHost);
-  }
-  #endif
-
-  // verify results
-  {
-    const long int Y_size = flatten_size(&Y);
-
-    printf("verification\n");
-
-    for (int i = 0; i < Y_size; ++i) {
-      if (ABS(Y_data[i] / (1.0f - option.threshold) - X_data[i]) > 1e-3) {
-        printf("top[%d] = %.6f, bottom[%d] = %.6f\n",
-               i, Y_data[i], i, X_data[i]);
-      }
-    }
-  }
-
-  // memory deallocation
-  {
-    printf("free\n");
-    free(X_data);
-    free(Y_data);
-  }
-  #ifdef GPU
-  {
-    printf("gpu free\n");
-    cudaFree(X.data);
-    cudaFree(Y.data);
-    cudaFree(mask_data);
-  }
-  #else
-  {
-    free(mask_data);
-  }
-  #endif
-
-  return 0;
-}
-#endif // endifdef TEST

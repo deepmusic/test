@@ -256,8 +256,6 @@ void forward_odtest_layer(void* const net_, void* const layer_)
                  layer->p_bottoms[2], layer->p_bottoms[3],
                  layer->p_tops[0],
                  &layer->option);
-
-  print_tensor_info(layer->name, layer->p_tops[0]);
 }
 
 void shape_odtest_layer(void* const net_, void* const layer_)

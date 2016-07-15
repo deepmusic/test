@@ -1,11 +1,6 @@
 #include "layer.h"
 #include <string.h>
 
-#include <time.h>
-
-static float a_time[8] = { 0, };
-static clock_t tick0, tick1;
-
 // --------------------------------------------------------------------------
 // kernel code
 //   minus_{gpu, cpu}
@@ -42,8 +37,6 @@ void crelu_forward(const Tensor* const bottom,
                    Tensor* const top,
                    const LayerOption* const option)
 {
-  tick0 = clock();
-
   for (int n = bottom->num_items - 1; n >= 0; --n) {
     int item_size = 1;
     for (int i = 0; i < bottom->ndim; ++i) {
@@ -79,11 +72,6 @@ void crelu_forward(const Tensor* const bottom,
     }
     #endif
   }
-
-  tick1 = clock();
-  a_time[5] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-  a_time[6] = 0;
-  a_time[7] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 }
 
 
@@ -119,15 +107,6 @@ void forward_crelu_layer(void* const net_, void* const layer_)
   Layer* const layer = (Layer*)layer_;
 
   crelu_forward(layer->p_bottoms[0], layer->p_tops[0], &layer->option);
-  print_tensor_info(layer->name, layer->p_tops[0]);
-  #ifdef DEBUG
-  {
-    for (int i = 0; i < 8; ++i) {
-      printf("%4.2f\t", a_time[i] * 1000);
-    }
-    printf("\n");
-  }
-  #endif
 }
 
 void shape_crelu_layer(void* const net_, void* const layer_)

@@ -1,27 +1,20 @@
 #include "layer.h"
 #include <string.h>
 
-#include <time.h>
-
-static float a_time[8] = { 0, };
-static clock_t tick0, tick1;
-
 // --------------------------------------------------------------------------
 // layer operator code
 //   concat_forward
 // --------------------------------------------------------------------------
 
 // concat: bottom[0], bottom[1], ..., bottom[M-1] -> top
-//   M = option->num_concats
+//   M = option->num_bottoms
 //   bottom[m]: C_m x H x W  (C_m may different from each other)
 //   top: sum(C_m) x H x W  (channel-wise concatenation)
 void concat_forward(const Tensor* const bottom3d[],
                     Tensor* const top3d,
                     const LayerOption* const option)
 {
-  tick0 = clock();
-
-  const int num_bottoms = option->num_concats;
+  const int num_bottoms = option->num_bottoms;
 
   const real* * p_bottom_data
       = (const real* *)malloc(num_bottoms * sizeof(real*));
@@ -76,10 +69,6 @@ void concat_forward(const Tensor* const bottom3d[],
           top3d->shape[n][0] * top3d->shape[n][1] * top3d->shape[n][2];
     }
   }
-
-  tick1 = clock();
-  a_time[6] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-  a_time[7] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 }
 
 
@@ -92,7 +81,7 @@ void concat_shape(const Tensor* const bottom3d[],
                   Tensor* const top3d,
                   const LayerOption* const option)
 {
-  const int num_bottoms = option->num_concats;
+  const int num_bottoms = option->num_bottoms;
 
   // calculate shape for each item in the batch
   for (int n = 0; n < bottom3d[0]->num_items; ++n) {
@@ -131,16 +120,6 @@ void forward_concat_layer(void* const net_, void* const layer_)
   Layer* const layer = (Layer*)layer_;
 
   concat_forward(layer->p_bottoms, layer->p_tops[0], &layer->option);
-
-  print_tensor_info(layer->name, layer->p_tops[0]);
-  #ifdef DEBUG
-  {
-    for (int i = 0; i < 8; ++i) {
-      printf("%4.2f\t", a_time[i] * 1000);
-    }
-    printf("\n");
-  }
-  #endif
 }
 
 void shape_concat_layer(void* const net_, void* const layer_)
@@ -153,26 +132,3 @@ void shape_concat_layer(void* const net_, void* const layer_)
 
   update_net_size(net, layer, 0, 0, 0);
 }
-
-void init_concat_layer(void* const net_, void* const layer_,
-                       const void* const entry_)
-{
-  Layer* const layer = (Layer*)layer_;
-  LayerOption* const option = &layer->option;
-
-  option->num_concats = layer->num_bottoms;
-}
-
-
-
-// --------------------------------------------------------------------------
-// test code
-// --------------------------------------------------------------------------
-
-#ifdef TEST
-
-int main(int argc, char* argv[])
-{
-  return 0;
-}
-#endif

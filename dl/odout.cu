@@ -544,13 +544,12 @@ void odout_shape(const Tensor* const bottom2d,
     const int num_classes = bottom2d->shape[n][1];
 
     // calculate total number of RoIs for determining temporary space size
-    //   +1 for unknown class
-    total_num_rois += num_rois * (num_classes + 1);
+    total_num_rois += num_rois * num_classes;
 
     // top shape <= (num_rois * num_classes) x 6
     //   (class index, x1, y1, x2, y2, score) for each output
     //   exact number of outputs will be determined after forward-pass
-    top2d->shape[n][0] = num_rois * (num_classes + 1);
+    top2d->shape[n][0] = num_rois * num_classes;
     top2d->shape[n][1] = 6;
     top2d->start[n] = total_num_rois * 6;
   }
@@ -583,8 +582,6 @@ void forward_odout_layer(void* const net_, void* const layer_)
                 net->temp_cpu_data, net->tempint_cpu_data,
                 net->temp_data, net->tempint_data,
                 &layer->option);
-
-  print_tensor_info(layer->name, layer->p_tops[0]);
 }
 
 void shape_odout_layer(void* const net_, void* const layer_)

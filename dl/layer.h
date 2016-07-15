@@ -64,15 +64,17 @@
 
 typedef float real;
 #define MAX_NDIM 5
+#define MAX_NAME_LEN 64
 
 // data_type values
 #define SHARED_DATA 0  // data uses a block of shared memory
 #define PRIVATE_DATA 1  // data has its own private memory
 #define PARAM_DATA 2  // has own memory & pre-trained parameter is loaded
+#define CPU_DATA 3 // has own CPU memory
 
 typedef struct Tensor_
 {
-  char name[64];
+  char name[MAX_NAME_LEN];
   int num_items;
   int ndim;
   int shape[BATCH_SIZE][MAX_NDIM];
@@ -80,7 +82,6 @@ typedef struct Tensor_
   real* data;
   int data_type;
   int shared_block_id;
-  int alive_until;
   long int max_data_size;
 } Tensor;
 
@@ -127,8 +128,7 @@ void save_tensor_data(const char* const filename,
 long int flatten_size(const Tensor* const tensor);
 
 // print shapes for all batch items in tensor
-void print_tensor_info(const char* const name,
-                       const Tensor* const tensor);
+void print_tensor_info(const Tensor* const tensor);
 
 #ifdef __cplusplus
 } //end extern "C"
@@ -141,7 +141,7 @@ void print_tensor_info(const char* const name,
 // --------------------------------------------------------------------------
 
 #define MAX_NUM_BOTTOMS 4
-#define MAX_NUM_TOPS 1
+#define MAX_NUM_TOPS 2
 #define MAX_NUM_PARAMS 2
 #define MAX_NUM_AUXS 1
 #define MAX_NUM_OPS_PER_LAYER 5
@@ -168,7 +168,6 @@ typedef struct LayerOption_
   real* ratios;
   int num_scales;
   int num_ratios;
-  int num_concats;
   int base_size;
   int feat_stride;
   int min_size;
@@ -191,7 +190,7 @@ typedef struct LayerOption_
 
 typedef struct Layer_
 {
-  char name[64];
+  char name[MAX_NAME_LEN];
 
   Tensor* p_bottoms[MAX_NUM_BOTTOMS];
   int num_bottoms;
@@ -243,9 +242,9 @@ Tensor* get_param(const Layer* const layer, const int param_id);
 // net data structure & some functions
 // --------------------------------------------------------------------------
 
-#define MAX_NUM_TENSORS 300
-#define MAX_NUM_LAYERS 300
-#define MAX_NUM_LAYER_DATA 6
+#define MAX_NUM_TENSORS 400
+#define MAX_NUM_LAYERS 400
+#define MAX_NUM_LAYER_DATA 10
 #define MAX_NUM_RATIOS 10
 #define MAX_NUM_SCALES 10
 
@@ -260,7 +259,6 @@ typedef struct Net_
   int num_layers;
 
   real* layer_data[MAX_NUM_LAYER_DATA];
-  int reserved_until[MAX_NUM_LAYER_DATA];
   long int layer_size;
   int num_layer_data;
 
@@ -280,7 +278,6 @@ typedef struct Net_
   real* const_data;
   long int const_size;
 
-  Tensor img_info;
   real anchor_ratios[MAX_NUM_RATIOS];
   real anchor_scales[MAX_NUM_SCALES];
 
@@ -302,6 +299,9 @@ extern "C" {
 
 Tensor* get_tensor(Net* const net, const int tensor_id);
 Layer* get_layer(Net* const net, const int layer_id);
+
+int get_tensor_id(Net* const net, const Tensor* const tensor);
+int get_layer_id(Net* const net, const Layer* const layer);
 
 Tensor* find_tensor_by_name(Net* const net, const char* const name);
 Layer* find_layer_by_name(Net* const net, const char* const name);
@@ -361,11 +361,12 @@ extern "C" {
 // Network generation
 // --------------------------------------------------------------------------
 
-void setup_data_layer(Net* const net,
+Layer* add_data_layer(Net* const net,
                       const char* const layer_name,
-                      const char* const top_name);
+                      const char* const data_name,
+                      const char* const img_info_name);
 
-void setup_conv_layer(Net* const net,
+Layer* add_conv_layer(Net* const net,
                       const char* const layer_name,
                       const char* const bottom_name,
                       const char* const top_name,
@@ -378,6 +379,86 @@ void setup_conv_layer(Net* const net,
                       const int bias_term,
                       const int do_relu);
 
+Layer* add_deconv_layer(Net* const net,
+                        const char* const layer_name,
+                        const char* const bottom_name,
+                        const char* const top_name,
+                        const char* const weight_name,
+                        const char* const bias_name,
+                        const int num_group, const int num_output,
+                        const int kernel_h, const int kernel_w,
+                        const int stride_h, const int stride_w,
+                        const int pad_h, const int pad_w,
+                        const int bias_term,
+                        const int do_relu);
+
+Layer* add_fc_layer(Net* const net,
+                    const char* const layer_name,
+                    const char* const bottom_name,
+                    const char* const top_name,
+                    const char* const weight_name,
+                    const char* const bias_name,
+                    const int num_output,
+                    const int bias_term,
+                    const int do_relu);
+
+Layer* add_pool_layer(Net* const net,
+                      const char* const layer_name,
+                      const char* const bottom_name,
+                      const char* const top_name,
+                      const int kernel_h, const int kernel_w,
+                      const int stride_h, const int stride_w,
+                      const int pad_h, const int pad_w);
+
+Layer* add_scale_const_layer(Net* const net,
+                             const char* const layer_name,
+                             const char* const bottom_name,
+                             const char* const top_name,
+                             const real weight,
+                             const real bias,
+                             const int bias_term);
+
+Layer* add_scale_channel_layer(Net* const net,
+                               const char* const layer_name,
+                               const char* const bottom_name,
+                               const char* const top_name,
+                               const char* const weight_name,
+                               const char* const bias_name,
+                               const int bias_term);
+
+Layer* add_concat_layer(Net* const net,
+                        const char* const layer_name,
+                        const char* const p_bottom_names[],
+                        const char* const top_name,
+                        const int num_bottoms);
+
+Layer* add_eltwise_layer(Net* const net,
+                         const char* const layer_name,
+                         const char* const p_bottom_names[],
+                         const char* const top_name,
+                         const int num_bottoms);
+
+Layer* add_relu_layer(Net* const net,
+                      const char* const layer_name,
+                      const char* const bottom_name,
+                      const char* const top_name,
+                      const real negative_slope);
+
+Layer* add_dropout_layer(Net* const net,
+                         const char* const layer_name,
+                         const char* const bottom_name,
+                         const char* const top_name,
+                         const int is_test,
+                         const int is_scaled);
+
+void setup_inception(Net* const net);
+
+void setup_frcnn(Net* const net,
+                 const char* const rpn_input_name,
+                 const char* const rcnn_input_name,
+                 const int rpn_channels,
+                 const int rpn_kernel_h, const int rpn_kernel_w,
+                 const int fc6_channels, const int fc7_channels);
 
 
 // --------------------------------------------------------------------------
@@ -570,7 +651,8 @@ void forward_inplace_scale_const_layer(void* const net_,
                                        void* const layer_);
 void forward_inplace_scale_channel_layer(void* const net_,
                                          void* const layer_);
-void shape_scale_layer(void* const net_, void* const layer_);
+void shape_scale_const_layer(void* const net_, void* const layer_);
+void shape_scale_channel_layer(void* const net_, void* const layer_);
 
 
 
@@ -623,7 +705,7 @@ void img2input(const unsigned char img[],
                unsigned char temp_data[],
                const int height, const int width);
 
-void input_init_shape(Net* const net,
+void init_input_layer(Net* const net,
                       Tensor* const input3d,
                       Tensor* const img_info1d);
 
@@ -642,18 +724,31 @@ extern "C" {
 #endif
 
 int _batch_size_net(void);
+int _max_ndim(void);
+int _max_name_len(void);
+
 int _max_num_bottoms(void);
 int _max_num_tops(void);
 int _max_num_params(void);
 int _max_num_auxs(void);
 int _max_num_ops_per_layer(void);
 
+int _max_num_tensors(void);
+int _max_num_layers(void);
+int _max_num_layer_data(void);
+int _max_num_ratios(void);
+int _max_num_scales(void);
+
+Net* _net(void);
+
 void _generate_net(void);
 void _init_net(void);
 void _set_net_param_path(const char* const param_path);
 
 void _add_data_layer(const char* const layer_name,
-                     const char* const top_name);
+                     const char* const data_name,
+                     const char* const img_info_name);
+
 void _add_conv_layer(const char* const layer_name,
                      const char* const bottom_name,
                      const char* const top_name,

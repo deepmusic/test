@@ -2,12 +2,20 @@
 #include <string.h>
 
 static Net pvanet;
-static int initialized = 0;
 
 int _batch_size_net(void)
 {
   return BATCH_SIZE;
 }
+int _max_ndim(void)
+{
+  return MAX_NDIM;
+}
+int _max_name_len(void)
+{
+  return MAX_NAME_LEN;
+}
+
 int _max_num_bottoms(void)
 {
   return MAX_NUM_BOTTOMS;
@@ -29,14 +37,39 @@ int _max_num_ops_per_layer(void)
   return MAX_NUM_OPS_PER_LAYER;
 }
 
+int _max_num_tensors(void)
+{
+  return MAX_NUM_TENSORS;
+}
+int _max_num_layers(void)
+{
+  return MAX_NUM_LAYERS;
+}
+int _max_num_layer_data(void)
+{
+  return MAX_NUM_LAYER_DATA;
+}
+int _max_num_ratios(void)
+{
+  return MAX_NUM_RATIOS;
+}
+int _max_num_scales(void)
+{
+  return MAX_NUM_SCALES;
+}
+
+Net* _net(void)
+{
+  return &pvanet;
+}
+
 void _generate_net(void)
 {
-  if (!initialized) {
+  if (!pvanet.initialized) {
     #ifdef GPU
     cudaSetDevice(0);
     #endif
 
-    initialized = 1;
     construct_pvanet(&pvanet, "scripts/params3");
   }
   else {
@@ -46,7 +79,7 @@ void _generate_net(void)
 
 void _init_net(void)
 {
-  if (!initialized) {
+  if (!pvanet.initialized) {
     init_net(&pvanet);
   }
   else {
@@ -56,7 +89,7 @@ void _init_net(void)
 
 void _set_net_param_path(const char* const param_path)
 {
-  if (!initialized) {
+  if (!pvanet.initialized) {
     strcpy(pvanet.param_path, param_path);
   }
   else {
@@ -65,10 +98,11 @@ void _set_net_param_path(const char* const param_path)
 }
 
 void _add_data_layer(const char* const layer_name,
-                     const char* const top_name)
+                     const char* const data_name,
+                     const char* const img_info_name)
 {
-  if (!initialized) {
-    setup_data_layer(&pvanet, layer_name, top_name);
+  if (!pvanet.initialized) {
+    add_data_layer(&pvanet, layer_name, data_name, img_info_name);
   }
   else {
     printf("[ERROR] Release the current network first\n");
@@ -86,11 +120,11 @@ void _add_conv_layer(const char* const layer_name,
                      const int pad_h, const int pad_w,
                      const int bias_term)
 {
-  if (!initialized) {
-    setup_conv_layer(&pvanet, layer_name, bottom_name, top_name,
-                     weight_name, bias_name, num_group, num_output,
-                     kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w,
-                     bias_term, 0);
+  if (!pvanet.initialized) {
+    add_conv_layer(&pvanet, layer_name, bottom_name, top_name,
+                   weight_name, bias_name, num_group, num_output,
+                   kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w,
+                   bias_term, 0);
   }
   else {
     printf("[ERROR] Release the current network first\n");
@@ -104,9 +138,8 @@ void _shape_net(void)
 
 void _malloc_net(void)
 {
-  if (!initialized) {
+  if (!pvanet.initialized) {
     malloc_net(&pvanet);
-    initialized = 1;
   }
   else {
     printf("[ERROR] Release the current network first\n");
@@ -115,7 +148,7 @@ void _malloc_net(void)
 
 void _init_layers(void)
 {
-  if (initialized) {
+  if (pvanet.initialized) {
     init_layers(&pvanet);
   }
   else {
@@ -125,9 +158,8 @@ void _init_layers(void)
 
 void _release_net(void)
 {
-  if (initialized) {
+  if (pvanet.initialized) {
     free_net(&pvanet);
-    initialized = 0;
   }
   else {
     printf("[ERROR] Create a network instance first\n");
@@ -137,7 +169,7 @@ void _release_net(void)
 void _detect_net(const unsigned char image_data[],
                  const int width, const int height)
 {
-  if (initialized) {
+  if (pvanet.initialized) {
     process_pvanet(&pvanet, image_data, height, width, NULL);
   }
   else {

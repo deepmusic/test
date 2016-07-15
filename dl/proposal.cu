@@ -49,11 +49,9 @@ static clock_t tick0, tick1, tick00;
 //                   varying scale factor for base box
 //   option->ratios: "option->num_ratios x 1" array
 //                   varying height-width ratio
-//   option->num_concats: repeat count of anchor set generation
-//                        (required for separated RPN)
-//   anchors: "num_boxes x 4" array,  (x1, y1, x2, y2) for each box
-//     num_boxes = total number of transformations
-//         = option->num_scales * option->num_ratios * option->num_concats
+//   anchors: "num_anchors x 4" array,  (x1, y1, x2, y2) for each box
+//   num_anchors: total number of transformations
+//                = option->num_scales * option->num_ratios
 #define MAX_NUM_RATIO_SCALE 10
 void generate_anchors(real anchors[],
                       const LayerOption* const option)
@@ -73,23 +71,21 @@ void generate_anchors(real anchors[],
   // enumerate all transformed boxes
   {
     real* p_anchors = anchors;
-    for (int c = 0; c < option->num_concats; ++c) {
-      for (int j0 = 0; j0 < option->num_scales; j0 += option->num_ratios) {
-        for (int i = 0; i < option->num_ratios; ++i) {
-          for (int j = 0; j < option->num_ratios; ++j) {
-            // transformed width & height for given ratios & scales
-            const real ws = 0.5f * (wr[i] * option->scales[j0 + j] - 1.0f);
-            const real hs = 0.5f * (hr[i] * option->scales[j0 + j] - 1.0f);
-            // (x1, y1, x2, y2) for transformed box
-            p_anchors[0] = ctr - ws;
-            p_anchors[1] = ctr - hs;
-            p_anchors[2] = ctr + ws;
-            p_anchors[3] = ctr + hs;
-            p_anchors += 4;
-          } // endfor j
-        } // endfor i
-      } // endfor j0
-    } // endfor c
+    for (int j0 = 0; j0 < option->num_scales; j0 += option->num_ratios) {
+      for (int i = 0; i < option->num_ratios; ++i) {
+        for (int j = 0; j < option->num_ratios; ++j) {
+          // transformed width & height for given ratios & scales
+          const real ws = 0.5f * (wr[i] * option->scales[j0 + j] - 1.0f);
+          const real hs = 0.5f * (hr[i] * option->scales[j0 + j] - 1.0f);
+          // (x1, y1, x2, y2) for transformed box
+          p_anchors[0] = ctr - ws;
+          p_anchors[1] = ctr - hs;
+          p_anchors[2] = ctr + ws;
+          p_anchors[3] = ctr + hs;
+          p_anchors += 4;
+        } // endfor j
+      } // endfor i
+    } // endfor j0
   }
 }
 
@@ -261,7 +257,7 @@ void sort_box(real list[], const int start, const int end,
 //   d_anchor: num_anchors x 4 x H x W tensor
 //     d_anchor[k, :, h, w] = gradient (dx, dy, d(log w), d(log h))
 //                            of anchor k at center location (h, w)
-//   num_anchors: number of anchors  (= # concats * # scales * # ratios)
+//   num_anchors: number of anchors  (= # scales * # ratios)
 //   anchors: num_anchors * 4 array,  (x1, y1, x2, y2) for each anchor
 //   img_H, img_W: scaled image height & width
 //   min_box_H, min_box_W: minimum box height & width
@@ -448,11 +444,8 @@ void proposal_forward(const Tensor* const bottom4d,
                       int keep_dev[],
                       const LayerOption* const option)
 {
-  tick00 = clock();
-
-  // number of anchors  (= number of concats * scales * ratios)
-  const int num_anchors
-      = option->num_concats * option->num_ratios * option->num_scales;
+  // number of anchors  (= number of scales * ratios)
+  const int num_anchors = option->num_ratios * option->num_scales;
 
   // do forward-pass for each item in the batch
   const real* p_bottom_item = bottom4d->data;
@@ -460,6 +453,9 @@ void proposal_forward(const Tensor* const bottom4d,
   const real* p_img_info = img_info1d->data;
   real* p_top_item = top2d->data;
   int total_top_size = 0;
+
+  tick00 = clock();
+
   for (int n = 0; n < bottom4d->num_items; ++n) {
     // bottom shape: 2 x num_anchors x H x W
     const int bottom_H = bottom4d->shape[n][2];
@@ -637,8 +633,7 @@ void proposal_shape(const Tensor* const bottom4d,
   //   in GPU mode, total space allocated for proposals should be
   //   a power of 2 >= actual number of proposals
   {
-    const int num_anchors 
-        = option->num_concats * option->num_ratios * option->num_scales;
+    const int num_anchors = option->num_ratios * option->num_scales;
     const int num_proposals = num_anchors * max_area;
     int num_power_of_2 = 1;
     while (num_power_of_2 < num_proposals) num_power_of_2 *= 2;
@@ -658,9 +653,8 @@ void init_proposal_layer(void* const net_, void* const layer_)
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
 
-  const int num_anchors = layer->option.num_scales
-                          * layer->option.num_ratios
-                          * layer->option.num_concats;
+  const int num_anchors
+      = layer->option.num_scales * layer->option.num_ratios;
 
   #ifdef GPU
   {
@@ -698,9 +692,9 @@ void forward_proposal_layer(void* const net_, void* const layer_)
                    net->temp_data, net->tempint_data,
                    &layer->option);
 
-  print_tensor_info(layer->name, layer->p_tops[0]);
   #ifdef DEBUG
   {
+    printf("%s:  ", layer->name);
     for (int i = 0; i < 8; ++i) {
       printf("%4.2f\t", a_time[i] * 1000);
     }
@@ -721,287 +715,3 @@ void shape_proposal_layer(void* const net_, void* const layer_)
 
   update_net_size(net, layer, temp_size, tempint_size, 0);
 }
-
-
-
-// --------------------------------------------------------------------------
-// test code
-// --------------------------------------------------------------------------
-
-#ifdef TEST
-
-int main(int argc, char* argv[])
-{
-  // variable declaration & memory allocation
-  Tensor score, d_anchor, img_info, roi, roi_true;
-  real *score_data = NULL, *d_anchor_data = NULL, *img_info_data = NULL;
-  real *roi_data = NULL, *roi_true_data = NULL;
-  real scales[5] = {3, 6, 9, 16, 32};
-  real ratios[5] = {0.5, 0.666, 1.0, 1.5, 2.0};
-  real *anchors = NULL, *p_anchors = NULL;
-  real *proposals = NULL, *proposals_dev = NULL;
-  int *keep = NULL, *keep_dev = NULL;
-  int num_anchors;
-  LayerOption option;
-
-  // set option
-  {
-    option.scales = &scales[0];
-    option.ratios = &ratios[0];
-    option.num_scales = 5;
-    option.num_ratios = 5;
-    option.num_concats = 3;
-    option.base_size = 16;
-    option.feat_stride = 16;
-    option.min_size = 16;
-    option.pre_nms_topn = 6000;
-    option.post_nms_topn = 300;
-    option.nms_thresh = 0.7;
-  }
-
-  // generate anchors
-  {
-    num_anchors = option.num_scales * option.num_ratios * option.num_concats;
-    // 4 real variables for each anchor: (x1, y1, x2, y2)
-    anchors = (real*)malloc(num_anchors * 4 * sizeof(real));
-    generate_anchors(anchors, &option);
-  }
-
-  // load data
-  {
-    int ndim;
-    int shape[g_max_ndim];
-    int total_size;
-
-    // score: 2 x num_anchors x H x W tensor
-    score_data = load_data("../data/temp/proposal_bottom0.bin",
-                           &ndim, shape, NULL);
-    score.num_items = shape[0];
-    score.ndim = 4;
-    total_size = 0;
-    for (int n = 0; n < score.num_items; ++n) {
-      score.shape[n][0] = 2;
-      score.shape[n][1] = num_anchors;
-      score.shape[n][2] = shape[2];
-      score.shape[n][3] = shape[3];
-      score.start[n] = total_size;
-      total_size += 2 * num_anchors * shape[2] * shape[3];
-    }
-
-    // d_anchor: num_anchors x 4 x H x W tensor
-    d_anchor_data = load_data("../data/temp/proposal_bottom1.bin",
-                              &ndim, shape, NULL);
-    d_anchor.num_items = shape[0];
-    d_anchor.ndim = 4;
-    total_size = 0;
-    for (int n = 0; n < d_anchor.num_items; ++n) {
-      d_anchor.shape[n][0] = num_anchors;
-      d_anchor.shape[n][1] = 4;
-      d_anchor.shape[n][2] = shape[2];
-      d_anchor.shape[n][3] = shape[3];
-      d_anchor.start[n] = total_size;
-      total_size += num_anchors * 4 * shape[2] * shape[3];
-    }
-
-    // img_info: 6 x 1 tensor
-    img_info_data = load_data("../data/temp/proposal_bottom2.bin",
-                              &ndim, shape, NULL);
-    img_info.num_items = 1;
-    img_info.ndim = 1;
-    img_info.shape[0][0] = shape[0];
-
-    // roi_true: num_rois x 4 tensor
-    roi_true_data = load_data("../data/temp/proposal_top0.bin",
-                              &ndim, shape, NULL);
-    {
-      const int num_rois = shape[0];
-      int num_items = 0;
-      for (int i = 0; i < num_rois; ++i) {
-        const int n = (int)ROUND(roi_true_data[i * 5 + 0]);
-        const real x1 = roi_true_data[i * 5 + 1];
-        const real y1 = roi_true_data[i * 5 + 2];
-        const real x2 = roi_true_data[i * 5 + 3];
-        const real y2 = roi_true_data[i * 5 + 4];
-        ++roi_true.shape[n][0];
-        roi_true_data[i * 4 + 0] = x1;
-        roi_true_data[i * 4 + 1] = y1;
-        roi_true_data[i * 4 + 2] = x2;
-        roi_true_data[i * 4 + 3] = y2;
-        num_items = MAX(num_items,  n);
-      }
-      roi_true.num_items = num_items + 1;
-    }
-    roi_true.ndim = 2;
-    for (int n = 0; n < roi_true.num_items; ++n) {
-      roi_true.shape[n][1] = 4;
-    }
-
-    // memory allocation for output & temporary data
-    {
-      int proposals_size, keep_size;
-      proposal_shape(&score, &roi, &proposals_size, &keep_size, &option);
-
-      // temporary space for proposal_forward operation
-      proposals = (real*)malloc(proposals_size * sizeof(real));
-      keep = (int*)malloc(keep_size * sizeof(int));
-      #ifdef GPU
-      cudaMalloc(&proposals_dev, proposals_size * sizeof(real));
-      cudaMalloc(&keep_dev, keep_size * sizeof(int));
-      #endif
-
-      // output data
-      roi_data = (real*)malloc(flatten_size(&roi) * sizeof(real));
-    }
-  }
-
-  // CUDA initialization
-  #ifdef GPU
-  {
-    printf("set device\n");
-    cudaSetDevice(0);
-  }
-  #endif
-
-  // bind loaded data to corresponding tensors
-  #ifdef GPU
-  {
-    const long int score_size = flatten_size(&score);
-    const long int d_anchor_size = flatten_size(&d_anchor);
-    const long int roi_size = flatten_size(&roi);
-
-    printf("gpu malloc\n");
-    cudaMalloc(&score.data, score_size * sizeof(real));
-    cudaMalloc(&d_anchor.data, d_anchor_size * sizeof(real));
-    cudaMalloc(&p_anchors, num_anchors * 4 * sizeof(real));
-    cudaMalloc(&roi.data, roi_size * sizeof(real));
-
-    printf("memcpy: cpu -> gpu\n");
-    cudaMemcpyAsync(score.data, score_data,
-                    score_size * sizeof(real),
-                    cudaMemcpyHostToDevice);
-    cudaMemcpyAsync(d_anchor.data, d_anchor_data,
-                    d_anchor_size * sizeof(real),
-                    cudaMemcpyHostToDevice);
-    cudaMemcpyAsync(p_anchors, anchors,
-                    num_anchors * 4 * sizeof(real),
-                    cudaMemcpyHostToDevice);
-
-    img_info.data = img_info_data;
-  }
-  #else
-  {
-    score.data = score_data;
-    d_anchor.data = d_anchor_data;
-    p_anchors = anchors;
-    img_info.data = img_info_data;
-    roi.data = roi_data;
-  }
-  #endif
-
-  // do forward operation
-  {
-    printf("do forward\n");
-    proposal_forward(&score, &d_anchor, &img_info, &roi, p_anchors,
-                     proposals, keep, proposals_dev, keep_dev,
-                     &option);
-  }
-
-  // copy GPU data to main memory
-  #ifdef GPU
-  {
-    const long int roi_size = flatten_size(&roi);
-
-    printf("memcpy: cpu <- gpu\n");
-    cudaMemcpyAsync(roi_data, roi.data, roi_size * sizeof(real),
-                    cudaMemcpyDeviceToHost);
-  }
-  #endif
-
-  // verify results
-  {
-    const long int roi_size = flatten_size(&roi);
-    const long int roi_true_size = flatten_size(&roi_true);
-    int i = 0, i_true = 0;
-
-    printf("verification\n");
-
-    for (; i < roi_size && i_true < roi_true_size; i += 5, i_true += 4) {
-      real diff = 0.0f;
-      for (int di = 0; di < 4; ++di) {
-        diff += ABS(roi_data[i + di] - roi_true_data[i_true + di]) /
-                (1e-10f + MIN(roi_data[i + di], roi_true_data[i_true + di]));
-      }
-      if (diff > 1e-3f) {
-        real diff1 = 0.0f;
-        for (int di = 0; i_true + 4 + di < roi_true_size && di < 4; ++di) {
-          diff1 += ABS(roi_data[i + di] - roi_true_data[i_true + 4 + di]) /
-            (1e-10f + MIN(roi_data[i + di], roi_true_data[i_true + 4 + di]));
-        }
-        if (diff1 < 1e-3f) {
-          printf("[False Negative] RoI_true[%d]: %.2f %.2f %.2f %.2f\n",
-                 i_true / 4,
-                 roi_true_data[i_true + 0], roi_true_data[i_true + 1],
-                 roi_true_data[i_true + 2], roi_true_data[i_true + 3]);
-          i_true += 4;
-          continue;
-        }
-        real diff2 = 0.0f;
-        for (int di = 0; i + 4 + di < roi_size && di < 4; ++di) {
-          diff1 += ABS(roi_data[i + 4 + di] - roi_true_data[i_true + di]) /
-            (1e-10f + MIN(roi_data[i + 4 + di], roi_true_data[i_true + di]));
-        }
-        if (diff2 < 1e-3f) {
-          printf("[False Positive] RoI[%d]: %.2f %.2f %.2f %.2f\n",
-                 i / 5, roi_data[i + 0], roi_data[i + 1],
-                 roi_data[i + 2], roi_data[i + 3]);
-          i += 5;
-          continue;
-        }
-        printf("RoI[%d]: %.2f %.2f %.2f %.2f  ",
-               i / 5, roi_data[i + 0], roi_data[i + 1],
-               roi_data[i + 2], roi_data[i + 3]);
-        printf("RoI_true[%d]: %.2f %.2f %.2f %.2f\n",
-               i_true / 4,
-               roi_true_data[i_true + 0], roi_true_data[i_true + 1],
-               roi_true_data[i_true + 2], roi_true_data[i_true + 3]);
-      }
-    }
-    for (; i < roi_size; i += 5) {
-      printf("[False Positive] RoI[%d]: %.2f %.2f %.2f %.2f\n",
-             i / 5, roi_data[i + 0], roi_data[i + 1],
-             roi_data[i + 2], roi_data[i + 3]);
-    }
-    for (; i_true < roi_true_size; i_true += 4) {
-      printf("[False Negative] RoI_true[%d]: %.2f %.2f %.2f %.2f\n",
-             i_true / 4,
-             roi_true_data[i_true + 0], roi_true_data[i_true + 1],
-             roi_true_data[i_true + 2], roi_true_data[i_true + 3]);
-    }
-  }
-
-  // memory deallocation
-  {
-    free(score_data);
-    free(d_anchor_data);
-    free(img_info_data);
-    free(roi_data);
-    free(roi_true_data);
-    free(anchors);
-    free(proposals);
-    free(keep);
-  }
-  #ifdef GPU
-  {
-    printf("gpu free\n");
-    cudaFree(score.data);
-    cudaFree(d_anchor.data);
-    cudaFree(roi.data);
-    cudaFree(p_anchors);
-    cudaFree(proposals_dev);
-    cudaFree(keep_dev);
-  }
-  #endif
-
-  return 0;
-}
-#endif // endifdef TEST

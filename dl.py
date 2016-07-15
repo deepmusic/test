@@ -166,6 +166,13 @@ def compress_fc(net, key_fc):
   net.params[key_U][1].data[:] = b2
 
 
+def save_bin(net, path):
+  for name in net.params.keys():
+    for param_id in range(len(net.params[name])):
+      key = '{:s}/{:s}_param{:d}.bin'.format(path, name.replace('/', '_'), param_id)
+      save_data(key, net.params[name][param_id].data)
+
+
 def parse_args():
   import sys, argparse
   parser = argparse.ArgumentParser(description='Non-zero shift bug fix for PVA-9.0.0 model')

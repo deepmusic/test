@@ -273,32 +273,17 @@ void softmax_forward(const Tensor* const bottom3d,
                      real temp_data[])
 {
   // copy bottom -> top, and then perform inplace operation
-  const long int data_size = flatten_size(bottom3d);
+  if (bottom3d->data != top3d->data) {
+    const long int data_size = flatten_size(bottom3d);
 
-  // memcpy bottom -> top
-  {
-  #ifdef GPU
+    #ifdef GPU
     cudaMemcpyAsync(top3d->data, bottom3d->data, data_size * sizeof(real),
                     cudaMemcpyDeviceToDevice);
-  #else
+    #else
     memcpy(top3d->data, bottom3d->data, data_size * sizeof(real));
-  #endif
+    #endif
   }
-/*
-  // set top shape (= bottom shape)
-  {
-    top3d->ndim = bottom3d->ndim;
-    top3d->num_items = bottom3d->num_items;
-    for (int n = 0; n < bottom3d->num_items; ++n) {
-      for (int i = 0; i < bottom3d->ndim; ++i) {
-        top3d->shape[n][i] = bottom3d->shape[n][i];
-      }
-    }
-    for (int n = 0; n < bottom3d->num_items; ++n) {
-      top3d->start[n] = bottom3d->start[n];
-    }
-  }
-*/
+
   // perform in-place operation
   softmax_inplace_forward(top3d, temp_data);
 }
@@ -401,8 +386,6 @@ void forward_rpn_pred_layer(void* const net_, void* const layer_)
   for (int n = 0; n < score->num_items; ++n) {
     score->shape[n][2] /= score->shape[n][3];
   }
-
-  print_tensor_info(layer->name, layer->p_tops[0]);
 }
 
 void shape_rpn_pred_layer(void* const net_, void* const layer_)
@@ -430,8 +413,6 @@ void forward_rpn_bbox_layer(void* const net_, void* const layer_)
   Layer* const layer = (Layer*)layer_;
 
   shape_rpn_bbox_layer(net_, layer);
-
-  print_tensor_info(layer->name, layer->p_tops[0]);
 }
 
 void shape_rpn_bbox_layer(void* const net_, void* const layer_)
@@ -473,8 +454,6 @@ void forward_rcnn_pred_layer(void* const net_, void* const layer_)
   softmax_forward(score, pred, net->temp_data);
 
   shape_rcnn_pred_layer(net, layer);
-
-  print_tensor_info(layer->name, layer->p_tops[0]);
 }
 
 void shape_rcnn_pred_layer(void* const net_, void* const layer_)
@@ -503,8 +482,6 @@ void forward_rcnn_bbox_layer(void* const net_, void* const layer_)
   Layer* const layer = (Layer*)layer_;
 
   shape_rcnn_bbox_layer(net_, layer);
-
-  print_tensor_info(layer->name, layer->p_tops[0]);
 }
 
 void shape_rcnn_bbox_layer(void* const net_, void* const layer_)

@@ -200,15 +200,15 @@ void forward_fc_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
-
-  Tensor* p_bias = (layer->option.bias) ? layer->p_params[1] : NULL;
+  Tensor* const p_bias = (layer->option.bias) ? layer->p_params[1] : NULL;
 
   fc_forward(layer->p_bottoms[0], layer->p_tops[0],
              layer->p_params[0], p_bias,
              net->const_data, &layer->option);
-  print_tensor_info(layer->name, layer->p_tops[0]);
+
   #ifdef DEBUG
   {
+    printf("%s:  ", layer->name);
     for (int i = 0; i < 8; ++i) {
       printf("%4.2f\t", a_time[i] * 1000);
     }
@@ -221,9 +221,8 @@ void shape_fc_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
-
+  Tensor* const p_bias = (layer->option.bias) ? layer->p_params[1] : NULL;
   int const_size;
-  Tensor* p_bias = (layer->option.bias) ? layer->p_params[1] : NULL;
 
   fc_shape(layer->p_bottoms[0], layer->p_tops[0],
            layer->p_params[0], p_bias,
@@ -231,199 +230,3 @@ void shape_fc_layer(void* const net_, void* const layer_)
 
   update_net_size(net, layer, 0, 0, const_size);
 }
-
-
-
-// --------------------------------------------------------------------------
-// test code
-// --------------------------------------------------------------------------
-
-#ifdef TEST
-
-int main(int argc, char* argv[])
-{
-  // variable declaration & memory allocation
-  Tensor X, Y, W, b;
-  real *X_data = NULL, *Y_data = NULL, *Y_true_data = NULL;
-  real *W_data = NULL, *b_data = NULL;
-  real *const_data = NULL, *p_const_data = NULL;
-  LayerOption option;
-  int const_size;
-
-  // set option
-  {
-    option.out_channels = 84;
-    option.bias = 1;
-  }
-
-  // load data
-  {
-    int ndim;
-    int shape[g_max_ndim];
-
-    X_data = load_data("../data/temp/fc_bottom0.bin",
-                       &ndim, shape, NULL);
-    X.num_items = 1;
-    X.ndim = ndim;
-    for (int i = 0; i < X.ndim; ++i) {
-      X.shape[0][i] = shape[i];
-    }
-    X.start[0] = 0;
-
-    fc_shape(&X, &Y, &W, &b, &const_size, &option);
-
-    Y_true_data = load_data("../data/temp/fc_top0.bin",
-                            &ndim, shape, NULL);
-    Y_data = (real*)malloc(flatten_size(&Y) * sizeof(real));
-
-    W_data = load_data("../data/temp/fc_param0.bin",
-                       &ndim, shape, NULL);
-
-    if (option.bias) {
-      b_data = load_data("../data/temp/fc_param1.bin",
-                         &ndim, shape, NULL);
-
-      const_data = (real*)malloc(const_size * sizeof(real));
-      for (int i = 0; i < const_size; ++i) {
-        const_data[i] = 1;
-      }
-    }
-  }
- 
-  // CUDA initialization
-  #ifdef GPU
-  {
-    printf("set device\n");
-    cudaSetDevice(0);
-    option.handle = (cublasHandle_t*)malloc(sizeof(cublasHandle_t));
-    if (cublasCreate((cublasHandle_t*)option.handle)
-          != CUBLAS_STATUS_SUCCESS) {
-      printf("cublas creation failed\n");
-    }
-  }
-  #endif
-
-  // bind loaded data to corresponding tensors
-  #ifdef GPU
-  {
-    const long int X_size = flatten_size(&X);
-    const long int Y_size = flatten_size(&Y);
-    const long int W_size = flatten_size(&W);
-    const long int b_size = flatten_size(&b);
-
-    printf("gpu malloc\n");
-    cudaMalloc(&X.data, X_size * sizeof(real));
-    cudaMalloc(&Y.data, Y_size * sizeof(real));
-    cudaMalloc(&W.data, W_size * sizeof(real));
-    if (option.bias) {
-      cudaMalloc(&b.data, b_size * sizeof(real));
-      cudaMalloc(&p_const_data, const_size * sizeof(real));
-    }
-    else {
-      b.data = NULL;
-    }
-
-    printf("memcpy: cpu -> gpu\n");
-    cudaMemcpyAsync(X.data, X_data, X_size * sizeof(real),
-                    cudaMemcpyHostToDevice);
-    cudaMemcpyAsync(W.data, W_data, W_size * sizeof(real),
-                    cudaMemcpyHostToDevice);
-    if (option.bias) {
-      cudaMemcpyAsync(b.data, b_data, b_size * sizeof(real),
-                      cudaMemcpyHostToDevice);
-      cudaMemcpyAsync(p_const_data, const_data, const_size * sizeof(real),
-                      cudaMemcpyHostToDevice);
-    }
-  }
-  #else
-  {
-    X.data = X_data;
-    Y.data = Y_data;
-    W.data = W_data;
-    if (option.bias) {
-      b.data = b_data;
-      p_const_data = const_data;
-    }
-    else {
-      b.data = NULL;
-    }
-  }
-  #endif
-
-  // do forward operation
-  {
-    printf("do forward\n");
-    fc_forward(&X, &Y, &W, &b, p_const_data, &option);
-  }
-
-  // copy GPU data to main memory
-  #ifdef GPU
-  {
-    const long int Y_size = flatten_size(&Y);
-
-    printf("memcpy: cpu <- gpu\n");
-    cudaMemcpyAsync(Y_data, Y.data, Y_size * sizeof(real),
-                    cudaMemcpyDeviceToHost);
-  }
-  #endif
-
-  // verify results
-  {
-    int i = 0;
-
-    printf("verification\n");
-
-    for (int n = 0; n < Y.shape[0][0]; ++n) {
-      for (int d = 0; d < Y.shape[0][1]; ++d) {
-        real diff = ABS(Y_data[i] - Y_true_data[i]);
-        diff /= 1e-10f + MIN(ABS(Y_data[i]), ABS(Y_true_data[i]));
-      #ifdef GPU
-        if (diff > 0) {
-          printf("Y[%d,%d] = %.6f  Y_true[%d,%d] = %.6f\n",
-                 n, d, Y_data[i], n, d, Y_true_data[i]);
-        }
-      #else
-        if (diff > 1e-3f) {
-          printf("Y[%d,%d] = %.6f  Y_true[%d,%d] = %.6f\n",
-                 n, d, Y_data[i], n, d, Y_true_data[i]);
-        }
-      #endif
-        ++i;
-      } // endfor d
-    } // endfor n
-  }
-
-  // memory deallocation
-  {
-    printf("free\n");
-    free(X_data);
-    free(Y_data);
-    free(Y_true_data);
-    free(W_data);
-    if (option.bias) {
-      free(b_data);
-      free(const_data);
-    }
-  }
-  #ifdef GPU
-  {
-    printf("gpu free\n");
-    cudaFree(X.data);
-    cudaFree(Y.data);
-    cudaFree(W.data);
-    if (option.bias) {
-      cudaFree(b.data);
-      cudaFree(p_const_data);
-    }
-
-    if (cublasDestroy(*((cublasHandle_t*)option.handle))
-        != CUBLAS_STATUS_SUCCESS) {
-      printf("cublas destruction failed\n");
-    }
-    free(option.handle);
-  }
-  #endif
-
-  return 0;
-}
-#endif // endifdef TEST

@@ -235,7 +235,7 @@ void img2input(const unsigned char img[],
   ++img_info1d->num_items;
 }
 
-void input_init_shape(Net* const net,
+void init_input_layer(Net* const net,
                       Tensor* const input3d,
                       Tensor* const img_info1d)
 {
@@ -248,6 +248,7 @@ void input_init_shape(Net* const net,
     input3d->start[n] = n * 3 * 640 * 1024;
   }
 
+  img_info1d->data_type = CPU_DATA;
   img_info1d->ndim = 1;
   img_info1d->num_items = BATCH_SIZE;
   for (int n = 0; n < img_info1d->num_items; ++n) {

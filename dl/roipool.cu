@@ -1,10 +1,5 @@
 #include "layer.h"
 
-#include <time.h>
-
-static float a_time[8] = { 0, };
-static clock_t tick0, tick1;
-
 // --------------------------------------------------------------------------
 // kernel code
 //   roi_pool_{gpu, cpu}
@@ -160,8 +155,6 @@ void roipool_forward(const Tensor* const bottom3d,
                      int argmax_data[],
                      const LayerOption* option)
 {
-  tick0 = clock();
-
   // top height & width
   const int top_H = option->pooled_height; // H'
   const int top_W = option->pooled_width; // W'
@@ -246,10 +239,6 @@ void roipool_forward(const Tensor* const bottom3d,
       }
     }
   }
-
-  tick1 = clock();
-  a_time[6] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-  a_time[7] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 }
 
 
@@ -337,15 +326,6 @@ void forward_roipool_layer(void* const net_, void* const layer_)
   roipool_forward(layer->p_bottoms[0], layer->p_bottoms[1],
                   layer->p_tops[0],
                   net->tempint_data, &layer->option);
-  print_tensor_info(layer->name, layer->p_tops[0]);
-  #ifdef DEBUG
-  {
-    for (int i = 0; i < 8; ++i) {
-      printf("%4.2f\t", a_time[i] * 1000);
-    }
-    printf("\n");
-  }
-  #endif
 }
 
 void shape_roipool_layer(void* const net_, void* const layer_)
@@ -360,173 +340,3 @@ void shape_roipool_layer(void* const net_, void* const layer_)
 
   update_net_size(net, layer, 0, tempint_size, 0);
 }
-
-
-
-// --------------------------------------------------------------------------
-// test code
-// --------------------------------------------------------------------------
-
-#ifdef TEST
-
-int main(int argc, char* argv[])
-{
-  // variable declaration & memory allocation
-  Tensor X, Y, roi;
-  real *X_data = NULL, *Y_data = NULL, *Y_true_data = NULL;
-  real *roi_data = NULL;
-  int* p_argmax_data = NULL;
-  LayerOption option;
-  int argmax_size;
-
-  // set option
-  {
-    option.pooled_height = 6;
-    option.pooled_width = 6;
-    option.spatial_scale = 0.0625;
-    option.flatten = 0;
-  }
-
-  // load data
-  {
-    int ndim;
-    int shape[g_max_ndim];
-    int total_size;
-
-    X_data = load_data("../data/temp/roipool_bottom0.bin",
-                       &ndim, shape, NULL);
-    X.num_items = shape[0];
-    X.ndim = ndim - 1;
-    total_size = 0;
-    for (int n = 0; n < X.num_items; ++n) {
-      int size_n = 1;
-      for (int i = 0; i < X.ndim; ++i) {
-        X.shape[n][i] = shape[i + 1];
-        size_n *= shape[i + 1];
-      }
-      X.start[n] = total_size;
-      total_size += size_n;
-    }
-
-    roi_data = load_data("../data/temp/roipool_bottom1.bin",
-                         &ndim, shape, NULL);
-    roi.num_items = X.num_items;
-    roi.ndim = 2;
-    for (int n = 0; n < roi.num_items; ++n) {
-      roi.shape[n][1] = 5;
-    }
-    {
-      const int num_rois = shape[0];
-      for (int i = 0; i < num_rois; ++i) {
-        const int n = (int)ROUND(roi_data[i * 5 + 0]);
-        const real x1 = roi_data[i * 5 + 1];
-        const real y1 = roi_data[i * 5 + 2];
-        const real x2 = roi_data[i * 5 + 3];
-        const real y2 = roi_data[i * 5 + 4];
-        ++roi.shape[n][0];
-        roi_data[i * 5 + 0] = x1;
-        roi_data[i * 5 + 1] = y1;
-        roi_data[i * 5 + 2] = x2;
-        roi_data[i * 5 + 3] = y2;
-      }
-    }
-
-    roipool_shape(&X, &roi, &Y, &argmax_size, &option);
-
-    Y_true_data = load_data("../data/temp/roipool_top0.bin",
-                            &ndim, shape, NULL);
-    Y_data = (real*)malloc(flatten_size(&Y) * sizeof(real));
-  }
-
-  // CUDA initialization
-  #ifdef GPU
-  {
-    printf("set device\n");
-    cudaSetDevice(0);
-  }
-  #endif
-
-  // bind loaded data to corresponding tensors
-  #ifdef GPU
-  {
-    const long int X_size = flatten_size(&X);
-    const long int Y_size = flatten_size(&Y);
-    const long int roi_size = flatten_size(&roi);
-
-    printf("gpu malloc\n");
-    cudaMalloc(&X.data, X_size * sizeof(real));
-    cudaMalloc(&roi.data, roi_size * sizeof(real));
-    cudaMalloc(&Y.data, Y_size * sizeof(real));
-    cudaMalloc(&p_argmax_data, argmax_size * sizeof(int));
-
-    printf("memcpy: cpu -> gpu\n");
-    cudaMemcpyAsync(X.data, X_data, X_size * sizeof(real),
-                    cudaMemcpyHostToDevice);
-    cudaMemcpyAsync(roi.data, roi_data, roi_size * sizeof(real),
-                    cudaMemcpyHostToDevice);
-  }
-  #else
-  {
-    X.data = X_data;
-    Y.data = Y_data;
-    roi.data = roi_data;
-    p_argmax_data = (int*)malloc(argmax_size * sizeof(int));
-  }
-  #endif
-
-  // do forward operation
-  {
-    printf("do forward\n");
-    roipool_forward(&X, &roi, &Y, p_argmax_data, &option);
-  }
-
-  // copy GPU data to main memory
-  #ifdef GPU
-  {
-    const long int Y_size = flatten_size(&Y);
-
-    printf("memcpy: cpu <- gpu\n");
-    cudaMemcpyAsync(Y_data, Y.data, Y_size * sizeof(real),
-                    cudaMemcpyDeviceToHost);
-  }
-  #endif
-
-  // verify results
-  {
-    const long int Y_size = flatten_size(&Y);
-
-    printf("verification\n");
-
-    for (int i = 0; i < Y_size; ++i) {
-      if (Y_data[i] != Y_true_data[i]) {
-        printf("Y[%d] = %.6f  Y_true[%d] = %.6f\n",
-               i, Y_data[i], i, Y_true_data[i]);
-      }
-    }
-  }
-
-  // memory deallocation
-  {
-    printf("free\n");
-    free(X_data);
-    free(roi_data);
-    free(Y_data);
-    free(Y_true_data);
-  }
-  #ifdef GPU
-  {
-    printf("gpu free\n");
-    cudaFree(X.data);
-    cudaFree(roi.data);
-    cudaFree(Y.data);
-    cudaFree(p_argmax_data);
-  }
-  #else
-  {
-    free(p_argmax_data);
-  }
-  #endif
-
-  return 0;
-}
-#endif // endifdef TEST

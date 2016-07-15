@@ -1,11 +1,6 @@
 #include "layer.h"
 #include <string.h>
 
-#include <time.h>
-
-static float a_time[8] = { 0, };
-static clock_t tick0, tick1;
-
 // --------------------------------------------------------------------------
 // kernel code
 //   scale_const_{gpu, cpu}
@@ -40,14 +35,12 @@ void eltwise_add_cpu(const real bottom[], real top[],
 // --------------------------------------------------------------------------
 
 // element-wise sum: top = bottoms[0] + bottoms[1] + ... + bottoms[M-1]
-//   M = option->num_concats
+//   M = option->num_bottoms
 void eltwise_sum_forward(const Tensor* const bottoms[],
                          Tensor* const top,
                          const LayerOption* const option)
 {
   const int num_bottoms = option->num_bottoms;
-
-  tick0 = clock();
 
   if (num_bottoms > 0) {
     const int data_size = flatten_size(bottoms[0]);
@@ -72,10 +65,6 @@ void eltwise_sum_forward(const Tensor* const bottoms[],
     }
     #endif
   }
-
-  tick1 = clock();
-  a_time[6] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-  a_time[7] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 }
 
 
@@ -117,22 +106,11 @@ void forward_eltwise_sum_layer(void* const net_, void* const layer_)
   Layer* const layer = (Layer*)layer_;
 
   eltwise_sum_forward(layer->p_bottoms, layer->p_tops[0], &layer->option);
-
-  print_tensor_info(layer->name, layer->p_tops[0]);
-  #ifdef DEBUG
-  {
-    for (int i = 0; i < 8; ++i) {
-      printf("%4.2f\t", a_time[i] * 1000);
-    }
-    printf("\n");
-  }
-  #endif
 }
 
 void shape_eltwise_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
 
-  eltwise_shape(layer->p_bottoms, layer->p_tops[0],
-                &layer->option);
+  eltwise_shape(layer->p_bottoms, layer->p_tops[0], &layer->option);
 }

@@ -1,10 +1,5 @@
 #include "layer.h"
 
-#include <time.h>
-
-static float a_time[8] = { 0, };
-static clock_t tick0, tick1;
-
 // --------------------------------------------------------------------------
 // kernel code
 //   scale_const_{gpu, cpu}
@@ -108,8 +103,6 @@ void scale_const_forward(const Tensor* const bottom,
   const real weight = option->scale_weight;
   const real bias = (option->bias) ? option->scale_bias : 0;
 
-  tick0 = clock();
-
   #ifdef GPU
   {
     const int threads_per_block = 512;
@@ -123,11 +116,6 @@ void scale_const_forward(const Tensor* const bottom,
         bottom->data,  top->data,  weight,  bias,  data_size);
   }
   #endif
-
-  tick1 = clock();
-  a_time[5] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-  a_time[6] = 0;
-  a_time[7] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 }
 
 void scale_channel_forward(const Tensor* const bottom,
@@ -140,8 +128,6 @@ void scale_channel_forward(const Tensor* const bottom,
 
   const real* p_bottom_item = bottom->data;
   real* p_top_item = top->data;
-
-  tick0 = clock();
 
   for (int n = 0; n < bottom->num_items; ++n) {
     int D = 1;
@@ -181,11 +167,6 @@ void scale_channel_forward(const Tensor* const bottom,
       p_top_item += C * D;
     }
   }
-
-  tick1 = clock();
-  a_time[5] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-  a_time[6] = 0;
-  a_time[7] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 }
 
 
@@ -194,8 +175,8 @@ void scale_channel_forward(const Tensor* const bottom,
 // layer shape calculator code
 // --------------------------------------------------------------------------
 
-void scale_shape(const Tensor* const bottom,
-                 Tensor* const top)
+void scale_const_shape(const Tensor* const bottom,
+                       Tensor* const top)
 {
   // top shape = bottom shape
   if (bottom != top) {
@@ -212,6 +193,31 @@ void scale_shape(const Tensor* const bottom,
   }
 }
 
+void scale_channel_shape(const Tensor* const bottom,
+                         Tensor* const top,
+                         Tensor* const weight,
+                         Tensor* const bias,
+                         const LayerOption* const option)
+{
+  const int C = bottom->shape[0][0];
+
+  // weight shape: C x 1
+  weight->num_items = 1;
+  weight->ndim = 1;
+  weight->shape[0][0] = C;
+  weight->start[0] = 0;
+
+  // bias shape: C x 1
+  if (option->bias) {
+    bias->num_items = 1;
+    bias->ndim = 1;
+    bias->shape[0][0] = C;
+    bias->start[0] = 0;
+  }
+
+  scale_const_shape(bottom, top);
+} 
+
 
 
 // --------------------------------------------------------------------------
@@ -223,75 +229,31 @@ void forward_scale_const_layer(void* const net_, void* const layer_)
   Layer* const layer = (Layer*)layer_;
 
   scale_const_forward(layer->p_bottoms[0], layer->p_tops[0], &layer->option);
-  print_tensor_info(layer->name, layer->p_tops[0]);
-  #ifdef DEBUG
-  {
-    for (int i = 0; i < 8; ++i) {
-      printf("%4.2f\t", a_time[i] * 1000);
-    }
-    printf("\n");
-  }
-  #endif
 }
 
 void forward_scale_channel_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
-  Tensor* p_bias = (layer->option.bias) ? layer->p_params[1] : NULL;
+  Tensor* const p_bias = (layer->option.bias) ? layer->p_params[1] : NULL;
 
   scale_channel_forward(layer->p_bottoms[0], layer->p_tops[0],
                         layer->p_params[0], p_bias,
                         &layer->option);
-  print_tensor_info(layer->name, layer->p_tops[0]);
-  #ifdef DEBUG
-  {
-    for (int i = 0; i < 8; ++i) {
-      printf("%4.2f\t", a_time[i] * 1000);
-    }
-    printf("\n");
-  }
-  #endif
 }
 
-void forward_inplace_scale_const_layer(void* const net_, void* const layer_)
+void shape_scale_const_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
 
-  scale_const_forward(layer->p_tops[0], layer->p_tops[0], &layer->option);
-  print_tensor_info(layer->name, layer->p_tops[0]);
-  #ifdef DEBUG
-  {
-    for (int i = 0; i < 8; ++i) {
-      printf("%4.2f\t", a_time[i] * 1000);
-    }
-    printf("\n");
-  }
-  #endif
+  scale_const_shape(layer->p_bottoms[0], layer->p_tops[0]);
 }
 
-void forward_inplace_scale_channel_layer(void* const net_,
-                                         void* const layer_)
+void shape_scale_channel_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
-  Tensor* p_bias = (layer->option.bias) ? layer->p_params[1] : NULL;
+  Tensor* const p_bias = (layer->option.bias) ? layer->p_params[1] : NULL;
 
-  scale_channel_forward(layer->p_tops[0], layer->p_tops[0],
-                        layer->p_params[0], p_bias,
-                        &layer->option);
-  print_tensor_info(layer->name, layer->p_tops[0]);
-  #ifdef DEBUG
-  {
-    for (int i = 0; i < 8; ++i) {
-      printf("%4.2f\t", a_time[i] * 1000);
-    }
-    printf("\n");
-  }
-  #endif
-}
-
-void shape_scale_layer(void* const net_, void* const layer_)
-{
-  Layer* const layer = (Layer*)layer_;
-
-  scale_shape(layer->p_bottoms[0], layer->p_tops[0]);
+  scale_channel_shape(layer->p_bottoms[0], layer->p_tops[0],
+                      layer->p_params[0], p_bias,
+                      &layer->option);
 }
