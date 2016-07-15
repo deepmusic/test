@@ -580,7 +580,7 @@ void setup_frcnn(Net* const net,
   {
     Layer* const layer = add_layer(net, "out");
     layer->option.min_size = 16;
-    layer->option.score_thresh = 0.3f;
+    layer->option.score_thresh = 0.7f;
     layer->option.nms_thresh = 0.4f;
     layer->option.bbox_vote = 1;
     layer->option.vote_thresh = 0.5f;
@@ -613,8 +613,9 @@ void construct_pvanet(Net* const pvanet,
 
   strcpy(pvanet->param_path, param_path);
 
-  setup_inception(pvanet);
-  setup_frcnn(pvanet, "convf", "convf", 256, 1, 1, 512, 128);
+  setup_shared_conv_sub(pvanet);
+  //setup_frcnn(pvanet, "convf", "convf", 256, 1, 1, 512, 128);
+  setup_frcnn(pvanet, "convf_rpn", "convf", 384, 3, 3, 512, 512);
 
   shape_net(pvanet);
 

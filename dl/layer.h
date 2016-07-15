@@ -1,9 +1,9 @@
 #ifndef PVA_DL_LAYER_H
 #define PVA_DL_LAYER_H
 
-#define DEBUG
+//#define DEBUG
 //#define MKL
-#define DEMO
+//#define DEMO
 
 #ifdef DEMO
   #define BATCH_SIZE 1
@@ -451,7 +451,7 @@ Layer* add_dropout_layer(Net* const net,
                          const int is_test,
                          const int is_scaled);
 
-void setup_inception(Net* const net);
+void setup_shared_conv_sub(Net* const net);
 
 void setup_frcnn(Net* const net,
                  const char* const rpn_input_name,
