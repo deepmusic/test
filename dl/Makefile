@@ -36,14 +36,6 @@ demo_gpu_light_compress.bin: demo.gpu.light.compress.test.o libdlgpu.so
 	$(NVCC) -o $@ $^ $(NVLDFLAGS)
 	rm $<
 
-# Runtime binary for Pengo
-pengo_cpu.bin: test_pvanet.cpp.cpu.test.o pvanet.cpp.cpu.o libdlcpu.so
-	$(CC) -o $@ $^ $(LDFLAGS)
-	rm *.cpp.cpu.*.o
-pengo_gpu.bin: test_pvanet.gpu.test.o pvanet.gpu.o libdlgpu.so
-	$(CC) -o $@ $^ $(NVLDFLAGS)
-	rm *.gpu.*.o
-
 # Caffe model loader (WIP)
 loader.bin: loader.cpu.o tensor.cpu.o net.cpu.o
 	$(CC) -o $@ $^ $(LDFLAGS)

@@ -44,48 +44,45 @@ static clock_t tick0, tick1, tick00;
 // --------------------------------------------------------------------------
 
 // given a base box, enumerate transformed boxes of varying sizes and ratios
-//   option->base_size: base box's width & height (i.e., base box is square)
-//   option->scales: "option->num_scales x 1" array
-//                   varying scale factor for base box
-//   option->ratios: "option->num_ratios x 1" array
-//                   varying height-width ratio
+//   base_size: base box's width & height (i.e., base box is square)
+//   scales: "num_scales x 1" array of scale factors for base box transform
+//   ratios: "num_ratios x 1" array of height-width ratios
 //   anchors: "num_anchors x 4" array,  (x1, y1, x2, y2) for each box
 //   num_anchors: total number of transformations
-//                = option->num_scales * option->num_ratios
-#define MAX_NUM_RATIO_SCALE 10
-void generate_anchors(real anchors[],
-                      const LayerOption* const option)
+//                = num_scales * num_ratios
+static
+void generate_anchors(const real scales[], const real ratios[],
+                      real anchors[],
+                      const int num_scales, const int num_ratios,
+                      const int base_size)
 {
   // base box's width & height & center location
-  const real base_area = (real)(option->base_size * option->base_size);
-  const real ctr = 0.5f * (option->base_size - 1.0f);
-
-  // transformed width & height for given ratios
-  real wr[MAX_NUM_RATIO_SCALE];
-  real hr[MAX_NUM_RATIO_SCALE];
-  for (int i = 0; i < option->num_ratios; ++i) {
-    wr[i] = (real)ROUND(sqrt(base_area / option->ratios[i]));
-    hr[i] = (real)ROUND(wr[i] * option->ratios[i]);
-  }
+  const real base_area = (real)(base_size * base_size);
+  const real center = 0.5f * (base_size - 1.0f);
 
   // enumerate all transformed boxes
   {
     real* p_anchors = anchors;
-    for (int j0 = 0; j0 < option->num_scales; j0 += option->num_ratios) {
-      for (int i = 0; i < option->num_ratios; ++i) {
-        for (int j = 0; j < option->num_ratios; ++j) {
-          // transformed width & height for given ratios & scales
-          const real ws = 0.5f * (wr[i] * option->scales[j0 + j] - 1.0f);
-          const real hs = 0.5f * (hr[i] * option->scales[j0 + j] - 1.0f);
-          // (x1, y1, x2, y2) for transformed box
-          p_anchors[0] = ctr - ws;
-          p_anchors[1] = ctr - hs;
-          p_anchors[2] = ctr + ws;
-          p_anchors[3] = ctr + hs;
-          p_anchors += 4;
-        } // endfor j
-      } // endfor i
-    } // endfor j0
+    for (int j0 = 0; j0 < num_scales; j0 += num_ratios) {
+    for (int i = 0; i < num_ratios; ++i) {
+      // transformed width & height for given ratio factors
+      const real ratio_w = (real)ROUND(sqrt(base_area / ratios[i]));
+      const real ratio_h = (real)ROUND(ratio_w * ratios[i]);
+
+      for (int j = 0; j < num_ratios; ++j) {
+        // transformed width & height for given scale factors
+        const real scale_w = 0.5f * (ratio_w * scales[j0 + j] - 1.0f);
+        const real scale_h = 0.5f * (ratio_h * scales[j0 + j] - 1.0f);
+
+        // (x1, y1, x2, y2) for transformed box
+        p_anchors[0] = center - scale_w;
+        p_anchors[1] = center - scale_h;
+        p_anchors[2] = center + scale_w;
+        p_anchors[3] = center + scale_h;
+
+        p_anchors += 4;
+      } // endfor j
+    }} // endfor i, j0
   }
 }
 
@@ -137,76 +134,10 @@ int transform_box(real box[],
   return (box_w >= min_box_W) * (box_h >= min_box_H);
 }
 
-// bitonic sort a list of boxes in descending order of their scores (GPU)
-//   list: num_boxes x 5 array,  (x1, y1, x2, y2, score) for each box
-//     in bitoninc sort, total space allocated for list should be
-//     a power of 2 >= num_boxes,
-//     and scores of virtually-padded boxes { num_boxes, ..., 2^n - 1 }
-//     should be set smaller than mininum score of actual boxes
-#ifdef GPU
-__global__
-void bitonic_sort_step(real list[], const int idx_major, const int idx_minor)
-{
-  const int index = blockIdx.x * blockDim.x + threadIdx.x;
-  const int index_xor = index ^ idx_minor;
-  real temp[5];
-
-  // the threads with the lowest ids sort the array
-  if (index_xor > index) {
-    if (index & idx_major) {
-      // sort ascending
-      if (list[index * 5 + 4] > list[index_xor * 5 + 4]) {
-        for (int i = 0; i < 5; ++i) {
-          temp[i] = list[index * 5 + i];
-        }
-        for (int i = 0; i < 5; ++i) {
-          list[index * 5 + i] = list[index_xor * 5 + i];
-        }
-        for (int i = 0; i < 5; ++i) {
-          list[index_xor * 5 + i] = temp[i];
-        }
-      }
-    }
-    else {
-      // sort descending
-      if (list[index * 5 + 4] < list[index_xor * 5 + 4]) {
-        for (int i = 0; i < 5; ++i) {
-          temp[i] = list[index * 5 + i];
-        }
-        for (int i = 0; i < 5; ++i) {
-          list[index * 5 + i] = list[index_xor * 5 + i];
-        }
-        for (int i = 0; i < 5; ++i) {
-          list[index_xor * 5 + i] = temp[i];
-        }
-      }
-    }
-  }
-}
-void bitonic_sort_box(real list[], const int num_boxes)
-{
-  int num_power_of_2 = 1;
-  while (num_power_of_2 < num_boxes) num_power_of_2 *= 2;
-  const int num_threads = num_power_of_2;
-  const int threads_per_block = 512;
-  const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
-
-  // major step
-  for (int idx_major = 2; idx_major <= num_threads; idx_major *= 2) {
-    // minor step
-    for (int idx_minor = idx_major / 2; idx_minor > 0; idx_minor /= 2) {
-      bitonic_sort_step<<<num_blocks, threads_per_block>>>(
-          list, idx_major, idx_minor);
-    }
-  }
-}
-#endif
-
 // quick-sort a list of boxes in descending order of their scores (CPU)
 //   list: num_boxes x 5 array,  (x1, y1, x2, y2, score) for each box
 //   if num_top <= end,  only top-k results are guaranteed to be sorted
 //   (for efficient computation)
-static
 void sort_box(real list[], const int start, const int end,
               const int num_top)
 {
@@ -267,15 +198,16 @@ void sort_box(real list[], const int start, const int end,
 //     (x1, y1, x2, y2, score) for each proposal
 #ifdef GPU
 __global__
+static
 void enumerate_proposals_gpu(const real bottom4d[],
                              const real d_anchor4d[],
                              const real anchors[],
+                             real proposals[],
                              const int num_anchors,
                              const int bottom_H, const int bottom_W,
                              const real img_H, const real img_W,
                              const real min_box_H, const real min_box_W,
-                             const int feat_stride,
-                             real proposals[])
+                             const int feat_stride)
 {
   const int bottom_area = bottom_H * bottom_W;
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -304,29 +236,18 @@ void enumerate_proposals_gpu(const real bottom4d[],
                         img_W, img_H, min_box_W, min_box_H)
           * p_score[k * bottom_area];
   }
-  else {
-    // in GPU mode, total space allocated for proposals should be
-    // a power of 2 >= actual number of proposals,
-    // thus, scores of virtually-padded boxes should be set smaller than
-    // mininum score of actual boxes
-    // (in RPN, 0 is the smallest possible score)
-    proposals[index * 5 + 0] = 0;
-    proposals[index * 5 + 1] = 0;
-    proposals[index * 5 + 2] = 0;
-    proposals[index * 5 + 3] = 0;
-    proposals[index * 5 + 4] = 0;
-  }
 }
 #else
+static
 void enumerate_proposals_cpu(const real bottom4d[],
                              const real d_anchor4d[],
                              const real anchors[],
+                             real proposals[],
                              const int num_anchors,
                              const int bottom_H, const int bottom_W,
                              const real img_H, const real img_W,
                              const real min_box_H, const real min_box_W,
-                             const int feat_stride,
-                             real proposals[])
+                             const int feat_stride)
 {
   const int bottom_area = bottom_H * bottom_W;
   for (int h = 0; h < bottom_H; ++h) {
@@ -366,8 +287,8 @@ void enumerate_proposals_cpu(const real bottom4d[],
 //   rois: "num_rois x 5" array,  (x1, y1, x2, y2, score) for each RoI
 #ifdef GPU
 __global__
-void retrieve_rois_gpu(const real proposals[],
-                       const int keep[],
+static
+void retrieve_rois_gpu(const real proposals[], const int keep[],
                        real rois[],
                        const int num_rois)
 {
@@ -382,8 +303,7 @@ void retrieve_rois_gpu(const real proposals[],
   }
 }
 #else
-void retrieve_rois_cpu(const real proposals[],
-                       const int keep[],
+void retrieve_rois_cpu(const real proposals[], const int keep[],
                        real rois[],
                        const int num_rois)
 {
@@ -424,15 +344,12 @@ void retrieve_rois_cpu(const real proposals[],
 //   4 temporary arrays
 //     proposals: all box proposals with their scores
 //       "num_boxes x 5" array,  (x1, y1, x2, y2, score) for each box
-//       in GPU mode, if proposals = NULL, use bitonic sort in GPU
-//       if proposals != NULL & allocated in main memory, quicksort in CPU
 //     keep: indices of proposals to be retrieved as RoIs
 //       "num_rois x 1" array,  keep[i]: index of i-th RoI in proposals
 //       TODO: always stored in main memory due to implementation issue
 //     proposals_dev: GPU memory space, required in GPU mode
-//       in GPU mode, total space allocated for proposals should be
-//       a power of 2 >= num_boxes
 //     keep_dev: GPU memory space, required in GPU mode
+static
 void proposal_forward(const Tensor* const bottom4d,
                       const Tensor* const d_anchor4d,
                       const Tensor* const img_info1d,
@@ -460,7 +377,6 @@ void proposal_forward(const Tensor* const bottom4d,
     // bottom shape: 2 x num_anchors x H x W
     const int bottom_H = bottom4d->shape[n][2];
     const int bottom_W = bottom4d->shape[n][3];
-    const int bottom_area = bottom_H * bottom_W;
     // input image height & width
     const real img_H = p_img_info[0];
     const real img_W = p_img_info[1];
@@ -470,6 +386,8 @@ void proposal_forward(const Tensor* const bottom4d,
     // minimum box width & height
     const real min_box_H = option->min_size * scale_H;
     const real min_box_W = option->min_size * scale_W;
+    // number of all proposals = num_anchors * H * W
+    const int num_proposals = num_anchors * bottom_H * bottom_W;
 
     tick0 = clock();
     // enumerate all proposals
@@ -478,31 +396,22 @@ void proposal_forward(const Tensor* const bottom4d,
     // NOTE: for bottom, only foreground scores are passed
     #ifdef GPU
     {
-      // in GPU mode, total space allocated for proposals is
-      // a power of 2 >= num_proposals (due to bitonic sort algorithm)
-      // thus, scores of virtually-padded boxes should be set smaller than
-      // mininum score of actual boxes
-      const int num_proposals = num_anchors * bottom_area;
-      int num_power_of_2 = 1;
-      while (num_power_of_2 < num_proposals) num_power_of_2 *= 2;
-      const int num_threads = num_power_of_2;
+      const int num_threads = num_proposals;
       const int threads_per_block = 512;
       const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
       enumerate_proposals_gpu<<<num_blocks, threads_per_block>>>(
-          p_bottom_item + num_anchors * bottom_area,
-          p_d_anchor_item,  anchors,  num_anchors,
+          p_bottom_item + num_proposals,  p_d_anchor_item,  anchors,  
+          proposals_dev,  num_anchors,
           bottom_H,  bottom_W,  img_H,  img_W,  min_box_H,  min_box_W,
-          option->feat_stride,
-          proposals_dev);
+          option->feat_stride);
     }
     #else
     {
       enumerate_proposals_cpu(
-          p_bottom_item + num_anchors * bottom_area,
-          p_d_anchor_item,  anchors,  num_anchors,
+          p_bottom_item + num_proposals,  p_d_anchor_item,  anchors,
+          proposals,  num_anchors,
           bottom_H,  bottom_W,  img_H,  img_W,  min_box_H,  min_box_W,
-          option->feat_stride,
-          proposals);
+          option->feat_stride);
     }
     #endif
     tick1 = clock();
@@ -512,25 +421,16 @@ void proposal_forward(const Tensor* const bottom4d,
     // choose candidates according to scores
     #ifdef GPU
     {
-      const int num_proposals = num_anchors * bottom_area;
-      if (!proposals) {
-        // in GPU mode, if proposals = NULL, use bitonic sort in GPU
-        bitonic_sort_box(proposals_dev, num_proposals);
-      }
-      else {
-        // if proposals != NULL & allocated in main memory, quicksort in CPU
-        cudaMemcpyAsync(proposals, proposals_dev,
-                        num_proposals * 5 * sizeof(real),
-                        cudaMemcpyDeviceToHost);
-        sort_box(proposals, 0, num_proposals - 1, option->pre_nms_topn);
-        cudaMemcpyAsync(proposals_dev, proposals,
-                        num_proposals * 5 * sizeof(real),
-                        cudaMemcpyHostToDevice);
-      }
+      cudaMemcpyAsync(proposals, proposals_dev,
+                      num_proposals * 5 * sizeof(real),
+                      cudaMemcpyDeviceToHost);
+      sort_box(proposals, 0, num_proposals - 1, option->pre_nms_topn);
+      cudaMemcpyAsync(proposals_dev, proposals,
+                      num_proposals * 5 * sizeof(real),
+                      cudaMemcpyHostToDevice);
     }
     #else
     {
-      const int num_proposals = num_anchors * bottom_area;
       sort_box(proposals, 0, num_proposals - 1, option->pre_nms_topn);
     }
     #endif
@@ -541,10 +441,9 @@ void proposal_forward(const Tensor* const bottom4d,
     // NMS & RoI retrieval
     {
       // NMS
-      const int num_proposals
-          = MIN(num_anchors * bottom_area,  option->pre_nms_topn);
       int num_rois = 0;
-      nms(num_proposals,  proposals,  &num_rois,  keep,  0,
+      nms(MIN(num_proposals,  option->pre_nms_topn),
+          proposals,  &num_rois,  keep,  0,
           option->nms_thresh,  option->post_nms_topn,
           option->bbox_vote,  option->vote_thresh);
 
@@ -580,8 +479,8 @@ void proposal_forward(const Tensor* const bottom4d,
 
     // locate next item
     {
-      const int bottom_size = 2 * num_anchors * bottom_area;
-      const int d_anchor_size = 4 * num_anchors * bottom_area;
+      const int bottom_size = 2 * num_proposals;
+      const int d_anchor_size = 4 * num_proposals;
       const int img_info_size = 6;
       const int top_size = 5 * top2d->shape[n][0];
       p_bottom_item += bottom_size;
@@ -604,6 +503,7 @@ void proposal_forward(const Tensor* const bottom4d,
 // --------------------------------------------------------------------------
 // layer shape calculator code
 // --------------------------------------------------------------------------
+static
 void proposal_shape(const Tensor* const bottom4d,
                     Tensor* const top2d,
                     int* const proposals_size,
@@ -630,14 +530,9 @@ void proposal_shape(const Tensor* const bottom4d,
   }
 
   // temporary space size
-  //   in GPU mode, total space allocated for proposals should be
-  //   a power of 2 >= actual number of proposals
   {
     const int num_anchors = option->num_ratios * option->num_scales;
-    const int num_proposals = num_anchors * max_area;
-    int num_power_of_2 = 1;
-    while (num_power_of_2 < num_proposals) num_power_of_2 *= 2;
-    *proposals_size = num_power_of_2 * 5;
+    *proposals_size = num_anchors * max_area * 5;
     *keep_size = option->post_nms_topn;
   }
 }
@@ -648,36 +543,47 @@ void proposal_shape(const Tensor* const bottom4d,
 // API code
 // --------------------------------------------------------------------------
 
-void init_proposal_layer(void* const net_, void* const layer_)
+void malloc_proposal_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
 
-  const int num_anchors
-      = layer->option.num_scales * layer->option.num_ratios;
+  const LayerOption* const option = &layer->option;
+  const int num_anchors = option->num_scales * option->num_ratios;
 
   #ifdef GPU
   {
-    if (layer->p_aux_data[0]) {
-      cudaFree(layer->p_aux_data[0]);
-    }
-    cudaMalloc(&layer->p_aux_data[0], num_anchors * 4 * sizeof(real));
-    generate_anchors(net->param_cpu_data, &layer->option);
-    cudaMemcpyAsync(layer->p_aux_data[0], net->param_cpu_data,
+    cudaMalloc(&layer->aux_data, num_anchors * 4 * sizeof(real));
+    generate_anchors(option->scales, option->ratios,
+                     net->param_cpu_data,
+                     option->num_scales, option->num_ratios,
+                     option->base_size);
+    cudaMemcpyAsync(layer->aux_data, net->param_cpu_data,
                     num_anchors * 4 * sizeof(real),
                     cudaMemcpyHostToDevice);
   }
   #else
   {
-    if (layer->p_aux_data[0]) {
-      free(layer->p_aux_data[0]);
-    }
-    layer->p_aux_data[0] = (real*)malloc(num_anchors * 4 * sizeof(real));
-    generate_anchors(layer->p_aux_data[0], &layer->option);
+    layer->aux_data = (real*)malloc(num_anchors * 4 * sizeof(real));
+    generate_anchors(option->scales, option->ratios,
+                     (real*)layer->aux_data,
+                     option->num_scales, option->num_ratios,
+                     option->base_size);
   }
   #endif
 
   net->space += num_anchors * 4 * sizeof(real);
+}
+
+void free_proposal_layer(void* const net_, void* const layer_)
+{
+  Layer* const layer = (Layer*)layer_;
+
+  #ifdef GPU
+  cudaFree(layer->aux_data);
+  #else
+  free(layer->aux_data);
+  #endif
 }
 
 void forward_proposal_layer(void* const net_, void* const layer_)
@@ -687,7 +593,7 @@ void forward_proposal_layer(void* const net_, void* const layer_)
 
   proposal_forward(layer->p_bottoms[0], layer->p_bottoms[1],
                    layer->p_bottoms[2],
-                   layer->p_tops[0], layer->p_aux_data[0],
+                   layer->p_tops[0], (real*)layer->aux_data,
                    net->temp_cpu_data, net->tempint_cpu_data,
                    net->temp_data, net->tempint_data,
                    &layer->option);

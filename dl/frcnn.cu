@@ -143,6 +143,8 @@ Layer* add_deconv_layer(Net* const net,
 
   layer->f_forward[0] = forward_deconv_layer;
   layer->f_shape[0] = shape_deconv_layer;
+  layer->f_malloc = malloc_deconv_layer;
+  layer->f_free = free_deconv_layer;
 
   return layer;
 }
@@ -524,10 +526,10 @@ void setup_frcnn(Net* const net,
     add_bottom(layer, get_tensor_by_name(net, "rpn_bbox_pred"));
     add_bottom(layer, get_tensor_by_name(net, "img_info"));
     add_top(layer, add_tensor(net, "rpn_roi"));
-    layer->num_aux_data = 1;
     layer->f_forward[0] = forward_proposal_layer;
     layer->f_shape[0] = shape_proposal_layer;
-    layer->f_init[0] = init_proposal_layer;
+    layer->f_malloc = malloc_proposal_layer;
+    layer->f_free = free_proposal_layer;
   }
   {
     Layer* const layer = add_layer(net, "rcnn_roipool");
@@ -605,7 +607,7 @@ void setup_frcnn(Net* const net,
     layer->option.min_size = 16;
     layer->option.score_thresh = 0.7f;
     layer->option.nms_thresh = 0.4f;
-    layer->option.bbox_vote = 1;
+    layer->option.bbox_vote = 0;
     layer->option.vote_thresh = 0.5f;
     add_bottom(layer, get_tensor_by_name(net, "cls_pred"));
     add_bottom(layer, get_tensor_by_name(net, "bbox_pred"));
@@ -662,8 +664,6 @@ void construct_pvanet(Net* const pvanet,
   printf("Max const size = %ld\n", pvanet->const_size);
 
   malloc_net(pvanet);
-
-  init_layers(pvanet);
 
   // print total memory size required
   {

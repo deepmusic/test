@@ -123,23 +123,6 @@ Tensor* get_param(const Layer* const layer, const int param_id)
   return layer->p_params[param_id];
 }
 
-long int malloc_layer(Net* const net,
-                      Layer* const layer)
-{
-  long int space = 0;
-
-  // currently, do nothing for layer
-  // aux_data is allocated by each operator's initializer
-
-  #ifdef DEBUG
-  printf("[Layer %s] %d bottoms, %d tops, %d params\n",
-         layer->name,
-         layer->num_bottoms, layer->num_tops, layer->num_params);
-  #endif
-
-  return space;
-}
-
 long int malloc_top_data(Net* const net,
                          Layer* const layer,
                          const int top_id)
@@ -173,25 +156,6 @@ long int free_top_data(Net* const net,
   }
 
   return space;
-}
-
-void free_layer(Layer* const layer)
-{
-  for (int i = 0; i < layer->num_aux_data; ++i) {
-    if (layer->p_aux_data[i]) {
-      #ifdef GPU
-      cudaFree(layer->p_aux_data[i]);
-      #else
-      free(layer->p_aux_data[i]);
-      #endif
-    }
-    else {
-      printf("[ERROR] Layer %s: memory for aux_data %d was not allocated\n",
-             layer->name, i);
-    }
-  }
-
-  memset(layer, 0, sizeof(Layer));
 }
 
 Tensor* get_tensor(Net* const net, const int tensor_id)
@@ -518,7 +482,9 @@ void malloc_net(Net* const net)
   // memory allocation for layers
   for (int i = 0; i < net->num_layers; ++i) {
     Layer* const layer = get_layer(net, i);
-    space += malloc_layer(net, layer);
+    if (layer->f_malloc) {
+      (*layer->f_malloc)(net, layer);
+    }
   }
   space_cpu += net->num_layers * sizeof(Layer);
 
@@ -573,7 +539,10 @@ void free_net(Net* const net)
 
   for (int i = 0; i < net->num_layers; ++i) {
     Layer* const layer = get_layer(net, i);
-    free_layer(layer);
+    if (layer->f_free) {
+      (*layer->f_free)(net, layer);
+    }
+    init_layer(layer);
   }
 
   #ifdef GPU
@@ -584,20 +553,7 @@ void free_net(Net* const net)
   }
   #endif
 
-  memset(net, 0, sizeof(Net));
-}
-
-void init_layers(Net* const net)
-{
-  for (int i = 0; i < net->num_layers; ++i) {
-    Layer* const layer = get_layer(net, i);
-
-    for (int j = 0; j < MAX_NUM_OPS_PER_LAYER; ++j) {
-      if (layer->f_init[j]) {
-        (*layer->f_init[j])(net, layer);
-      }
-    }
-  }
+  init_net(net);
 }
 
 void forward_net(Net* const net)

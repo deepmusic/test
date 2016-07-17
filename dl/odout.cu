@@ -56,52 +56,6 @@ int transform_box(real box[],
   return (box_w >= min_box_W) * (box_h >= min_box_H);
 }
 
-// quick-sort a list of boxes in descending order of their scores,
-//   list: num_boxes x 5 array,  (x1, y1, x2, y2, score) for each box
-static
-void sort_box(real list[], const int start, const int end)
-{
-  const real pivot_score = list[start * 5 + 4];
-  int left = start + 1, right = end;
-  real temp[5];
-  while (left <= right) {
-    while (left <= end && list[left * 5 + 4] >= pivot_score) ++left;
-    while (right > start && list[right * 5 + 4] <= pivot_score) --right;
-    if (left <= right) {
-      for (int i = 0; i < 5; ++i) {
-        temp[i] = list[left * 5 + i];
-      }
-      for (int i = 0; i < 5; ++i) {
-        list[left * 5 + i] = list[right * 5 + i];
-      }
-      for (int i = 0; i < 5; ++i) {
-        list[right * 5 + i] = temp[i];
-      }
-      ++left;
-      --right;
-    }
-  }
-
-  if (right > start) {
-    for (int i = 0; i < 5; ++i) {
-      temp[i] = list[start * 5 + i];
-    }
-    for (int i = 0; i < 5; ++i) {
-      list[start * 5 + i] = list[right * 5 + i];
-    }
-    for (int i = 0; i < 5; ++i) {
-      list[right * 5 + i] = temp[i];
-    }
-  }
-
-  if (start < right - 1) {
-    sort_box(list, start, right - 1);
-  }
-  if (right + 1 < end) {
-    sort_box(list, right + 1, end);
-  }
-}
-
 // discard boxes whose scores < threshold
 //   list: num_boxes x 5 array,  (x1, y1, x2, y2, score) for each box
 static
@@ -199,44 +153,6 @@ void enumerate_output_cpu(const real bottom2d[],
   } // endfor c
 }
 #endif
-
-// "IoU = intersection area / union area" of two boxes A, B
-//   A, B: 4-dim array (x1, y1, x2, y2)
-#ifdef GPU
-__device__
-#endif
-static
-real iou(const real A[], const real B[])
-{
-  #ifndef GPU
-  if (A[0] > B[2] || A[1] > B[3] || A[2] < B[0] || A[3] < B[1]) {
-    return 0;
-  }
-  else {
-  #endif
-
-  // overlapped region (= box)
-  const real x1 = MAX(A[0],  B[0]);
-  const real y1 = MAX(A[1],  B[1]);
-  const real x2 = MIN(A[2],  B[2]);
-  const real y2 = MIN(A[3],  B[3]);
-
-  // intersection area
-  const real width = MAX(0.0f,  x2 - x1 + 1.0f);
-  const real height = MAX(0.0f,  y2 - y1 + 1.0f);
-  const real area = width * height;
-
-  // area of A, B
-  const real A_area = (A[2] - A[0] + 1.0f) * (A[3] - A[1] + 1.0f);
-  const real B_area = (B[2] - B[0] + 1.0f) * (B[3] - B[1] + 1.0f);
-
-  // IoU
-  return area / (A_area + B_area - area);
-
-  #ifndef GPU
-  }
-  #endif
-}
 
 // retrieve boxes that are determined to be kept by NMS
 #ifdef GPU
@@ -407,7 +323,7 @@ void filter_output(const real bottom2d[],
       // sort & NMS
       if (num_pre_nms > 1) {
         int num_post_nms = 0;
-        sort_box(p_proposals, 0, num_pre_nms - 1);
+        sort_box(p_proposals, 0, num_pre_nms - 1, num_pre_nms);
         nms(num_pre_nms,  p_proposals,  &num_post_nms,  p_keep,  base,
             nms_thresh,  num_pre_nms,  bbox_vote,  vote_thresh);
         num_out += num_post_nms;
@@ -554,15 +470,8 @@ void odout_shape(const Tensor* const bottom2d,
     top2d->start[n] = total_num_rois * 6;
   }
 
-  // temporary space size
-  //   in GPU mode, total space allocated for proposals should be
-  //   a power of 2 >= actual number of proposals
-  {
-    int num_power_of_2 = 1;
-    while (num_power_of_2 < total_num_rois) num_power_of_2 *= 2;
-    *proposals_size = num_power_of_2 * 5;
-    *keep_size = total_num_rois;
-  }
+  *proposals_size = total_num_rois;
+  *keep_size = total_num_rois;
 }
 
 

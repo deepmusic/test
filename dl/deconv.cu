@@ -10,6 +10,7 @@
 //   TODO: detailed description
 #ifdef GPU
 __global__
+static
 void convert_top_gpu(const real top5d[], real top3d[],
                      const int C, const int H, const int W,
                      const int H5, const int W5,
@@ -50,6 +51,7 @@ void convert_top_gpu(const real top5d[], real top3d[],
   }
 }
 #else
+static
 void convert_top_cpu(const real top5d[], real top3d[],
                      const int C, const int H, const int W,
                      const int H5, const int W5,
@@ -57,36 +59,33 @@ void convert_top_cpu(const real top5d[], real top3d[],
                      const int pad_h, const int pad_w,
                      const int stride_h, const int stride_w)
 {
-  // thread index: (c, h, w) = c*H*W + h*W + w
-  for (int index = 0; index < C * H * W; ++index) {
-    // parse thread index -> (c, h, w)
-    const int c = index / (H * W);
-    const int h = (index / W) % H + pad_h;
-    const int w = index % W + pad_w;
+  const int h5_coef = (1 - stride_h * kernel_w * H5) * W5;
+  const int w5_coef = 1 - stride_w * H5 * W5;
+  real* p_top3d = top3d;
 
-    // range of summation
-    // top3d[c][h][w] = sum_{h5,w5} top5d[]
-    //   0 <= h5 <= 0
-    //   0 <= w5 <= 0
-    //   TODO: optimization & description
-    const int h5_start = (h >= kernel_h) * ((h - kernel_h) / stride_h + 1);
+  for (int c = 0; c < C; ++c) {
+  for (int h = pad_h; h < H + pad_h; ++h) {
+    const int h5_start = (h < kernel_h) ?
+                         0: ((h - kernel_h) / stride_h + 1);
     const int h5_end = MIN(h / stride_h + 1,  H5);
-    const int w5_start = (w >= kernel_w) * ((w - kernel_w) / stride_w + 1);
-    const int w5_end = MIN(w / stride_w + 1,  W5);
-    const real* const p_top5d = top5d +
-                  (c * kernel_h * kernel_w + h * kernel_w + w) * H5 * W5;
-    const int h5_coef = (1 - stride_h * kernel_w * H5) * W5;
-    const int w5_coef = 1 - stride_w * H5 * W5;
 
-    // top3d[c][h][w] = sum_{h5,w5} top5d[]
-    real val = 0;
-    for (int h5 = h5_start; h5 < h5_end; ++h5) {
-      for (int w5 = w5_start; w5 < w5_end; ++w5) {
-        val += p_top5d[h5 * h5_coef + w5 * w5_coef];
+    for (int w = pad_w; w < W + pad_w; ++w) {
+      const int w5_start = (w < kernel_w) ?
+                           0 : ((w - kernel_w) / stride_w + 1);
+      const int w5_end = MIN(w / stride_w + 1,  W5);
+      const real* const p_top5d = top5d +
+                    (c * kernel_h * kernel_w + h * kernel_w + w) * H5 * W5;
+
+      // top3d[c][h][w] = sum_{h5,w5} top5d[]
+      real val = 0;
+      for (int h5 = h5_start; h5 < h5_end; ++h5) {
+        for (int w5 = w5_start; w5 < w5_end; ++w5) {
+          val += p_top5d[h5 * h5_coef + w5 * w5_coef];
+        }
       }
+      *(p_top3d++) = val;
     }
-    top3d[index] = val;
-  }
+  }}
 }
 #endif
 
@@ -97,6 +96,41 @@ void convert_top_cpu(const real top5d[], real top3d[],
 //   deconv_forward
 // --------------------------------------------------------------------------
 
+#ifdef GPU
+// data structure for batched-CuBLAS operation
+//   p_groups: "(3 * num_groups) x 1" array of pointers to each group
+//     p_bottoms = p_groups[0, ..., num_groups - 1]
+//     p_tops = p_groups[num_groups, ..., 2 * num_groups - 1]
+//     p_weights = p_groups[2 * num_groups, ..., 3 * num_groups - 1]
+//   p_groups_gpu: "(3 * num_groups) x 1" array in GPU memory
+typedef struct DeconvAuxData_ {
+  real** p_groups;
+  real** p_groups_gpu;
+} DeconvAuxData;
+
+static
+void malloc_deconv_aux_data(DeconvAuxData* const aux_data,
+                            const int num_groups,
+                            int* const p_space_cpu,
+                            int* const p_space_gpu)
+{
+  aux_data->p_groups = (real**)malloc(3 * num_groups * sizeof(real*));
+  cudaMalloc(&aux_data->p_groups_gpu, 3 * num_groups * sizeof(real*));
+
+  *p_space_cpu = 3 * num_groups * sizeof(real*);
+  *p_space_gpu = 3 * num_groups * sizeof(real*);
+}
+
+static
+void free_deconv_aux_data(DeconvAuxData* const aux_data)
+{
+  free(aux_data->p_groups);
+  cudaFree(aux_data->p_groups_gpu);
+
+  memset(aux_data, 0, sizeof(DeconvAuxData));
+}
+#endif
+
 // deconvolution: bottom -> top
 //   G: number of groups
 //   bottom: (G * C') x H' x W'
@@ -105,12 +139,14 @@ void convert_top_cpu(const real top5d[], real top3d[],
 //   bias: (G * C) x 1
 //   temp: (G * C * kernel_h * kernel_w) x (H' * W') array
 //   const: 1 x (H * W) array,  const[i] = 1 for all i
+static
 void deconv_forward(const Tensor* const bottom3d,
                     Tensor* const top3d,
                     const Tensor* const weight5d,
                     const Tensor* const bias1d,
                     real temp_data[],
                     const real const_data[],
+                    void* const aux_data,
                     const LayerOption* const option)
 {
   // weight shape: G x C' x C x kernel_h x kernel_w
@@ -127,15 +163,16 @@ void deconv_forward(const Tensor* const bottom3d,
   const int stride_w = option->stride_w;
 
   #ifdef GPU
-  const real* * pp_bottom = (const real* *)malloc(num_groups * sizeof(real*));
-  const real* * pp_weight = (const real* *)malloc(num_groups * sizeof(real*));
-  real** pp_temp = (real**)malloc(num_groups * sizeof(real*));
-  const real* * pp_bottom_dev;
-  const real* * pp_weight_dev;
-  real** pp_temp_dev;
-  cudaMalloc(&pp_bottom_dev, num_groups * sizeof(real*));
-  cudaMalloc(&pp_weight_dev, num_groups * sizeof(real*));
-  cudaMalloc(&pp_temp_dev, num_groups * sizeof(real*));
+  real** const p_groups = ((DeconvAuxData*)aux_data)->p_groups;
+  real** const p_groups_gpu = ((DeconvAuxData*)aux_data)->p_groups_gpu;
+
+  const real** const p_bottoms = (const real**)&p_groups[0];
+  const real** const p_weights = (const real**)&p_groups[num_groups];
+  real** const p_temps = &p_groups[2 * num_groups];
+
+  const real** const p_bottoms_gpu = (const real**)&p_groups_gpu[0];
+  const real** const p_weights_gpu = (const real**)&p_groups_gpu[num_groups];
+  real** const p_temps_gpu = &p_groups_gpu[2 * num_groups];
   #endif
 
   // do forward-pass for each item in the batch
@@ -160,20 +197,18 @@ void deconv_forward(const Tensor* const bottom3d,
 
     #ifdef GPU
     {
+      const real one = 1.0f, zero = 0.0f;
+
       // compute top[g] = dot(weight[g].transpose(), bottom[g])
       //   weight[g]: C' x (C * kernel_h * kernel_w)
       //   bottom[g]: C' x (H' * W')
       //   top[g]: (C * kernel_h * kernel_w) x (H' * W')
       for (int g = 0; g < num_groups; ++g) {
-        pp_bottom[g] = p_bottom_item + g * bottom_C * bottom_area;
-        pp_weight[g] = weight5d->data + g * bottom_C * kernel_size;
-        pp_temp[g] = temp_data + g * kernel_size * bottom_area;
+        p_bottoms[g] = p_bottom_item + g * bottom_C * bottom_area;
+        p_weights[g] = weight5d->data + g * bottom_C * kernel_size;
+        p_temps[g] = temp_data + g * kernel_size * bottom_area;
       }
-      cudaMemcpyAsync(pp_bottom_dev, pp_bottom, num_groups * sizeof(real*),
-                      cudaMemcpyHostToDevice);
-      cudaMemcpyAsync(pp_weight_dev, pp_weight, num_groups * sizeof(real*),
-                      cudaMemcpyHostToDevice);
-      cudaMemcpyAsync(pp_temp_dev, pp_temp, num_groups * sizeof(real*),
+      cudaMemcpyAsync(p_groups_gpu, p_groups, 3 * num_groups * sizeof(real*),
                       cudaMemcpyHostToDevice);
 
       // compute Z = alpha * dot(X.transpose(), Y) + beta * Z
@@ -188,15 +223,14 @@ void deconv_forward(const Tensor* const bottom3d,
       //   &X,  number of columns in X (= m),
       //   &beta (= 0),
       //   &Z,  number of columns in Z (= n)
-      const real one = 1.0f, zero = 0.0f;
       cublasSgemmBatched(*((cublasHandle_t*)option->handle),
                   CUBLAS_OP_N,  CUBLAS_OP_T,
                   bottom_area,  kernel_size,  bottom_C,
                   &one,
-                  pp_bottom_dev,  bottom_area,
-                  pp_weight_dev,  kernel_size,
+                  p_bottoms_gpu,  bottom_area,
+                  p_weights_gpu,  kernel_size,
                   &zero,
-                  pp_temp_dev,  bottom_area, num_groups);
+                  p_temps_gpu,  bottom_area, num_groups);
     }
     #else
     {
@@ -286,16 +320,6 @@ void deconv_forward(const Tensor* const bottom3d,
       //   do_transpose_X (= false),  do_transpose_Y (= false),
       //   m = G * C,  n = H * W,  p = 1
       //   alpha = 1,  beta = 1
-/*
-      cblas_sgemm(CblasRowMajor,
-                  CblasNoTrans,  CblasNoTrans,
-                  top_channels,  top_area,  1,
-                  1,
-                  bias1d->data,  1,
-                  const_data,  top_area,
-                  1,
-                  p_top_item,  top_area);
-*/
       cblas_sger(CblasRowMajor,
                  top_channels,  top_area,
                  1,
@@ -314,15 +338,6 @@ void deconv_forward(const Tensor* const bottom3d,
     }
   } // endfor batch
 
-  #ifdef GPU
-  free(pp_bottom);
-  free(pp_weight);
-  free(pp_temp);
-  cudaFree(pp_bottom_dev);
-  cudaFree(pp_weight_dev);
-  cudaFree(pp_temp_dev);
-  #endif
-
   top3d->ndim = 3;
   top3d->num_items = bottom3d->num_items;
 }
@@ -333,6 +348,7 @@ void deconv_forward(const Tensor* const bottom3d,
 // layer shape calculator code
 // --------------------------------------------------------------------------
 
+static
 void deconv_shape(const Tensor* const bottom3d,
                   Tensor* const top3d,
                   Tensor* const weight5d,
@@ -428,7 +444,8 @@ void forward_deconv_layer(void* const net_, void* const layer_)
 
   deconv_forward(layer->p_bottoms[0], layer->p_tops[0],
                  layer->p_params[0], p_bias,
-                 net->temp_data, net->const_data, &layer->option);
+                 net->temp_data, net->const_data,
+                 layer->aux_data,  &layer->option);
 }
 
 void shape_deconv_layer(void* const net_, void* const layer_)
@@ -443,4 +460,36 @@ void shape_deconv_layer(void* const net_, void* const layer_)
                &temp_size, &const_size, &layer->option);
 
   update_net_size(net, layer, temp_size, 0, const_size);
+}
+
+void malloc_deconv_layer(void* const net_, void* const layer_)
+{
+  #ifdef GPU
+  {
+    Net* const net = (Net*)net_;
+    Layer* const layer = (Layer*)layer_;
+    int space_cpu = 0, space_gpu = 0;
+
+    layer->aux_data = (void*)malloc(sizeof(DeconvAuxData));
+
+    malloc_deconv_aux_data((DeconvAuxData*)layer->aux_data,
+                           layer->option.num_groups,
+                           &space_cpu, &space_gpu);
+
+    net->space_cpu += space_cpu + sizeof(DeconvAuxData);
+    net->space += space_gpu;
+  }
+  #endif
+}
+
+void free_deconv_layer(void* const net_, void* const layer_)
+{
+  #ifdef GPU
+  {
+    Layer* const layer = (Layer*)layer_;
+
+    free_deconv_aux_data((DeconvAuxData*)layer->aux_data);
+    free(layer->aux_data);
+  }
+  #endif
 }

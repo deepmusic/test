@@ -62,6 +62,7 @@
 //   load_tensor
 // --------------------------------------------------------------------------
 
+typedef unsigned long long uint64;
 typedef float real;
 #define MAX_NDIM 5
 #define MAX_NAME_LEN 64
@@ -201,12 +202,12 @@ typedef struct Layer_
   Tensor* p_params[MAX_NUM_PARAMS];
   int num_params;
 
-  real* p_aux_data[MAX_NUM_AUXS];
-  int num_aux_data;
+  void* aux_data;
 
   void (*f_forward[MAX_NUM_OPS_PER_LAYER])(void*, void*);
   void (*f_shape[MAX_NUM_OPS_PER_LAYER])(void*, void*);
-  void (*f_init[MAX_NUM_OPS_PER_LAYER])(void*, void*);
+  void (*f_malloc)(void*, void*);
+  void (*f_free)(void*, void*);
   LayerOption option;
 } Layer;
 
@@ -329,15 +330,11 @@ void malloc_net(Net* const net);
 
 void free_net(Net* const net);
 
-void init_layers(Net* const net);
-
 void forward_net(Net* const net);
 
 void shape_net(Net* const net);
 
-void assign_layer_data(Net* const net, Tensor* const tensor);
-
-void deallocate_layer_data(Net* const net, Tensor* const tensor);
+void assign_layer_data(Net* const net);
 
 void update_net_size(Net* const net,
                      const Layer* const layer,
@@ -517,6 +514,8 @@ void shape_conv_layer(void* const net, void* const layer);
 
 void forward_deconv_layer(void* const net_, void* const layer_);
 void shape_deconv_layer(void* const net_, void* const layer_);
+void malloc_deconv_layer(void* const net_, void* const layer_);
+void free_deconv_layer(void* const net_, void* const layer_);
 
 
 
@@ -551,9 +550,10 @@ void shape_roipool_layer(void* const net_, void* const layer_);
 // top-n proposal generation
 // --------------------------------------------------------------------------
 
-void init_proposal_layer(void* const net_, void* const layer_);
 void forward_proposal_layer(void* const net_, void* const layer_);
 void shape_proposal_layer(void* const net_, void* const layer_);
+void malloc_proposal_layer(void* const net_, void* const layer_);
+void free_proposal_layer(void* const net_, void* const layer_);
 
 
 
@@ -702,8 +702,6 @@ void nms(const int num_boxes, real boxes[],
          const real nms_thresh, const int max_num_out,
          const int bbox_vote, const real vote_thresh);
 
-
-
 // --------------------------------------------------------------------------
 // transform image into network input
 //   img2input
@@ -719,6 +717,24 @@ void img2input(const unsigned char img[],
 void init_input_layer(Net* const net,
                       Tensor* const input3d,
                       Tensor* const img_info1d);
+
+
+
+// --------------------------------------------------------------------------
+// common functions
+//   img2input
+// --------------------------------------------------------------------------
+
+// "IoU = intersection area / union area" of two boxes A, B
+//   A, B: 4-dim array (x1, y1, x2, y2)
+real iou(const real A[], const real B[]);
+
+// quick-sort a list of boxes in descending order of their scores (CPU)
+//   list: num_boxes x 5 array,  (x1, y1, x2, y2, score) for each box
+//   if num_top <= end,  only top-k results are guaranteed to be sorted
+//   (for efficient computation)
+void sort_box(real list[], const int start, const int end,
+              const int num_top);
 
 #ifdef __cplusplus
 } // end extern "C"
@@ -772,7 +788,6 @@ void _add_conv_layer(const char* const layer_name,
 
 void _shape_net(void);
 void _malloc_net(void);
-void _init_layers(void);
 
 void _release_net(void);
 

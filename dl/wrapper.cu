@@ -132,16 +132,6 @@ void _malloc_net(void)
   }
 }
 
-void _init_layers(void)
-{
-  if (pvanet.initialized) {
-    init_layers(&pvanet);
-  }
-  else {
-    printf("[ERROR] Create a network instance first\n");
-  }
-}
-
 void _release_net(void)
 {
   if (pvanet.initialized) {

@@ -6,6 +6,10 @@
 
 #include <time.h>
 
+#ifdef _MSC_VER
+  #define TEST
+#endif
+
 static
 const char* gs_class_names[] = {
   "__unknown__",

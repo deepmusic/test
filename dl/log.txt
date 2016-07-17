@@ -1,0 +1,229 @@
+kye-hyeon@fenrir-TS140U:~/Work/test/dl$ ./demo_cpu_light_compress.bin 12000 300 720 snapshot scripts/voc/000014.jpg
+Max layer size = 6912000
+Max param size = 4718592
+Max temp size = 38017536
+Max tempint size = 2764800
+Max const size = 216000
+Tensor data: Assigned shared memory block 0, reserved until layer conv1
+Tensor conv1: Assigned shared memory block 1, reserved until layer conv2
+Tensor conv2: Assigned shared memory block 0, reserved until layer conv3
+Tensor conv3: Assigned shared memory block 1, reserved until layer downsample
+Tensor inc3a_pool1: Assigned shared memory block 0, reserved until layer inc3a_conv1
+Tensor inc3a_conv1: Assigned shared memory block 2, reserved until layer inc3a
+Tensor inc3a_conv3_1: Assigned shared memory block 0, reserved until layer inc3a_conv3_2
+Tensor inc3a_conv3_2: Assigned shared memory block 3, reserved until layer inc3a
+Tensor inc3a_conv5_1: Assigned shared memory block 0, reserved until layer inc3a_conv5_2
+Tensor inc3a_conv5_2: Assigned shared memory block 4, reserved until layer inc3a_conv5_3
+Tensor inc3a_conv5_3: Assigned shared memory block 0, reserved until layer inc3a
+Tensor inc3a: Assigned shared memory block 4, reserved until layer inc3b_conv5_1
+Tensor inc3b_conv1: Assigned shared memory block 0, reserved until layer inc3b
+Tensor inc3b_conv3_1: Assigned shared memory block 2, reserved until layer inc3b_conv3_2
+Tensor inc3b_conv3_2: Assigned shared memory block 3, reserved until layer inc3b
+Tensor inc3b_conv5_1: Assigned shared memory block 2, reserved until layer inc3b_conv5_2
+Tensor inc3b_conv5_2: Assigned shared memory block 4, reserved until layer inc3b_conv5_3
+Tensor inc3b_conv5_3: Assigned shared memory block 2, reserved until layer inc3b
+Tensor inc3b: Assigned shared memory block 4, reserved until layer inc3c_conv5_1
+Tensor inc3c_conv1: Assigned shared memory block 0, reserved until layer inc3c
+Tensor inc3c_conv3_1: Assigned shared memory block 2, reserved until layer inc3c_conv3_2
+Tensor inc3c_conv3_2: Assigned shared memory block 3, reserved until layer inc3c
+Tensor inc3c_conv5_1: Assigned shared memory block 2, reserved until layer inc3c_conv5_2
+Tensor inc3c_conv5_2: Assigned shared memory block 4, reserved until layer inc3c_conv5_3
+Tensor inc3c_conv5_3: Assigned shared memory block 2, reserved until layer inc3c
+Tensor inc3c: Assigned shared memory block 4, reserved until layer inc3d_conv5_1
+Tensor inc3d_conv1: Assigned shared memory block 0, reserved until layer inc3d
+Tensor inc3d_conv3_1: Assigned shared memory block 2, reserved until layer inc3d_conv3_2
+Tensor inc3d_conv3_2: Assigned shared memory block 3, reserved until layer inc3d
+Tensor inc3d_conv5_1: Assigned shared memory block 2, reserved until layer inc3d_conv5_2
+Tensor inc3d_conv5_2: Assigned shared memory block 4, reserved until layer inc3d_conv5_3
+Tensor inc3d_conv5_3: Assigned shared memory block 2, reserved until layer inc3d
+Tensor inc3d: Assigned shared memory block 4, reserved until layer inc3e_conv5_1
+Tensor inc3e_conv1: Assigned shared memory block 0, reserved until layer inc3e
+Tensor inc3e_conv3_1: Assigned shared memory block 2, reserved until layer inc3e_conv3_2
+Tensor inc3e_conv3_2: Assigned shared memory block 3, reserved until layer inc3e
+Tensor inc3e_conv5_1: Assigned shared memory block 2, reserved until layer inc3e_conv5_2
+Tensor inc3e_conv5_2: Assigned shared memory block 4, reserved until layer inc3e_conv5_3
+Tensor inc3e_conv5_3: Assigned shared memory block 2, reserved until layer inc3e
+Tensor inc3e: Assigned shared memory block 4, reserved until layer concat
+Tensor inc4a_pool1: Assigned shared memory block 0, reserved until layer inc4a_conv1
+Tensor inc4a_conv1: Assigned shared memory block 2, reserved until layer inc4a
+Tensor inc4a_conv3_1: Assigned shared memory block 0, reserved until layer inc4a_conv3_2
+Tensor inc4a_conv3_2: Assigned shared memory block 3, reserved until layer inc4a
+Tensor inc4a_conv5_1: Assigned shared memory block 0, reserved until layer inc4a_conv5_2
+Tensor inc4a_conv5_2: Assigned shared memory block 5, reserved until layer inc4a_conv5_3
+Tensor inc4a_conv5_3: Assigned shared memory block 0, reserved until layer inc4a
+Tensor inc4a: Assigned shared memory block 5, reserved until layer inc4b_conv5_1
+Tensor inc4b_conv1: Assigned shared memory block 0, reserved until layer inc4b
+Tensor inc4b_conv3_1: Assigned shared memory block 2, reserved until layer inc4b_conv3_2
+Tensor inc4b_conv3_2: Assigned shared memory block 3, reserved until layer inc4b
+Tensor inc4b_conv5_1: Assigned shared memory block 2, reserved until layer inc4b_conv5_2
+Tensor inc4b_conv5_2: Assigned shared memory block 5, reserved until layer inc4b_conv5_3
+Tensor inc4b_conv5_3: Assigned shared memory block 2, reserved until layer inc4b
+Tensor inc4b: Assigned shared memory block 5, reserved until layer inc4c_conv5_1
+Tensor inc4c_conv1: Assigned shared memory block 0, reserved until layer inc4c
+Tensor inc4c_conv3_1: Assigned shared memory block 2, reserved until layer inc4c_conv3_2
+Tensor inc4c_conv3_2: Assigned shared memory block 3, reserved until layer inc4c
+Tensor inc4c_conv5_1: Assigned shared memory block 2, reserved until layer inc4c_conv5_2
+Tensor inc4c_conv5_2: Assigned shared memory block 5, reserved until layer inc4c_conv5_3
+Tensor inc4c_conv5_3: Assigned shared memory block 2, reserved until layer inc4c
+Tensor inc4c: Assigned shared memory block 5, reserved until layer inc4d_conv5_1
+Tensor inc4d_conv1: Assigned shared memory block 0, reserved until layer inc4d
+Tensor inc4d_conv3_1: Assigned shared memory block 2, reserved until layer inc4d_conv3_2
+Tensor inc4d_conv3_2: Assigned shared memory block 3, reserved until layer inc4d
+Tensor inc4d_conv5_1: Assigned shared memory block 2, reserved until layer inc4d_conv5_2
+Tensor inc4d_conv5_2: Assigned shared memory block 5, reserved until layer inc4d_conv5_3
+Tensor inc4d_conv5_3: Assigned shared memory block 2, reserved until layer inc4d
+Tensor inc4d: Assigned shared memory block 5, reserved until layer inc4e_conv5_1
+Tensor inc4e_conv1: Assigned shared memory block 0, reserved until layer inc4e
+Tensor inc4e_conv3_1: Assigned shared memory block 2, reserved until layer inc4e_conv3_2
+Tensor inc4e_conv3_2: Assigned shared memory block 3, reserved until layer inc4e
+Tensor inc4e_conv5_1: Assigned shared memory block 2, reserved until layer inc4e_conv5_2
+Tensor inc4e_conv5_2: Assigned shared memory block 5, reserved until layer inc4e_conv5_3
+Tensor inc4e_conv5_3: Assigned shared memory block 2, reserved until layer inc4e
+Tensor inc4e: Assigned shared memory block 5, reserved until layer upsample
+Tensor downsample: Assigned shared memory block 0, reserved until layer concat
+Tensor upsample: Assigned shared memory block 1, reserved until layer concat
+Tensor concat: Assigned shared memory block 2, reserved until layer convf
+Tensor convf: Assigned shared memory block 0, reserved until layer rcnn_roipool
+Tensor rpn_conv1: Assigned shared memory block 1, reserved until layer rpn_bbox_pred
+Tensor rpn_cls_score: Assigned shared memory block 2, reserved until layer proposal
+Tensor rpn_bbox_pred: Assigned shared memory block 3, reserved until layer proposal
+Tensor rpn_roi: Assigned shared memory block 1, reserved until layer out
+Tensor fc6_L: Assigned shared memory block 0, reserved until layer fc6_U
+Tensor fc6_U: Assigned shared memory block 2, reserved until layer fc7_L
+Tensor fc7_L: Assigned shared memory block 0, reserved until layer fc7_U
+Tensor fc7_U: Assigned shared memory block 2, reserved until layer bbox_pred
+Tensor cls_score: Assigned shared memory block 0, reserved until layer cls_pred
+Tensor cls_pred: Assigned shared memory block 3, reserved until layer out
+Tensor bbox_pred: Assigned shared memory block 0, reserved until layer out
+Tensor out: Assigned shared memory block 2, reserved until layer out
+[ERROR] Size mismatch: data/pvanet_light/cls_score_param0.bin (348160) != tensor (86016)
+[ERROR] Size mismatch: data/pvanet_light/cls_score_param1.bin (85) != tensor (21)
+[ERROR] Size mismatch: data/pvanet_light/bbox_pred_param0.bin (1392640) != tensor (344064)
+[ERROR] Size mismatch: data/pvanet_light/bbox_pred_param1.bin (340) != tensor (84)
+616MB of main memory allocated
+333 x 500 --> 704 x 1056
+shape changed
+Image 0 / Box 0: class 3, score 0.980773, p1 = (62.37, 163.49), p2 = (255.35, 228.86)
+Image 0 / Box 1: class 4, score 0.998352, p1 = (177.58, 181.42), p2 = (498.82, 312.36)
+Image 0 / Box 2: class 4, score 0.922209, p1 = (414.67, 181.73), p2 = (497.95, 224.67)
+Image 0 / Box 3: class 4, score 0.738783, p1 = (146.32, 189.56), p2 = (303.90, 230.69)
+Image 0 / Box 4: class 9, score 0.846212, p1 = (348.11, 6.40), p2 = (398.16, 70.43)
+Image 0 / Box 5: class 20, score 0.801781, p1 = (297.73, 0.00), p2 = (459.71, 87.33)
+Image 0 / Box 6: class 0, score 0.775846, p1 = (20.78, 197.70), p2 = (75.67, 233.51)
+Image 0 / Box 7: class 0, score 0.765085, p1 = (0.00, 0.00), p2 = (344.34, 161.13)
+Image 0 / Box 8: class 0, score 0.727762, p1 = (482.90, 106.15), p2 = (499.53, 177.47)
+Image 0 / Box 9: class 0, score 0.725064, p1 = (1.47, 191.81), p2 = (20.31, 223.40)
+Image 0 / Box 10: class 0, score 0.705626, p1 = (317.78, 19.53), p2 = (345.39, 68.19)
+kye-hyeon@fenrir-TS140U:~/Work/test/dl$ ./demo_gpu_light_compress.bin 12000 300 720 snapshot scripts/voc/000014.jpg
+Max layer size = 6912000
+Max param size = 4718592
+Max temp size = 38017536
+Max tempint size = 2764800
+Max const size = 216000
+Tensor data: Assigned shared memory block 0, reserved until layer conv1
+Tensor conv1: Assigned shared memory block 1, reserved until layer conv2
+Tensor conv2: Assigned shared memory block 0, reserved until layer conv3
+Tensor conv3: Assigned shared memory block 1, reserved until layer downsample
+Tensor inc3a_pool1: Assigned shared memory block 0, reserved until layer inc3a_conv1
+Tensor inc3a_conv1: Assigned shared memory block 2, reserved until layer inc3a
+Tensor inc3a_conv3_1: Assigned shared memory block 0, reserved until layer inc3a_conv3_2
+Tensor inc3a_conv3_2: Assigned shared memory block 3, reserved until layer inc3a
+Tensor inc3a_conv5_1: Assigned shared memory block 0, reserved until layer inc3a_conv5_2
+Tensor inc3a_conv5_2: Assigned shared memory block 4, reserved until layer inc3a_conv5_3
+Tensor inc3a_conv5_3: Assigned shared memory block 0, reserved until layer inc3a
+Tensor inc3a: Assigned shared memory block 4, reserved until layer inc3b_conv5_1
+Tensor inc3b_conv1: Assigned shared memory block 0, reserved until layer inc3b
+Tensor inc3b_conv3_1: Assigned shared memory block 2, reserved until layer inc3b_conv3_2
+Tensor inc3b_conv3_2: Assigned shared memory block 3, reserved until layer inc3b
+Tensor inc3b_conv5_1: Assigned shared memory block 2, reserved until layer inc3b_conv5_2
+Tensor inc3b_conv5_2: Assigned shared memory block 4, reserved until layer inc3b_conv5_3
+Tensor inc3b_conv5_3: Assigned shared memory block 2, reserved until layer inc3b
+Tensor inc3b: Assigned shared memory block 4, reserved until layer inc3c_conv5_1
+Tensor inc3c_conv1: Assigned shared memory block 0, reserved until layer inc3c
+Tensor inc3c_conv3_1: Assigned shared memory block 2, reserved until layer inc3c_conv3_2
+Tensor inc3c_conv3_2: Assigned shared memory block 3, reserved until layer inc3c
+Tensor inc3c_conv5_1: Assigned shared memory block 2, reserved until layer inc3c_conv5_2
+Tensor inc3c_conv5_2: Assigned shared memory block 4, reserved until layer inc3c_conv5_3
+Tensor inc3c_conv5_3: Assigned shared memory block 2, reserved until layer inc3c
+Tensor inc3c: Assigned shared memory block 4, reserved until layer inc3d_conv5_1
+Tensor inc3d_conv1: Assigned shared memory block 0, reserved until layer inc3d
+Tensor inc3d_conv3_1: Assigned shared memory block 2, reserved until layer inc3d_conv3_2
+Tensor inc3d_conv3_2: Assigned shared memory block 3, reserved until layer inc3d
+Tensor inc3d_conv5_1: Assigned shared memory block 2, reserved until layer inc3d_conv5_2
+Tensor inc3d_conv5_2: Assigned shared memory block 4, reserved until layer inc3d_conv5_3
+Tensor inc3d_conv5_3: Assigned shared memory block 2, reserved until layer inc3d
+Tensor inc3d: Assigned shared memory block 4, reserved until layer inc3e_conv5_1
+Tensor inc3e_conv1: Assigned shared memory block 0, reserved until layer inc3e
+Tensor inc3e_conv3_1: Assigned shared memory block 2, reserved until layer inc3e_conv3_2
+Tensor inc3e_conv3_2: Assigned shared memory block 3, reserved until layer inc3e
+Tensor inc3e_conv5_1: Assigned shared memory block 2, reserved until layer inc3e_conv5_2
+Tensor inc3e_conv5_2: Assigned shared memory block 4, reserved until layer inc3e_conv5_3
+Tensor inc3e_conv5_3: Assigned shared memory block 2, reserved until layer inc3e
+Tensor inc3e: Assigned shared memory block 4, reserved until layer concat
+Tensor inc4a_pool1: Assigned shared memory block 0, reserved until layer inc4a_conv1
+Tensor inc4a_conv1: Assigned shared memory block 2, reserved until layer inc4a
+Tensor inc4a_conv3_1: Assigned shared memory block 0, reserved until layer inc4a_conv3_2
+Tensor inc4a_conv3_2: Assigned shared memory block 3, reserved until layer inc4a
+Tensor inc4a_conv5_1: Assigned shared memory block 0, reserved until layer inc4a_conv5_2
+Tensor inc4a_conv5_2: Assigned shared memory block 5, reserved until layer inc4a_conv5_3
+Tensor inc4a_conv5_3: Assigned shared memory block 0, reserved until layer inc4a
+Tensor inc4a: Assigned shared memory block 5, reserved until layer inc4b_conv5_1
+Tensor inc4b_conv1: Assigned shared memory block 0, reserved until layer inc4b
+Tensor inc4b_conv3_1: Assigned shared memory block 2, reserved until layer inc4b_conv3_2
+Tensor inc4b_conv3_2: Assigned shared memory block 3, reserved until layer inc4b
+Tensor inc4b_conv5_1: Assigned shared memory block 2, reserved until layer inc4b_conv5_2
+Tensor inc4b_conv5_2: Assigned shared memory block 5, reserved until layer inc4b_conv5_3
+Tensor inc4b_conv5_3: Assigned shared memory block 2, reserved until layer inc4b
+Tensor inc4b: Assigned shared memory block 5, reserved until layer inc4c_conv5_1
+Tensor inc4c_conv1: Assigned shared memory block 0, reserved until layer inc4c
+Tensor inc4c_conv3_1: Assigned shared memory block 2, reserved until layer inc4c_conv3_2
+Tensor inc4c_conv3_2: Assigned shared memory block 3, reserved until layer inc4c
+Tensor inc4c_conv5_1: Assigned shared memory block 2, reserved until layer inc4c_conv5_2
+Tensor inc4c_conv5_2: Assigned shared memory block 5, reserved until layer inc4c_conv5_3
+Tensor inc4c_conv5_3: Assigned shared memory block 2, reserved until layer inc4c
+Tensor inc4c: Assigned shared memory block 5, reserved until layer inc4d_conv5_1
+Tensor inc4d_conv1: Assigned shared memory block 0, reserved until layer inc4d
+Tensor inc4d_conv3_1: Assigned shared memory block 2, reserved until layer inc4d_conv3_2
+Tensor inc4d_conv3_2: Assigned shared memory block 3, reserved until layer inc4d
+Tensor inc4d_conv5_1: Assigned shared memory block 2, reserved until layer inc4d_conv5_2
+Tensor inc4d_conv5_2: Assigned shared memory block 5, reserved until layer inc4d_conv5_3
+Tensor inc4d_conv5_3: Assigned shared memory block 2, reserved until layer inc4d
+Tensor inc4d: Assigned shared memory block 5, reserved until layer inc4e_conv5_1
+Tensor inc4e_conv1: Assigned shared memory block 0, reserved until layer inc4e
+Tensor inc4e_conv3_1: Assigned shared memory block 2, reserved until layer inc4e_conv3_2
+Tensor inc4e_conv3_2: Assigned shared memory block 3, reserved until layer inc4e
+Tensor inc4e_conv5_1: Assigned shared memory block 2, reserved until layer inc4e_conv5_2
+Tensor inc4e_conv5_2: Assigned shared memory block 5, reserved until layer inc4e_conv5_3
+Tensor inc4e_conv5_3: Assigned shared memory block 2, reserved until layer inc4e
+Tensor inc4e: Assigned shared memory block 5, reserved until layer upsample
+Tensor downsample: Assigned shared memory block 0, reserved until layer concat
+Tensor upsample: Assigned shared memory block 1, reserved until layer concat
+Tensor concat: Assigned shared memory block 2, reserved until layer convf
+Tensor convf: Assigned shared memory block 0, reserved until layer rcnn_roipool
+Tensor rpn_conv1: Assigned shared memory block 1, reserved until layer rpn_bbox_pred
+Tensor rpn_cls_score: Assigned shared memory block 2, reserved until layer proposal
+Tensor rpn_bbox_pred: Assigned shared memory block 3, reserved until layer proposal
+Tensor rpn_roi: Assigned shared memory block 1, reserved until layer out
+Tensor fc6_L: Assigned shared memory block 0, reserved until layer fc6_U
+Tensor fc6_U: Assigned shared memory block 2, reserved until layer fc7_L
+Tensor fc7_L: Assigned shared memory block 0, reserved until layer fc7_U
+Tensor fc7_U: Assigned shared memory block 2, reserved until layer bbox_pred
+Tensor cls_score: Assigned shared memory block 0, reserved until layer cls_pred
+Tensor cls_pred: Assigned shared memory block 3, reserved until layer out
+Tensor bbox_pred: Assigned shared memory block 0, reserved until layer out
+Tensor out: Assigned shared memory block 2, reserved until layer out
+[ERROR] Size mismatch: data/pvanet_light/cls_score_param0.bin (348160) != tensor (86016)
+[ERROR] Size mismatch: data/pvanet_light/cls_score_param1.bin (85) != tensor (21)
+[ERROR] Size mismatch: data/pvanet_light/bbox_pred_param0.bin (1392640) != tensor (344064)
+[ERROR] Size mismatch: data/pvanet_light/bbox_pred_param1.bin (340) != tensor (84)
+238MB of main memory allocated
+378MB of GPU memory allocated
+333 x 500 --> 704 x 1056
+shape changed
+Image 0 / Box 0: class 3, score 0.980773, p1 = (59.63, 161.99), p2 = (294.29, 230.44)
+Image 0 / Box 1: class 4, score 0.998352, p1 = (158.04, 190.11), p2 = (499.53, 304.36)
+Image 0 / Box 2: class 4, score 0.922207, p1 = (410.36, 180.34), p2 = (499.53, 228.36)
+Image 0 / Box 3: class 4, score 0.738781, p1 = (146.32, 189.56), p2 = (303.90, 230.69)
+Image 0 / Box 4: class 9, score 0.846211, p1 = (347.34, 6.22), p2 = (404.48, 70.24)
+Image 0 / Box 5: class 20, score 0.801781, p1 = (297.73, 0.00), p2 = (459.71, 87.33)
+
