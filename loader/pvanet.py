@@ -11,14 +11,10 @@ lib._max_name_len.restype = ctypes.c_int
 lib._max_num_bottoms.restype = ctypes.c_int
 lib._max_num_tops.restype = ctypes.c_int
 lib._max_num_params.restype = ctypes.c_int
-lib._max_num_auxs.restype = ctypes.c_int
-lib._max_num_ops_per_layer.restype = ctypes.c_int
 
 lib._max_num_tensors.restype = ctypes.c_int
 lib._max_num_layers.restype = ctypes.c_int
-lib._max_num_layer_data.restype = ctypes.c_int
-lib._max_num_ratios.restype = ctypes.c_int
-lib._max_num_scales.restype = ctypes.c_int
+lib._max_num_shared_blocks.restype = ctypes.c_int
 
 batch_size = lib._batch_size_net()
 max_ndim = lib._max_ndim()
@@ -27,14 +23,10 @@ max_name_len = lib._max_name_len()
 max_num_bottoms = lib._max_num_bottoms()
 max_num_tops = lib._max_num_tops()
 max_num_params = lib._max_num_params()
-max_num_auxs = lib._max_num_auxs()
-max_num_ops_per_layer = lib._max_num_ops_per_layer()
 
 max_num_tensors = lib._max_num_tensors()
 max_num_layers = lib._max_num_layers()
-max_num_layer_data = lib._max_num_layer_data()
-max_num_ratios = lib._max_num_ratios()
-max_num_scales = lib._max_num_scales()
+max_num_shared_blocks = lib._max_num_shared_blocks()
 
 class Tensor(ctypes.Structure):
   _fields_ = [('name', ctypes.c_char * max_name_len),
@@ -43,9 +35,7 @@ class Tensor(ctypes.Structure):
               ('shape', (ctypes.c_int * max_ndim) * batch_size),
               ('start', ctypes.c_int * batch_size),
               ('data', ctypes.POINTER(ctypes.c_float)),
-              ('data_type', ctypes.c_int),
-              ('shared_block_id', ctypes.c_int),
-              ('max_data_size', ctypes.c_long)]
+              ('data_type', ctypes.c_int)]
 
 class LayerOption(ctypes.Structure):
   _fields_ = [('num_groups', ctypes.c_int),
@@ -81,7 +71,10 @@ class LayerOption(ctypes.Structure):
               ('threshold', ctypes.c_float),
               ('scale_weight', ctypes.c_float),
               ('scale_bias', ctypes.c_float),
-              ('num_bottoms', ctypes.c_int)]
+              ('num_bottoms', ctypes.c_int),
+              ('channel_axis', ctypes.c_int),
+              ('reshape', ctypes.c_int * max_ndim),
+              ('reshape_ndim', ctypes.c_int)]
 
 class Layer(ctypes.Structure):
   _fields_ = [('name', ctypes.c_char * max_name_len),
@@ -91,11 +84,10 @@ class Layer(ctypes.Structure):
               ('num_tops', ctypes.c_int),
               ('p_params', ctypes.POINTER(Tensor) * max_num_params),
               ('num_params', ctypes.c_int),
-              ('p_aux_data', ctypes.POINTER(ctypes.c_float) * max_num_auxs),
-              ('num_aux_data', ctypes.c_int),
-              ('f_forward', ctypes.c_void_p * max_num_ops_per_layer),
-              ('f_shape', ctypes.c_void_p * max_num_ops_per_layer),
-              ('f_init', ctypes.c_void_p * max_num_ops_per_layer),
+              ('aux_data', ctypes.c_void_p),
+              ('f_forward', ctypes.c_void_p),
+              ('f_shape', ctypes.c_void_p),
+              ('f_free', ctypes.c_void_p),
               ('option', LayerOption)]
 
 class Net(ctypes.Structure):
@@ -104,25 +96,19 @@ class Net(ctypes.Structure):
               ('num_tensors', ctypes.c_int),
               ('layers', Layer * max_num_layers),
               ('num_layers', ctypes.c_int),
-              ('layer_data', ctypes.POINTER(ctypes.c_float) * max_num_layer_data),
-              ('layer_size', ctypes.c_long),
-              ('num_layer_data', ctypes.c_int),
+              ('p_shared_blocks', ctypes.POINTER(ctypes.c_float) * max_num_shared_blocks),
+              ('num_shared_blocks', ctypes.c_int),
               ('num_output_boxes', ctypes.c_int),
-              ('param_cpu_data', ctypes.POINTER(ctypes.c_float)),
-              ('param_size', ctypes.c_long),
               ('temp_data', ctypes.POINTER(ctypes.c_float)),
               ('temp_cpu_data', ctypes.POINTER(ctypes.c_float)),
-              ('temp_size', ctypes.c_long),
-              ('tempint_data', ctypes.POINTER(ctypes.c_float)),
-              ('tempint_cpu_data', ctypes.POINTER(ctypes.c_float)),
-              ('tempint_size', ctypes.c_long),
+              ('temp_space', ctypes.c_long),
               ('const_data', ctypes.POINTER(ctypes.c_float)),
-              ('const_size', ctypes.c_long),
-              ('anchor_ratios', ctypes.c_float * max_num_ratios),
-              ('anchor_scales', ctypes.c_float * max_num_ratios),
+              ('const_space', ctypes.c_long),
               ('space_cpu', ctypes.c_long),
               ('space', ctypes.c_long),
-              ('initialized', ctypes.c_int)]
+              ('initialized', ctypes.c_int),
+              ('input_scale', ctypes.c_int),
+              ('blas_handle', ctypes.c_int)]
 
 lib._net.restype = ctypes.POINTER(Net)
 lib.get_tensor_by_name.restype = ctypes.POINTER(Tensor)

@@ -159,18 +159,18 @@ void enumerate_output_cpu(const real bottom2d[],
 __global__
 static
 void retrieve_output_gpu(const real proposals[],
-                         const int keep[],
+                         const int index_out[],
                          real top2d[],
                          const int num_output, const int num_rois,
                          const real scale_H, const real scale_W)
 {
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < num_output) {
-    const real* const p_proposals = proposals + keep[index] * 5;
+    const real* const p_proposals = proposals + index_out[index] * 5;
     real* const p_top2d = top2d + index * 6;
-    const int c = keep[index] / num_rois;
+    const int predicted_class = index_out[index] / num_rois;
 
-    p_top2d[0] = c;
+    p_top2d[0] = predicted_class;
     p_top2d[1] = p_proposals[0] / scale_W;
     p_top2d[2] = p_proposals[1] / scale_H;
     p_top2d[3] = p_proposals[2] / scale_W;
@@ -181,17 +181,17 @@ void retrieve_output_gpu(const real proposals[],
 #else
 static
 void retrieve_output_cpu(const real proposals[],
-                         const int keep[],
+                         const int index_out[],
                          real top2d[],
                          const int num_output, const int num_rois,
                          const real scale_H, const real scale_W)
 {
   for (int index = 0; index < num_output; ++index) {
-    const real* const p_proposals = proposals + keep[index] * 5;
+    const real* const p_proposals = proposals + index_out[index] * 5;
     real* const p_top2d = top2d + index * 6;
-    const int c = keep[index] / num_rois;
+    const int predicted_class = index_out[index] / num_rois;
 
-    p_top2d[0] = c;
+    p_top2d[0] = predicted_class;
     p_top2d[1] = p_proposals[0] / scale_W;
     p_top2d[2] = p_proposals[1] / scale_H;
     p_top2d[3] = p_proposals[2] / scale_W;
@@ -201,11 +201,16 @@ void retrieve_output_cpu(const real proposals[],
 }
 #endif
 
+// retrieve boxes that can be considered as "unseen" object classes
+//   1. they are not predicted as any of known object classes
+//   2. their RPN objectness scores are high (>= score_thresh)
+//   3. they are not much overlapped with output boxes (iou <= nms_thresh)
+// CPU mode only
 #ifdef GPU
 #else
 static
 void retrieve_unknown_cpu(const real proposals[],
-                          int keep[],
+                          int index_out[],
                           const real roi2d[],
                           real top2d[],
                           const int num_output, const int num_rois,
@@ -224,14 +229,14 @@ void retrieve_unknown_cpu(const real proposals[],
     }
 
     for (int i = 0; i < num_output; ++i) {
-      const real* const p_proposals = proposals + keep[i] * 5;
+      const real* const p_proposals = proposals + index_out[i] * 5;
       if (iou(p_proposals, p_roi2d) > nms_thresh) {
         is_selected = 0;
         break;
       }
     }
     for (int i = 0; i < num_unknown; ++i) {
-      const real* const p_unknown = roi2d + keep[num_output + i] * 5;
+      const real* const p_unknown = roi2d + index_out[num_output + i] * 5;
       if (iou(p_unknown, p_roi2d) > nms_thresh) {
         is_selected = 0;
         break;
@@ -246,7 +251,7 @@ void retrieve_unknown_cpu(const real proposals[],
       p_top2d[3] = p_roi2d[2] / scale_W;
       p_top2d[4] = p_roi2d[3] / scale_H;
       p_top2d[5] = p_roi2d[4] - 0.2f;
-      keep[num_output + num_unknown] = index;
+      index_out[num_output + num_unknown] = index;
       ++num_unknown;
     }
   }
@@ -254,29 +259,26 @@ void retrieve_unknown_cpu(const real proposals[],
   *num_output_with_unknown = num_output + num_unknown;
 }
 #endif
+
 // remove duplicated boxes, and select final output boxes
 static
 void filter_output(const real bottom2d[],
                    const real d_anchor3d[],
                    const real roi2d[],
-                   const real img_info1d[],
                    real top2d[],
                    int* const num_output,
-                   real proposals[],
-                   int keep[],
-                   real proposals_dev[],
-                   int keep_dev[],
+                   void* const nms_aux_data,
+                   real proposals_cpu[],
+                   int index_out_cpu[],
+                   real proposals_gpu[],
+                   int index_out_gpu[],
+                   const real img_H, const real img_W,
+                   const real scale_H, const real scale_W,
                    const int num_rois, const int num_classes,
                    const int min_size,
                    const real score_thresh, const real nms_thresh,
                    const int bbox_vote, const real vote_thresh)
 {
-  // input image height & width
-  const real img_H = img_info1d[0];
-  const real img_W = img_info1d[1];
-  // scale factor for height & width
-  const real scale_H = img_info1d[2];
-  const real scale_W = img_info1d[3];
   // minimum box height & width (w.r.t. input image size)
   const real min_box_H = min_size * scale_H;
   const real min_box_W = min_size * scale_W;
@@ -291,9 +293,9 @@ void filter_output(const real bottom2d[],
     enumerate_output_gpu<<<num_blocks, threads_per_block>>>(
         bottom2d,  d_anchor3d,  roi2d,  num_rois,  num_classes,
         img_H,  img_W,  min_box_H,  min_box_W,  scale_H,  scale_W,
-        proposals_dev);
+        proposals_gpu);
 
-    cudaMemcpyAsync(proposals, proposals_dev,
+    cudaMemcpyAsync(proposals_cpu, proposals_gpu,
                     num_threads * 5 * sizeof(real),
                     cudaMemcpyDeviceToHost);
   }
@@ -302,34 +304,50 @@ void filter_output(const real bottom2d[],
     enumerate_output_cpu(
         bottom2d,  d_anchor3d,  roi2d,  num_rois,  num_classes,
         img_H,  img_W,  min_box_H,  min_box_W,  scale_H,  scale_W,
-        proposals);
+        proposals_cpu);
   }
   #endif
 
   // for each class, choose outputs according to scores & overlap
-  // TODO: GPU-side implementation
   {
     int num_out = 0;
     // skip background class (c = 0)
     for (int c = 1; c < num_classes; ++c) {
       const int base = c * num_rois;
-      real* const p_proposals = proposals + base * 5;
-      int* const p_keep = keep + num_out;
+      real* const p_proposals_cpu = proposals_cpu + base * 5;
+      int* const p_index_out_cpu = index_out_cpu + num_out;
 
       // filter-out boxes whose scores less than threshold
       const int num_pre_nms
-          = filter_box(p_proposals, num_rois, score_thresh);
+          = filter_box(p_proposals_cpu, num_rois, score_thresh);
 
       // sort & NMS
       if (num_pre_nms > 1) {
         int num_post_nms = 0;
-        sort_box(p_proposals, 0, num_pre_nms - 1, num_pre_nms);
-        nms(num_pre_nms,  p_proposals,  &num_post_nms,  p_keep,  base,
-            nms_thresh,  num_pre_nms,  bbox_vote,  vote_thresh);
+        sort_box(p_proposals_cpu, 0, num_pre_nms - 1, num_pre_nms);
+
+        #ifdef GPU
+        {
+          cudaMemcpyAsync(proposals_gpu, p_proposals_cpu,
+                          num_pre_nms * 5 * sizeof(real),
+                          cudaMemcpyHostToDevice);
+
+          nms(num_pre_nms,  proposals_gpu,  nms_aux_data,
+              &num_post_nms,  p_index_out_cpu,  base,
+              nms_thresh,  num_pre_nms,  bbox_vote,  vote_thresh);
+        }
+        #else
+        {
+          nms(num_pre_nms,  p_proposals_cpu,  nms_aux_data,
+              &num_post_nms,  p_index_out_cpu,  base,
+              nms_thresh,  num_pre_nms,  bbox_vote,  vote_thresh);
+        }
+        #endif
+
         num_out += num_post_nms;
       }
       else {
-        p_keep[0] = base;
+        p_index_out_cpu[0] = base;
         num_out += num_pre_nms;
       }
     }
@@ -342,24 +360,24 @@ void filter_output(const real bottom2d[],
     const int threads_per_block = 16;
     const int num_blocks = DIV_THEN_CEIL(*num_output,  threads_per_block);
 
-    cudaMemcpyAsync(proposals_dev, proposals,
+    cudaMemcpyAsync(proposals_gpu, proposals_cpu,
                     num_rois * num_classes * 5 * sizeof(real),
                     cudaMemcpyHostToDevice);
-    cudaMemcpyAsync(keep_dev, keep,
+    cudaMemcpyAsync(index_out_gpu, index_out_cpu,
                     (*num_output) * sizeof(int),
                     cudaMemcpyHostToDevice);
 
     retrieve_output_gpu<<<num_blocks, threads_per_block>>>(
-        proposals_dev,  keep_dev,  top2d,  *num_output,  num_rois,
+        proposals_gpu,  index_out_gpu,  top2d,  *num_output,  num_rois,
         scale_H,  scale_W);
   }
   #else
   {
     retrieve_output_cpu(
-        proposals,  keep,  top2d,  *num_output,  num_rois,
+        proposals_cpu,  index_out_cpu,  top2d,  *num_output,  num_rois,
         scale_H,  scale_W);
     retrieve_unknown_cpu(
-        proposals,  keep,  roi2d,  top2d,
+        proposals_cpu,  index_out_cpu,  roi2d,  top2d,
         *num_output,  num_rois,  num_output,
         scale_H,  scale_W,  0.9f,  0.1f);
   }
@@ -370,38 +388,62 @@ void filter_output(const real bottom2d[],
 
 // --------------------------------------------------------------------------
 // layer operator code
-//   odout_forward
 // --------------------------------------------------------------------------
 
+static
 void odout_forward(const Tensor* const bottom2d,
                    const Tensor* const d_anchor3d,
                    const Tensor* const roi2d,
                    const Tensor* const img_info1d,
                    Tensor* const top2d,
-                   real proposals[],
-                   int keep[],
-                   real proposals_dev[],
-                   int keep_dev[],
+                   void* const nms_aux_data,
+                   unsigned char temp_cpu_data[],
+                   unsigned char temp_gpu_data[],
                    const LayerOption* const option)
 {
   // do forward-pass for each item in the batch
   const real* p_bottom_item = bottom2d->data;
   const real* p_d_anchor_item = d_anchor3d->data;
   const real* p_roi_item = roi2d->data;
-  const real* p_img_info = img_info1d->data;
   real* p_top_item = top2d->data;
+
+  int* const index_out_cpu = (int*)&temp_cpu_data[0];
+  real* const proposals_cpu =
+      (real*)&temp_cpu_data[option->pre_nms_topn * sizeof(real)];
+  int* const index_out_gpu = (int*)&temp_gpu_data[0];
+  real* const proposals_gpu =
+      (real*)&temp_gpu_data[option->pre_nms_topn * sizeof(real)];
+
+  #ifdef GPU
+  real img_info_cpu[BATCH_SIZE * 6];
+  const real* p_img_info_cpu = img_info_cpu;
+  cudaMemcpyAsync(img_info_cpu, img_info1d->data,
+                  get_data_size(img_info1d) * sizeof(real),
+                  cudaMemcpyDeviceToHost);
+  #else
+  const real* p_img_info_cpu = img_info1d->data;
+  #endif
+
   for (int n = 0; n < bottom2d->num_items; ++n) {
+    // bottom shape: num_rois x num_classes
     const int num_rois = bottom2d->shape[n][0];
     const int num_classes = bottom2d->shape[n][1];
+    // input image height & width
+    const real img_H = p_img_info_cpu[0];
+    const real img_W = p_img_info_cpu[1];
+    // scale factor for height & width
+    const real scale_H = p_img_info_cpu[2];
+    const real scale_W = p_img_info_cpu[3];
+    // number of final output boxes (will be computed below)
     int num_output = 0;
 
     // remove duplicated boxes, and select final output boxes
     {
       filter_output(
-          p_bottom_item,  p_d_anchor_item,  p_roi_item,  p_img_info,
-          p_top_item,  &num_output,
-          proposals,  keep,  proposals_dev,  keep_dev,
-          num_rois,  num_classes,
+          p_bottom_item,  p_d_anchor_item,  p_roi_item,
+          p_top_item,  &num_output,  nms_aux_data,
+          proposals_cpu,  index_out_cpu,  proposals_gpu,  index_out_gpu,
+          img_H,  img_W,  scale_H,  scale_W,  num_rois,  num_classes,
           option->min_size,  option->score_thresh,  option->nms_thresh,
           option->bbox_vote,  option->vote_thresh);
 
@@ -421,7 +463,7 @@ void odout_forward(const Tensor* const bottom2d,
       p_bottom_item += bottom_size;
       p_d_anchor_item += d_anchor_size;
       p_roi_item += roi_size;
-      p_img_info += img_info_size;
+      p_img_info_cpu += img_info_size;
       p_top_item += top_size;
     }
   } // endfor batch
@@ -444,10 +486,10 @@ void odout_forward(const Tensor* const bottom2d,
 // layer shape calculator code
 // --------------------------------------------------------------------------
 
+static
 void odout_shape(const Tensor* const bottom2d,
                  Tensor* const top2d,
-                 int* const proposals_size,
-                 int* const keep_size,
+                 long int* const p_temp_space,
                  const LayerOption* const option)
 {
   int total_num_rois = 0;
@@ -456,7 +498,7 @@ void odout_shape(const Tensor* const bottom2d,
   top2d->ndim = 2;
   top2d->num_items = bottom2d->num_items;
   for (int n = 0; n < bottom2d->num_items; ++n) {
-    const int num_rois = bottom2d->shape[n][0];
+    const int num_rois = option->pre_nms_topn;
     const int num_classes = bottom2d->shape[n][1];
 
     // calculate total number of RoIs for determining temporary space size
@@ -470,8 +512,14 @@ void odout_shape(const Tensor* const bottom2d,
     top2d->start[n] = total_num_rois * 6;
   }
 
-  *proposals_size = total_num_rois;
-  *keep_size = total_num_rois;
+  // temporary space size
+  {
+    const int proposals_size = total_num_rois;
+    const int index_out_size = total_num_rois;
+
+    *p_temp_space = proposals_size * sizeof(real)
+                    + index_out_size * sizeof(int);
+  }
 }
 
 
@@ -485,11 +533,12 @@ void forward_odout_layer(void* const net_, void* const layer_)
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
 
-  odout_forward(layer->p_bottoms[0], layer->p_bottoms[1],
-                layer->p_bottoms[2], layer->p_bottoms[3],
-                layer->p_tops[0],
-                net->temp_cpu_data, net->tempint_cpu_data,
-                net->temp_data, net->tempint_data,
+  odout_forward(get_bottom(layer, 0), get_bottom(layer, 1),
+                get_bottom(layer, 2), get_bottom(layer, 3),
+                get_top(layer, 0),
+                layer->aux_data,
+                (unsigned char*)net->temp_cpu_data,
+                (unsigned char*)net->temp_data,
                 &layer->option);
 }
 
@@ -497,11 +546,42 @@ void shape_odout_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
+  long int temp_space;
 
-  int temp_size, tempint_size;
+  odout_shape(get_bottom(layer, 0), get_top(layer, 0),
+              &temp_space, &layer->option);
 
-  odout_shape(layer->p_bottoms[0], layer->p_tops[0],
-              &temp_size, &tempint_size, &layer->option);
+  update_temp_space(net, temp_space);
+}
 
-  update_net_size(net, layer, temp_size, tempint_size, 0);
+void malloc_odout_layer(void* const net_, void* const layer_)
+{
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+  long int space_cpu, space_gpu;
+
+  malloc_nms_aux_data(&layer->aux_data, layer->option.pre_nms_topn,
+                      &space_cpu, &space_gpu);
+
+  net->space += space_gpu;
+  net->space_cpu += space_cpu;
+
+  #ifdef DEBUG
+  {
+    #ifdef GPU
+    printf("%s: Memory allocated, CPU %ld byte and GPU %ld byte\n",
+           layer->name, space_cpu, space_gpu);
+    #else
+    printf("%s: Memory allocated, %ld byte\n",
+           layer->name, space_cpu + space_gpu);
+    #endif
+  }
+  #endif
+}
+
+void free_odout_layer(void* const net_, void* const layer_)
+{
+  Layer* const layer = (Layer*)layer_;
+
+  free_nms_aux_data(layer->aux_data);
 }

@@ -1,4 +1,5 @@
 #include "layer.h"
+#include <string.h>
 #include <limits.h>
 
 // --------------------------------------------------------------------------
@@ -6,9 +7,6 @@
 //   dropout_{gpu, cpu}
 //   dropout_scaled_{gpu, cpu}
 //   dropout_test_{gpu, cpu}
-//   dropout_inplace_{gpu, cpu}
-//   dropout_scaled_inplace_{gpu, cpu}
-//   dropout_test_inplace_{gpu, cpu}
 // --------------------------------------------------------------------------
 
 // dropout transform bottom -> top
@@ -16,6 +14,7 @@
 //   top[i] = bottom[i] if mask[i] > uint_thresh, otherwise 0
 #ifdef GPU
 __global__
+static
 void dropout_gpu(const real bottom[],
                  const unsigned int mask[],
                  real top[],
@@ -28,6 +27,7 @@ void dropout_gpu(const real bottom[],
   }
 }
 #else
+static
 void dropout_cpu(const real bottom[],
                  const unsigned int mask[],
                  real top[],
@@ -46,6 +46,7 @@ void dropout_cpu(const real bottom[],
 //   top[i] = inv_scale * bottom[i] if mask[i] > uint_thresh
 #ifdef GPU
 __global__
+static
 void dropout_scaled_gpu(const real bottom[],
                         const unsigned int mask[],
                         real top[],
@@ -60,6 +61,7 @@ void dropout_scaled_gpu(const real bottom[],
   }
 }
 #else
+static
 void dropout_scaled_cpu(const real bottom[],
                         const unsigned int mask[],
                         real top[],
@@ -79,6 +81,7 @@ void dropout_scaled_cpu(const real bottom[],
 //   top[i] = scale * bottom[i]
 #ifdef GPU
 __global__
+static
 void dropout_test_gpu(const real bottom[], real top[],
                       const long int data_size,
                       const real scale)
@@ -89,6 +92,7 @@ void dropout_test_gpu(const real bottom[], real top[],
   }
 }
 #else
+static
 void dropout_test_cpu(const real bottom[], real top[],
                       const long int data_size,
                       const real scale)
@@ -99,87 +103,10 @@ void dropout_test_cpu(const real bottom[], real top[],
 }
 #endif
 
-// in-place dropout transform
-#ifdef GPU
-__global__
-void dropout_inplace_gpu(real bottom[],
-                         const unsigned int mask[],
-                         const long int data_size,
-                         const unsigned int uint_thresh)
-{
-  const long int index = blockIdx.x * blockDim.x + threadIdx.x;
-  if (index < data_size) {
-    bottom[index] *= (mask[index] > uint_thresh);
-  }
-}
-#else
-void dropout_inplace_cpu(real bottom[],
-                         const unsigned int mask[],
-                         const long int data_size,
-                         const unsigned int uint_thresh)
-{
-  for (long int index = 0; index < data_size; ++index) {
-    bottom[index] *= (mask[index] > uint_thresh);
-  }
-}
-#endif
-
-// in-place scaled dropout transform
-#ifdef GPU
-__global__
-void dropout_scaled_inplace_gpu(real bottom[],
-                                const unsigned int mask[],
-                                const long int data_size,
-                                const unsigned int uint_thresh,
-                                const real inv_scale)
-{
-  const long int index = blockIdx.x * blockDim.x + threadIdx.x;
-  if (index < data_size) {
-    bottom[index] *= (mask[index] > uint_thresh) * inv_scale;
-  }
-}
-#else
-void dropout_scaled_inplace_cpu(real bottom[],
-                                const unsigned int mask[],
-                                const long int data_size,
-                                const unsigned int uint_thresh,
-                                const real inv_scale)
-{
-  for (long int index = 0; index < data_size; ++index) {
-    bottom[index] *= (mask[index] > uint_thresh) * inv_scale;
-  }
-}
-#endif
-
-// testing-time in-place dropout transform
-#ifdef GPU
-__global__
-void dropout_test_inplace_gpu(real bottom[],
-                              const long int data_size,
-                              const real scale)
-{
-  const long int index = blockIdx.x * blockDim.x + threadIdx.x;
-  if (index < data_size) {
-    bottom[index] *= scale;
-  }
-}
-#else
-void dropout_test_inplace_cpu(real bottom[],
-                              const long int data_size,
-                              const real scale)
-{
-  for (long int index = 0; index < data_size; ++index) {
-    bottom[index] *= scale;
-  }
-}
-#endif
-
 
 
 // --------------------------------------------------------------------------
 // layer operator code
-//   dropout_forward
-//   dropout_forward_inplace
 // --------------------------------------------------------------------------
 
 // dropout transform: bottom -> top
@@ -190,12 +117,13 @@ void dropout_test_inplace_cpu(real bottom[],
 //   if both = 0, perform dropout
 //   data size: total number of nodes (N * C * H * W or something)
 //   mask: data_size x 1 temporary array
+static
 void dropout_forward(const Tensor* const bottom,
                      unsigned int mask[],
                      Tensor* const top,
                      const LayerOption* const option)
 {
-  const long int data_size = flatten_size(bottom);
+  const long int data_size = get_data_size(bottom);
 
   // perform dropout transform
   #ifdef GPU
@@ -203,150 +131,71 @@ void dropout_forward(const Tensor* const bottom,
     const int threads_per_block = 512;
     const int num_blocks = DIV_THEN_CEIL(data_size,  threads_per_block);
     if (option->test) {
-      if (option->scaled) {
-        // testing-time scaled dropout  (= no operation)
-        cudaMemcpyAsync(top->data, bottom->data, data_size * sizeof(real),
-                        cudaMemcpyDeviceToDevice);
-      }
-      else {
+      if (!option->scaled) {
         // testing-time dropout
         dropout_test_gpu<<<num_blocks, threads_per_block>>>(
             bottom->data,  top->data,  data_size,  1.0f - option->threshold);
       }
+      else if (top->data != bottom->data) {
+        // testing-time scaled dropout  (= no operation)
+        cudaMemcpyAsync(top->data, bottom->data, data_size * sizeof(real),
+                        cudaMemcpyDeviceToDevice);
+      }
+      #ifdef DEBUG
+      else {
+        printf("%s -> %s: No dropout operation\n", bottom->name, top->name);
+      }
+      #endif
     }
     else {
       // TODO: random number generation
 
       unsigned int uint_thresh = (unsigned int)option->threshold * UINT_MAX;
-      if (option->scaled) {
+      if (!option->scaled) {
+        // dropout
+        dropout_gpu<<<num_blocks, threads_per_block>>>(
+            bottom->data,  mask,  top->data,  data_size,  uint_thresh);
+      }
+      else {
         // scaled dropout
         dropout_scaled_gpu<<<num_blocks, threads_per_block>>>(
             bottom->data,  mask,  top->data,  data_size,  uint_thresh,
             1.0f / (1.0f - option->threshold));
       }
-      else {
-        // dropout
-        dropout_gpu<<<num_blocks, threads_per_block>>>(
-            bottom->data,  mask,  top->data,  data_size,  uint_thresh);
-      }
     }
   }
   #else
   {
     if (option->test) {
-      if (option->scaled) {
-        // testing-time scaled dropout  (= no operation)
-        for (int i = 0; i < data_size; ++i) {
-          top->data[i] = bottom->data[i];
-        }
-      }
-      else {
+      if (!option->scaled) {
         // testing-time dropout
         dropout_test_cpu(
             bottom->data,  top->data,  data_size,  1.0f - option->threshold);
       }
+      else if (top->data != bottom->data) {
+        // testing-time scaled dropout  (= no operation)
+        memcpy(top->data, bottom->data, data_size * sizeof(real));
+      }
+      #ifdef DEBUG
+      else {
+        printf("%s -> %s: No dropout operation\n", bottom->name, top->name);
+      }
+      #endif
     }
     else {
       // TODO: random number generation
 
       unsigned int uint_thresh = (unsigned int)option->threshold * UINT_MAX;
-      if (option->scaled) {
-        // scaled dropout
-        dropout_scaled_cpu(
-            bottom->data,  mask,  top->data,  data_size,  uint_thresh,
-            1.0f / (1.0f - option->threshold));
-      }
-      else {
+      if (!option->scaled) {
         // dropout
         dropout_cpu(
             bottom->data,  mask,  top->data,  data_size,  uint_thresh);
       }
-    }
-  }
-  #endif
-
-  // set top shape (= bottom shape)
-  {
-    top->ndim = bottom->ndim;
-    top->num_items = bottom->num_items;
-    for (int n = 0; n < bottom->num_items; ++n) {
-      for (int i = 0; i < bottom->ndim; ++i) {
-        top->shape[n][i] = bottom->shape[n][i];
-      }
-    }
-    for (int n = 0; n < bottom->num_items; ++n) {
-      top->start[n] = bottom->start[n];
-    }
-  }
-}
-
-// in-place dropout transform: bottom -> bottom
-void dropout_forward_inplace(Tensor* const bottom,
-                             unsigned int mask[],
-                             const LayerOption* const option)
-{
-  const long int data_size = flatten_size(bottom);
-
-  // perform dropout transform
-  #ifdef GPU
-  {
-    const int threads_per_block = 512;
-    const int num_blocks = DIV_THEN_CEIL(data_size,  threads_per_block);
-    if (option->test) {
-      if (option->scaled) {
-        // testing-time scaled dropout  (= no operation)
-        return;
-      }
       else {
-        // testing-time dropout
-        dropout_test_inplace_gpu<<<num_blocks, threads_per_block>>>(
-            bottom->data,  data_size,  option->threshold);
-      }
-    }
-    else {
-      // TODO: random number generation
-
-      unsigned int uint_thresh = (unsigned int)option->threshold * UINT_MAX;
-      if (option->scaled) {
         // scaled dropout
-        dropout_scaled_inplace_gpu<<<num_blocks, threads_per_block>>>(
-            bottom->data,  mask,  data_size,  uint_thresh,
+        dropout_scaled_cpu(
+            bottom->data,  mask,  top->data,  data_size,  uint_thresh,
             1.0f / (1.0f - option->threshold));
-      }
-      else {
-        // dropout
-        dropout_inplace_gpu<<<num_blocks, threads_per_block>>>(
-            bottom->data,  mask,  data_size,  uint_thresh);
-      }
-    }
-  }
-  #else
-  {
-    if (option->test) {
-      if (option->scaled) {
-        // testing-time scaled dropout  (= no operation)
-        return;
-      }
-      else {
-        // testing-time dropout
-        dropout_test_inplace_cpu(
-            bottom->data,  data_size,  option->threshold);
-      }
-    }
-    else {
-      // TODO: random number generation
-
-      unsigned int uint_thresh = (unsigned int)option->threshold * UINT_MAX;
-      if (option->scaled) {
-        // scaled dropout
-        dropout_scaled_inplace_cpu(
-            bottom->data,  mask,  data_size,  uint_thresh,
-            1.0f / (1.0f - option->threshold));
-      }
-      else {
-        // dropout
-        dropout_inplace_cpu(
-            bottom->data,  mask,  data_size,  uint_thresh);
       }
     }
   }
@@ -359,20 +208,26 @@ void dropout_forward_inplace(Tensor* const bottom,
 // layer shape calculator code
 // --------------------------------------------------------------------------
 
+static
 void dropout_shape(const Tensor* const bottom,
-                   Tensor* const top)
+                   Tensor* const top,
+                   long int* const p_temp_space)
 {
   // top shape = bottom shape
-  top->ndim = bottom->ndim;
-  top->num_items = bottom->num_items;
-  for (int n = 0; n < bottom->num_items; ++n) {
-    for (int i = 0; i < bottom->ndim; ++i) {
-      top->shape[n][i] = bottom->shape[n][i];
+  if (bottom != top) {
+    top->ndim = bottom->ndim;
+    top->num_items = bottom->num_items;
+    for (int n = 0; n < bottom->num_items; ++n) {
+      for (int i = 0; i < bottom->ndim; ++i) {
+        top->shape[n][i] = bottom->shape[n][i];
+      }
+    }
+    for (int n = 0; n < bottom->num_items; ++n) {
+      top->start[n] = bottom->start[n];
     }
   }
-  for (int n = 0; n < bottom->num_items; ++n) {
-    top->start[n] = bottom->start[n];
-  }
+
+  *p_temp_space = get_data_size(bottom) * sizeof(real);
 }
 
 
@@ -386,22 +241,17 @@ void forward_dropout_layer(void* const net_, void* const layer_)
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
 
-  dropout_forward(layer->p_bottoms[0], (unsigned int*)net->tempint_data,
-                  layer->p_tops[0], &layer->option);
-}
-
-void forward_inplace_dropout_layer(void* const net_, void* const layer_)
-{
-  Net* const net = (Net*)net_;
-  Layer* const layer = (Layer*)layer_;
-
-  dropout_forward_inplace(layer->p_tops[0], (unsigned int*)net->tempint_data,
-                          &layer->option);
+  dropout_forward(get_bottom(layer, 0), (unsigned int*)net->temp_data,
+                  get_top(layer, 0), &layer->option);
 }
 
 void shape_dropout_layer(void* const net_, void* const layer_)
 {
+  Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
+  long int temp_space;
 
-  dropout_shape(layer->p_bottoms[0], layer->p_tops[0]);
+  dropout_shape(get_bottom(layer, 0), get_top(layer, 0), &temp_space);
+
+  update_temp_space(net, temp_space);
 }

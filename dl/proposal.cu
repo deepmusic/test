@@ -28,6 +28,7 @@
 */
 
 #include "layer.h"
+#include <string.h>
 
 #include <time.h>
 
@@ -135,27 +136,28 @@ int transform_box(real box[],
 }
 
 // quick-sort a list of boxes in descending order of their scores (CPU)
-//   list: num_boxes x 5 array,  (x1, y1, x2, y2, score) for each box
+//   list_cpu: num_boxes x 5 array,  (x1, y1, x2, y2, score) for each box
+//             located at main memory
 //   if num_top <= end,  only top-k results are guaranteed to be sorted
 //   (for efficient computation)
-void sort_box(real list[], const int start, const int end,
+void sort_box(real list_cpu[], const int start, const int end,
               const int num_top)
 {
-  const real pivot_score = list[start * 5 + 4];
+  const real pivot_score = list_cpu[start * 5 + 4];
   int left = start + 1, right = end;
   real temp[5];
   while (left <= right) {
-    while (left <= end && list[left * 5 + 4] >= pivot_score) ++left;
-    while (right > start && list[right * 5 + 4] <= pivot_score) --right;
+    while (left <= end && list_cpu[left * 5 + 4] >= pivot_score) ++left;
+    while (right > start && list_cpu[right * 5 + 4] <= pivot_score) --right;
     if (left <= right) {
       for (int i = 0; i < 5; ++i) {
-        temp[i] = list[left * 5 + i];
+        temp[i] = list_cpu[left * 5 + i];
       }
       for (int i = 0; i < 5; ++i) {
-        list[left * 5 + i] = list[right * 5 + i];
+        list_cpu[left * 5 + i] = list_cpu[right * 5 + i];
       }
       for (int i = 0; i < 5; ++i) {
-        list[right * 5 + i] = temp[i];
+        list_cpu[right * 5 + i] = temp[i];
       }
       ++left;
       --right;
@@ -164,21 +166,21 @@ void sort_box(real list[], const int start, const int end,
 
   if (right > start) {
     for (int i = 0; i < 5; ++i) {
-      temp[i] = list[start * 5 + i];
+      temp[i] = list_cpu[start * 5 + i];
     }
     for (int i = 0; i < 5; ++i) {
-      list[start * 5 + i] = list[right * 5 + i];
+      list_cpu[start * 5 + i] = list_cpu[right * 5 + i];
     }
     for (int i = 0; i < 5; ++i) {
-      list[right * 5 + i] = temp[i];
+      list_cpu[right * 5 + i] = temp[i];
     }
   }
 
   if (start < right - 1) {
-    sort_box(list, start, right - 1, num_top);
+    sort_box(list_cpu, start, right - 1, num_top);
   }
   if (right + 1 < num_top && right + 1 < end) {
-    sort_box(list, right + 1, end, num_top);
+    sort_box(list_cpu, right + 1, end, num_top);
   }
 }
 
@@ -282,19 +284,20 @@ void enumerate_proposals_cpu(const real bottom4d[],
 // retrieve proposals that are determined to be kept as RoIs by NMS
 //   proposals : "num_boxes x 5" array,  (x1, y1, x2, y2, score) for each box
 //   num_rois: number of RoIs to be retrieved
-//   keep: "num_rois x 1" array
-//     keep[i]: index of i-th RoI in proposals
+//   index_roi: "num_rois x 1" array
+//     index_roi[i]: index of i-th RoI in proposals
 //   rois: "num_rois x 5" array,  (x1, y1, x2, y2, score) for each RoI
 #ifdef GPU
 __global__
 static
-void retrieve_rois_gpu(const real proposals[], const int keep[],
+void retrieve_rois_gpu(const real proposals[],
+                       const int index_roi[],
                        real rois[],
                        const int num_rois)
 {
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index < num_rois) {
-    const real* const proposals_index = proposals + keep[index] * 5;
+    const real* const proposals_index = proposals + index_roi[index] * 5;
     rois[index * 5 + 0] = proposals_index[0];
     rois[index * 5 + 1] = proposals_index[1];
     rois[index * 5 + 2] = proposals_index[2];
@@ -303,12 +306,13 @@ void retrieve_rois_gpu(const real proposals[], const int keep[],
   }
 }
 #else
-void retrieve_rois_cpu(const real proposals[], const int keep[],
+void retrieve_rois_cpu(const real proposals[],
+                       const int index_roi[],
                        real rois[],
                        const int num_rois)
 {
   for (int i = 0; i < num_rois; ++i) {
-    const real* const proposals_index = proposals + keep[i] * 5;
+    const real* const proposals_index = proposals + index_roi[i] * 5;
     rois[i * 5 + 0] = proposals_index[0];
     rois[i * 5 + 1] = proposals_index[1];
     rois[i * 5 + 2] = proposals_index[2];
@@ -322,14 +326,73 @@ void retrieve_rois_cpu(const real proposals[], const int keep[],
 
 // --------------------------------------------------------------------------
 // layer operator code
-//   proposal_forward
 // --------------------------------------------------------------------------
 
+// auxiliary data structure for proposal operation
+//   nms_aux_data: auxiliary data for NMS operation, (de)allocated by nms.cu
+//   anchors: "num_anchors * 4" array of anchor boxes
+//            (x1, y1, x2, y2) for each anchor
+typedef struct ProposalAuxData_ {
+  void* nms_aux_data;
+  real* anchors;
+} ProposalAuxData;
+
+static
+void malloc_proposal_aux_data(ProposalAuxData* const aux_data,
+                              const LayerOption* const option,
+                              long int* const p_space_cpu,
+                              long int* const p_space)
+{
+  long int space_cpu = 0, space = 0;
+
+  // auxiliary data for NMS
+  malloc_nms_aux_data(&aux_data->nms_aux_data, option->pre_nms_topn,
+                      &space_cpu, &space);
+
+  // anchors
+  {
+    const int num_anchors = option->num_scales * option->num_ratios;
+    real* const anchors = (real*)malloc(num_anchors * 4 * sizeof(real));
+    generate_anchors(option->scales, option->ratios, anchors,
+                     option->num_scales, option->num_ratios,
+                     option->base_size);
+    #ifdef GPU
+    cudaMalloc(&aux_data->anchors, num_anchors * 4 * sizeof(real));
+    cudaMemcpyAsync(aux_data->anchors, anchors,
+                    num_anchors * 4 * sizeof(real),
+                    cudaMemcpyHostToDevice);
+    free(anchors);
+    #else
+    aux_data->anchors = anchors;
+    #endif
+    space += num_anchors * 4 * sizeof(real);
+  }
+
+  *p_space_cpu = space_cpu;
+  *p_space = space;
+}
+
+static
+void free_proposal_aux_data(ProposalAuxData* const aux_data)
+{
+  // auxiliary data for NMS
+  free_nms_aux_data(aux_data->nms_aux_data);
+
+  // anchors
+  #ifdef GPU
+  cudaFree(aux_data->anchors);
+  #else
+  free(aux_data->anchors);
+  #endif
+
+  memset(aux_data, 0, sizeof(ProposalAuxData));
+}
+
 // proposal: bottom -> top
-//   bottom: 2 x num_anchors x H x W tensor
+//   bottom: (2 x num_anchors) x H x W tensor
 //     bottom[0, k, h, w] = background score of anchor k at node (h, w)
 //     bottom[1, k, h, w] = foreground score of anchor k at node (h, w)
-//   d_anchor: num_anchors x 4 x H x W tensor
+//   d_anchor: (num_anchors x 4) x H x W tensor
 //     d_anchor[k, :, h, w] = gradient (dx, dy, d(log w), d(log h))
 //                            of anchor k at center location (h, w)
 //   img_info: 6 x 1 tensor,  (img_H, img_W, scale_H, scale_W, raw_H, raw_W)
@@ -340,25 +403,16 @@ void retrieve_rois_cpu(const real proposals[], const int keep[],
 //              img_W = raw image width * scale_W
 //     raw_H, raw_W: raw image height & width
 //   top: num_RoIs x 5 tensor,  (x1, y1, x2, y2, score) of each RoI
-//   anchors: num_anchors * 4 array,  (x1, y1, x2, y2) for each anchor
-//   4 temporary arrays
-//     proposals: all box proposals with their scores
-//       "num_boxes x 5" array,  (x1, y1, x2, y2, score) for each box
-//     keep: indices of proposals to be retrieved as RoIs
-//       "num_rois x 1" array,  keep[i]: index of i-th RoI in proposals
-//       TODO: always stored in main memory due to implementation issue
-//     proposals_dev: GPU memory space, required in GPU mode
-//     keep_dev: GPU memory space, required in GPU mode
+//   aux_data: auxiliary data for proposal operation
+//   temp_{cpu,gpu}_data: temporary space at {CPU, GPU} memory
 static
 void proposal_forward(const Tensor* const bottom4d,
                       const Tensor* const d_anchor4d,
                       const Tensor* const img_info1d,
                       Tensor* const top2d,
-                      const real anchors[],
-                      real proposals[],
-                      int keep[],
-                      real proposals_dev[],
-                      int keep_dev[],
+                      ProposalAuxData* const aux_data,
+                      unsigned char temp_cpu_data[],
+                      unsigned char temp_gpu_data[],
                       const LayerOption* const option)
 {
   // number of anchors  (= number of scales * ratios)
@@ -367,22 +421,52 @@ void proposal_forward(const Tensor* const bottom4d,
   // do forward-pass for each item in the batch
   const real* p_bottom_item = bottom4d->data;
   const real* p_d_anchor_item = d_anchor4d->data;
-  const real* p_img_info = img_info1d->data;
   real* p_top_item = top2d->data;
   int total_top_size = 0;
+
+  // proposals: all box proposals with their scores
+  //   "num_boxes x 5" array,  (x1, y1, x2, y2, score) for each box
+  //   proposals_cpu: allocated at main memory
+  //   proposals_gpu: allocated at GPU memory, only required in GPU mode
+  // index_roi: indices of proposals to be retrieved as RoIs
+  //   "num_rois x 1" array,  index_roi[i]: index of i-th RoI in proposals
+  //   index_roi_cpu: allocated at main memory
+  //   index_roi_gpu: allocated at GPU memory, only required in GPU mode
+  // we divide temp space into two parts for index_roi and proposals
+  //   index_roi = temp[0, ..., index_roi_size - 1]
+  //   proposals = temp[index_roi_size, ..., ]
+  //   index_roi_size <= option->post_nms_topn
+  int* const index_roi_cpu = (int*)&temp_cpu_data[0];
+  real* const proposals_cpu =
+      (real*)&temp_cpu_data[option->post_nms_topn * sizeof(real)];
+  #ifdef GPU
+  int* const index_roi_gpu = (int*)&temp_gpu_data[0];
+  real* const proposals_gpu =
+      (real*)&temp_gpu_data[option->post_nms_topn * sizeof(real)];
+  #endif
+
+  #ifdef GPU
+  real img_info_cpu[BATCH_SIZE * 6];
+  const real* p_img_info_cpu = img_info_cpu;
+  cudaMemcpyAsync(img_info_cpu, img_info1d->data,
+                  get_data_size(img_info1d) * sizeof(real),
+                  cudaMemcpyDeviceToHost);
+  #else
+  const real* p_img_info_cpu = img_info1d->data;
+  #endif
 
   tick00 = clock();
 
   for (int n = 0; n < bottom4d->num_items; ++n) {
     // bottom shape: 2 x num_anchors x H x W
-    const int bottom_H = bottom4d->shape[n][2];
-    const int bottom_W = bottom4d->shape[n][3];
+    const int bottom_H = bottom4d->shape[n][1];
+    const int bottom_W = bottom4d->shape[n][2];
     // input image height & width
-    const real img_H = p_img_info[0];
-    const real img_W = p_img_info[1];
+    const real img_H = p_img_info_cpu[0];
+    const real img_W = p_img_info_cpu[1];
     // scale factor for height & width
-    const real scale_H = p_img_info[2];
-    const real scale_W = p_img_info[3];
+    const real scale_H = p_img_info_cpu[2];
+    const real scale_W = p_img_info_cpu[3];
     // minimum box width & height
     const real min_box_H = option->min_size * scale_H;
     const real min_box_W = option->min_size * scale_W;
@@ -400,16 +484,16 @@ void proposal_forward(const Tensor* const bottom4d,
       const int threads_per_block = 512;
       const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
       enumerate_proposals_gpu<<<num_blocks, threads_per_block>>>(
-          p_bottom_item + num_proposals,  p_d_anchor_item,  anchors,  
-          proposals_dev,  num_anchors,
+          p_bottom_item + num_proposals,  p_d_anchor_item,
+          aux_data->anchors,  proposals_gpu,  num_anchors,
           bottom_H,  bottom_W,  img_H,  img_W,  min_box_H,  min_box_W,
           option->feat_stride);
     }
     #else
     {
       enumerate_proposals_cpu(
-          p_bottom_item + num_proposals,  p_d_anchor_item,  anchors,
-          proposals,  num_anchors,
+          p_bottom_item + num_proposals,  p_d_anchor_item,
+          aux_data->anchors,  proposals_cpu,  num_anchors,
           bottom_H,  bottom_W,  img_H,  img_W,  min_box_H,  min_box_W,
           option->feat_stride);
     }
@@ -421,17 +505,17 @@ void proposal_forward(const Tensor* const bottom4d,
     // choose candidates according to scores
     #ifdef GPU
     {
-      cudaMemcpyAsync(proposals, proposals_dev,
+      cudaMemcpyAsync(proposals_cpu, proposals_gpu,
                       num_proposals * 5 * sizeof(real),
                       cudaMemcpyDeviceToHost);
-      sort_box(proposals, 0, num_proposals - 1, option->pre_nms_topn);
-      cudaMemcpyAsync(proposals_dev, proposals,
+      sort_box(proposals_cpu, 0, num_proposals - 1, option->pre_nms_topn);
+      cudaMemcpyAsync(proposals_gpu, proposals_cpu,
                       num_proposals * 5 * sizeof(real),
                       cudaMemcpyHostToDevice);
     }
     #else
     {
-      sort_box(proposals, 0, num_proposals - 1, option->pre_nms_topn);
+      sort_box(proposals_cpu, 0, num_proposals - 1, option->pre_nms_topn);
     }
     #endif
     tick1 = clock();
@@ -442,10 +526,17 @@ void proposal_forward(const Tensor* const bottom4d,
     {
       // NMS
       int num_rois = 0;
-      nms(MIN(num_proposals,  option->pre_nms_topn),
-          proposals,  &num_rois,  keep,  0,
-          option->nms_thresh,  option->post_nms_topn,
-          option->bbox_vote,  option->vote_thresh);
+      {
+        #ifdef GPU
+        real* const p_proposals = proposals_gpu;
+        #else
+        real* const p_proposals = proposals_cpu;
+        #endif
+        nms(MIN(num_proposals,  option->pre_nms_topn),  p_proposals,
+            aux_data->nms_aux_data,  &num_rois,  index_roi_cpu,  0,
+            option->nms_thresh,  option->post_nms_topn,
+            option->bbox_vote,  option->vote_thresh);
+      }
 
       // RoI retrieval
       #ifdef GPU
@@ -455,16 +546,17 @@ void proposal_forward(const Tensor* const bottom4d,
         const int num_blocks
             = DIV_THEN_CEIL(num_threads,  threads_per_block);
 
-        cudaMemcpyAsync(keep_dev, keep, num_rois * sizeof(int),
+        cudaMemcpyAsync(index_roi_gpu, index_roi_cpu,
+                        num_rois * sizeof(int),
                         cudaMemcpyHostToDevice);
 
         retrieve_rois_gpu<<<num_blocks, threads_per_block>>>(
-            proposals_dev,  keep_dev,  p_top_item,  num_rois);
+            proposals_gpu,  index_roi_gpu,  p_top_item,  num_rois);
       }
       #else
       {
         retrieve_rois_cpu(
-            proposals,  keep,  p_top_item,  num_rois);
+            proposals_cpu,  index_roi_cpu,  p_top_item,  num_rois);
       }
       #endif
 
@@ -485,7 +577,7 @@ void proposal_forward(const Tensor* const bottom4d,
       const int top_size = 5 * top2d->shape[n][0];
       p_bottom_item += bottom_size;
       p_d_anchor_item += d_anchor_size;
-      p_img_info += img_info_size;
+      p_img_info_cpu += img_info_size;
       p_top_item += top_size;
     }
   } // endfor batch
@@ -496,6 +588,8 @@ void proposal_forward(const Tensor* const bottom4d,
   tick1 = clock();
   a_time[3] = (float)(tick1 - tick00) / CLOCKS_PER_SEC;
   a_time[7] += (float)(tick1 - tick00) / CLOCKS_PER_SEC;
+
+  print_tensor_info(top2d);
 }
 
 
@@ -506,8 +600,7 @@ void proposal_forward(const Tensor* const bottom4d,
 static
 void proposal_shape(const Tensor* const bottom4d,
                     Tensor* const top2d,
-                    int* const proposals_size,
-                    int* const keep_size,
+                    long int* const p_temp_space,
                     const LayerOption* const option)
 {
   int max_area = 0;
@@ -517,8 +610,8 @@ void proposal_shape(const Tensor* const bottom4d,
   top2d->num_items = bottom4d->num_items;
   for (int n = 0; n < bottom4d->num_items; ++n) {
     // calculate maximum area size for determining temporary space size
-    const int bottom_H = bottom4d->shape[n][2];
-    const int bottom_W = bottom4d->shape[n][3];
+    const int bottom_H = bottom4d->shape[n][1];
+    const int bottom_W = bottom4d->shape[n][2];
     const int bottom_area = bottom_H * bottom_W;
     max_area = MAX(max_area,  bottom_area);
 
@@ -532,8 +625,11 @@ void proposal_shape(const Tensor* const bottom4d,
   // temporary space size
   {
     const int num_anchors = option->num_ratios * option->num_scales;
-    *proposals_size = num_anchors * max_area * 5;
-    *keep_size = option->post_nms_topn;
+    const int proposals_size = num_anchors * max_area * 5;
+    const int index_roi_size = option->post_nms_topn;
+
+    *p_temp_space = proposals_size * sizeof(real)
+                    + index_roi_size * sizeof(int);
   }
 }
 
@@ -543,59 +639,17 @@ void proposal_shape(const Tensor* const bottom4d,
 // API code
 // --------------------------------------------------------------------------
 
-void malloc_proposal_layer(void* const net_, void* const layer_)
-{
-  Net* const net = (Net*)net_;
-  Layer* const layer = (Layer*)layer_;
-
-  const LayerOption* const option = &layer->option;
-  const int num_anchors = option->num_scales * option->num_ratios;
-
-  #ifdef GPU
-  {
-    cudaMalloc(&layer->aux_data, num_anchors * 4 * sizeof(real));
-    generate_anchors(option->scales, option->ratios,
-                     net->param_cpu_data,
-                     option->num_scales, option->num_ratios,
-                     option->base_size);
-    cudaMemcpyAsync(layer->aux_data, net->param_cpu_data,
-                    num_anchors * 4 * sizeof(real),
-                    cudaMemcpyHostToDevice);
-  }
-  #else
-  {
-    layer->aux_data = (real*)malloc(num_anchors * 4 * sizeof(real));
-    generate_anchors(option->scales, option->ratios,
-                     (real*)layer->aux_data,
-                     option->num_scales, option->num_ratios,
-                     option->base_size);
-  }
-  #endif
-
-  net->space += num_anchors * 4 * sizeof(real);
-}
-
-void free_proposal_layer(void* const net_, void* const layer_)
-{
-  Layer* const layer = (Layer*)layer_;
-
-  #ifdef GPU
-  cudaFree(layer->aux_data);
-  #else
-  free(layer->aux_data);
-  #endif
-}
-
 void forward_proposal_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
 
-  proposal_forward(layer->p_bottoms[0], layer->p_bottoms[1],
-                   layer->p_bottoms[2],
-                   layer->p_tops[0], (real*)layer->aux_data,
-                   net->temp_cpu_data, net->tempint_cpu_data,
-                   net->temp_data, net->tempint_data,
+  proposal_forward(get_bottom(layer, 0), get_bottom(layer, 1),
+                   get_bottom(layer, 2),
+                   get_top(layer, 0),
+                   (ProposalAuxData*)layer->aux_data,
+                   (unsigned char*)net->temp_cpu_data,
+                   (unsigned char*)net->temp_data,
                    &layer->option);
 
   #ifdef DEBUG
@@ -613,11 +667,46 @@ void shape_proposal_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
+  long int temp_space;
 
-  int temp_size, tempint_size;
+  proposal_shape(get_bottom(layer, 0), get_top(layer, 0),
+                 &temp_space, &layer->option);
 
-  proposal_shape(layer->p_bottoms[0], layer->p_tops[0],
-                 &temp_size, &tempint_size, &layer->option);
+  update_temp_space(net, temp_space);
+}
 
-  update_net_size(net, layer, temp_size, tempint_size, 0);
+void malloc_proposal_layer(void* const net_, void* const layer_)
+{
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+  long int space_cpu, space;
+
+  layer->aux_data = (void*)malloc(sizeof(ProposalAuxData));
+
+  malloc_proposal_aux_data((ProposalAuxData*)layer->aux_data,
+                           &layer->option,
+                           &space_cpu, &space);
+
+  net->space_cpu += space_cpu + sizeof(ProposalAuxData);
+  net->space += space;
+
+  #ifdef DEBUG
+  {
+    #ifdef GPU
+    printf("%s: Memory allocated, CPU %ld byte and GPU %ld byte\n",
+           layer->name, space_cpu, space);
+    #else
+    printf("%s: Memory allocated, %ld byte\n",
+           layer->name, space_cpu + space);
+    #endif
+  }
+  #endif
+}
+
+void free_proposal_layer(void* const net_, void* const layer_)
+{
+  Layer* const layer = (Layer*)layer_;
+
+  free_proposal_aux_data((ProposalAuxData*)layer->aux_data);
+  free(layer->aux_data);
 }

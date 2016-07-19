@@ -132,9 +132,9 @@ void enumerate_output_cpu(const real bottom2d[],
 
 // --------------------------------------------------------------------------
 // layer operator code
-//   odtest_forward
 // --------------------------------------------------------------------------
 
+static
 void odtest_forward(const Tensor* const bottom2d,
                     const Tensor* const d_anchor3d,
                     const Tensor* const roi2d,
@@ -218,6 +218,7 @@ void odtest_forward(const Tensor* const bottom2d,
 // layer shape calculator code
 // --------------------------------------------------------------------------
 
+static
 void odtest_shape(const Tensor* const bottom2d,
                   Tensor* const top2d,
                   const LayerOption* const option)

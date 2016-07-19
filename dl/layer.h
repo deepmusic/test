@@ -1,7 +1,7 @@
 #ifndef PVA_DL_LAYER_H
 #define PVA_DL_LAYER_H
 
-//#define DEBUG
+#define DEBUG
 //#define MKL
 #define DEMO
 
@@ -19,8 +19,6 @@
   #include <cublas_v2.h>
   #include <cuda.h>
   #include <cuda_runtime.h>
-  #include <curand.h>
-  #include <driver_types.h>
 #elif defined(MKL)
   #include <mkl_cblas.h>
   #include <math.h>
@@ -54,15 +52,8 @@
 
 // --------------------------------------------------------------------------
 // tensor data structure & some functions
-//   struct Tensor
-//   flatten_size
-//   print_tensor_info
-//   malloc_tensor
-//   load_data
-//   load_tensor
 // --------------------------------------------------------------------------
 
-typedef unsigned long long uint64;
 typedef float real;
 #define MAX_NDIM 5
 #define MAX_NAME_LEN 64
@@ -71,7 +62,6 @@ typedef float real;
 #define SHARED_DATA 0  // data uses a block of shared memory
 #define PRIVATE_DATA 1  // data has its own private memory
 #define PARAM_DATA 2  // has own memory & pre-trained parameter is loaded
-#define CPU_DATA 3 // has own CPU memory
 
 typedef struct Tensor_
 {
@@ -82,8 +72,6 @@ typedef struct Tensor_
   int start[BATCH_SIZE];
   real* data;
   int data_type;
-  int shared_block_id;
-  long int max_data_size;
 } Tensor;
 
 #ifdef __cplusplus
@@ -96,14 +84,17 @@ void init_tensor(Tensor* const tensor);
 // set tensor's name
 void set_tensor_name(Tensor* const tensor, const char* const name);
 
+// total number of elements in a tensor
+long int get_data_size(const Tensor* const tensor);
+
 // allocate memory for tensor's data
 //   allocate GPU memory in GPU mode, or CPU memory in CPU mode
 //   return memory size in bytes
 long int malloc_tensor_data(Tensor* const tensor,
-                            real* const shared_blocks[]);
+                            real* const shared_block);
 
 // deallocate memory
-long int free_tensor_data(Tensor* const tensor);
+void free_tensor_data(Tensor* const tensor);
 
 // load binary data from file & store to CPU memory
 //   cpu_data: pointer to CPU memory for storing data
@@ -125,9 +116,6 @@ void save_tensor_data(const char* const filename,
                       const Tensor* const tensor,
                       real temp_cpu_data[]);
 
-// total number of elements in a tensor
-long int flatten_size(const Tensor* const tensor);
-
 // print shapes for all batch items in tensor
 void print_tensor_info(const Tensor* const tensor);
 
@@ -144,8 +132,6 @@ void print_tensor_info(const Tensor* const tensor);
 #define MAX_NUM_BOTTOMS 4
 #define MAX_NUM_TOPS 2
 #define MAX_NUM_PARAMS 2
-#define MAX_NUM_AUXS 1
-#define MAX_NUM_OPS_PER_LAYER 5
 
 // layer options
 typedef struct LayerOption_
@@ -187,6 +173,11 @@ typedef struct LayerOption_
   real scale_bias;
 
   int num_bottoms;
+
+  int channel_axis;
+
+  int reshape[MAX_NDIM];
+  int reshape_ndim;
 } LayerOption;
 
 typedef struct Layer_
@@ -204,10 +195,10 @@ typedef struct Layer_
 
   void* aux_data;
 
-  void (*f_forward[MAX_NUM_OPS_PER_LAYER])(void*, void*);
-  void (*f_shape[MAX_NUM_OPS_PER_LAYER])(void*, void*);
-  void (*f_malloc)(void*, void*);
+  void (*f_forward)(void*, void*);
+  void (*f_shape)(void*, void*);
   void (*f_free)(void*, void*);
+
   LayerOption option;
 } Layer;
 
@@ -245,9 +236,7 @@ Tensor* get_param(const Layer* const layer, const int param_id);
 
 #define MAX_NUM_TENSORS 400
 #define MAX_NUM_LAYERS 400
-#define MAX_NUM_LAYER_DATA 10
-#define MAX_NUM_RATIOS 10
-#define MAX_NUM_SCALES 10
+#define MAX_NUM_SHARED_BLOCKS 10
 
 typedef struct Net_
 {
@@ -259,28 +248,17 @@ typedef struct Net_
   Layer layers[MAX_NUM_LAYERS];
   int num_layers;
 
-  real* layer_data[MAX_NUM_LAYER_DATA];
-  long int layer_size;
-  int num_layer_data;
+  real* p_shared_blocks[MAX_NUM_SHARED_BLOCKS];
+  int num_shared_blocks;
 
   int num_output_boxes;
 
-  real* param_cpu_data;
-  long int param_size;
-
   real* temp_data;
   real* temp_cpu_data;
-  long int temp_size;
-
-  int* tempint_data;
-  int* tempint_cpu_data;
-  long int tempint_size;
+  long int temp_space;
 
   real* const_data;
-  long int const_size;
-
-  real anchor_ratios[MAX_NUM_RATIOS];
-  real anchor_scales[MAX_NUM_SCALES];
+  long int const_space;
 
   long int space_cpu;
   long int space;
@@ -318,12 +296,6 @@ Layer* find_or_add_layer(Net* const net, const char* const name);
 Tensor* get_tensor_by_name(Net* const net, const char* const name);
 Layer* get_layer_by_name(Net* const net, const char* const name);
 
-long int malloc_top_data(Net* const net, Layer* const layer,
-                         const int top_id);
-
-long int free_top_data(Net* const net, Layer* const layer,
-                       const int top_id);
-
 void init_net(Net* const net);
 
 void malloc_net(Net* const net);
@@ -334,7 +306,10 @@ void forward_net(Net* const net);
 
 void shape_net(Net* const net);
 
-void assign_layer_data(Net* const net);
+void assign_shared_blocks(Net* const net);
+
+void update_temp_space(Net* const net, const long int space);
+void update_const_space(Net* const net, const long int space);
 
 void update_net_size(Net* const net,
                      const Layer* const layer,
@@ -375,8 +350,7 @@ Layer* add_conv_layer(Net* const net,
                       const int kernel_h, const int kernel_w,
                       const int stride_h, const int stride_w,
                       const int pad_h, const int pad_w,
-                      const int bias_term,
-                      const int do_relu);
+                      const int bias_term);
 
 Layer* add_deconv_layer(Net* const net,
                         const char* const layer_name,
@@ -388,8 +362,7 @@ Layer* add_deconv_layer(Net* const net,
                         const int kernel_h, const int kernel_w,
                         const int stride_h, const int stride_w,
                         const int pad_h, const int pad_w,
-                        const int bias_term,
-                        const int do_relu);
+                        const int bias_term);
 
 Layer* add_fc_layer(Net* const net,
                     const char* const layer_name,
@@ -398,16 +371,15 @@ Layer* add_fc_layer(Net* const net,
                     const char* const weight_name,
                     const char* const bias_name,
                     const int num_output,
-                    const int bias_term,
-                    const int do_relu);
+                    const int bias_term);
 
-Layer* add_pool_layer(Net* const net,
-                      const char* const layer_name,
-                      const char* const bottom_name,
-                      const char* const top_name,
-                      const int kernel_h, const int kernel_w,
-                      const int stride_h, const int stride_w,
-                      const int pad_h, const int pad_w);
+Layer* add_max_pool_layer(Net* const net,
+                          const char* const layer_name,
+                          const char* const bottom_name,
+                          const char* const top_name,
+                          const int kernel_h, const int kernel_w,
+                          const int stride_h, const int stride_w,
+                          const int pad_h, const int pad_w);
 
 Layer* add_scale_const_layer(Net* const net,
                              const char* const layer_name,
@@ -449,6 +421,19 @@ Layer* add_dropout_layer(Net* const net,
                          const char* const top_name,
                          const int is_test,
                          const int is_scaled);
+
+Layer* add_reshape_layer(Net* const net,
+                         const char* const layer_name,
+                         const char* const bottom_name,
+                         const char* const top_name,
+                         const int shape[],
+                         const int ndim);
+
+Layer* add_softmax_layer(Net* const net,
+                         const char* const layer_name,
+                         const char* const bottom_name,
+                         const char* const top_name,
+                         const int channel_axis);
 
 void setup_shared_cnn(Net* const net);
 void setup_shared_cnn_light(Net* const net);
@@ -532,7 +517,7 @@ void shape_fc_layer(void* const net_, void* const layer_);
 // pooling
 // --------------------------------------------------------------------------
 
-void forward_pool_layer(void* const net_, void* const layer_);
+void forward_max_pool_layer(void* const net_, void* const layer_);
 void shape_pool_layer(void* const net_, void* const layer_);
 
 
@@ -572,53 +557,17 @@ void shape_concat_layer(void* const net_, void* const layer_);
 
 void forward_odout_layer(void* const net_, void* const layer_);
 void shape_odout_layer(void* const net_, void* const layer_);
-
-
-
-// --------------------------------------------------------------------------
-// object detection test output (for measuring MAP performance)
-// --------------------------------------------------------------------------
-
-void forward_odtest_layer(void* const net_, void* const layer_);
-void shape_odtest_layer(void* const net_, void* const layer_);
+void malloc_odout_layer(void* const net_, void* const layer_);
+void free_odout_layer(void* const net_, void* const layer_);
 
 
 
 // --------------------------------------------------------------------------
 // softmax
-//   softmax_forward
-//   softmax_inplace_forward
-//   softmax_shape
 // --------------------------------------------------------------------------
 
-void forward_rpn_pred_layer(void* const net_, void* const layer_);
-void shape_rpn_pred_layer(void* const net_, void* const layer_);
-
-void forward_rcnn_pred_layer(void* const net_, void* const layer_);
-void shape_rcnn_pred_layer(void* const net_, void* const layer_);
-
-void forward_rpn_bbox_layer(void* const net_, void* const layer_);
-void shape_rpn_bbox_layer(void* const net_, void* const layer_);
-
-void forward_rcnn_bbox_layer(void* const net_, void* const layer_);
-void shape_rcnn_bbox_layer(void* const net_, void* const layer_);
-
-// channel-wise softmax transform: bottom3d (N x C x D) -> top3d (N x C x D)
-//   top[n][c][d] = exp(bottom[n][c][d]) / sum_c(exp(bottom[n][c][d]))
-//   temp_data: N * D array,  temporary space for channel-wise sum or max
-//     e.g., temp_data[n][d] = sum_c(exp(bottom[n][c][d]))
-void softmax_forward(const Tensor* const bottom3d,
-                     Tensor* const top3d,
-                     real temp_data[]);
-
-// channel-wise in-place softmax transform:
-//   bottom[n][c][d] = exp(bottom[n][c][d]) / sum_c(exp(bottom[n][c][d]))
-void softmax_inplace_forward(Tensor* const bottom3d,
-                             real temp_data[]);
-
-void softmax_shape(const Tensor* const bottom3d,
-                   Tensor* const top3d,
-                   int* const temp_size);
+void forward_softmax_layer(void* const net_, void* const layer_);
+void shape_softmax_layer(void* const net_, void* const layer_);
 
 
 
@@ -627,7 +576,6 @@ void softmax_shape(const Tensor* const bottom3d,
 // --------------------------------------------------------------------------
 
 void forward_dropout_layer(void* const net_, void* const layer_);
-void forward_inplace_dropout_layer(void* const net_, void* const layer_);
 void shape_dropout_layer(void* const net_, void* const layer_);
 
 
@@ -637,17 +585,7 @@ void shape_dropout_layer(void* const net_, void* const layer_);
 // --------------------------------------------------------------------------
 
 void forward_relu_layer(void* const net_, void* const layer_);
-void forward_inplace_relu_layer(void* const net_, void* const layer_);
 void shape_relu_layer(void* const net_, void* const layer_);
-
-
-
-// --------------------------------------------------------------------------
-// CReLU
-// --------------------------------------------------------------------------
-
-void forward_crelu_layer(void* const net_, void* const layer_);
-void shape_crelu_layer(void* const net_, void* const layer_);
 
 
 
@@ -657,10 +595,6 @@ void shape_crelu_layer(void* const net_, void* const layer_);
 
 void forward_scale_const_layer(void* const net_, void* const layer_);
 void forward_scale_channel_layer(void* const net_, void* const layer_);
-void forward_inplace_scale_const_layer(void* const net_,
-                                       void* const layer_);
-void forward_inplace_scale_channel_layer(void* const net_,
-                                         void* const layer_);
 void shape_scale_const_layer(void* const net_, void* const layer_);
 void shape_scale_channel_layer(void* const net_, void* const layer_);
 
@@ -676,31 +610,13 @@ void shape_eltwise_layer(void* const net_, void* const layer_);
 
 
 // --------------------------------------------------------------------------
-// NMS operation
-//   nms
+// reshape
 // --------------------------------------------------------------------------
 
-// given box proposals (sorted in descending order of their scores),
-// discard a box if it is significantly overlapped with
-// one or more previous (= scored higher) boxes
-//   num_boxes: number of box proposals given
-//   boxes: "num_boxes x 5" array (x1, y1, x2, y2, score)
-//          sorted in descending order of scores
-//   num_out: number of remaining boxes
-//   keep_out: "num_out x 1" array
-//             indices of remaining boxes
-//   base_index: a constant added to keep_out,  usually 0
-//               keep_out[i] = base_index + actual index in boxes
-//   nms_thresh: threshold for determining "significant overlap"
-//               if "intersection area / union area > nms_thresh",
-//               two boxes are thought of as significantly overlapped
-//   bbox_vote: whether bounding-box voting is used (= 1) or not (= 0)
-//   vote_thresh: threshold for selecting overlapped boxes
-//                which are participated in bounding-box voting
-void nms(const int num_boxes, real boxes[],
-         int* const num_out, int keep_out[], const int base_index,
-         const real nms_thresh, const int max_num_out,
-         const int bbox_vote, const real vote_thresh);
+void forward_reshape_layer(void* const net_, void* const layer_);
+void shape_reshape_layer(void* const net_, void* const layer_);
+
+
 
 // --------------------------------------------------------------------------
 // transform image into network input
@@ -722,7 +638,9 @@ void init_input_layer(Net* const net,
 
 // --------------------------------------------------------------------------
 // common functions
-//   img2input
+//   iou
+//   soft_box
+//   nms
 // --------------------------------------------------------------------------
 
 // "IoU = intersection area / union area" of two boxes A, B
@@ -730,11 +648,43 @@ void init_input_layer(Net* const net,
 real iou(const real A[], const real B[]);
 
 // quick-sort a list of boxes in descending order of their scores (CPU)
-//   list: num_boxes x 5 array,  (x1, y1, x2, y2, score) for each box
+//   list_cpu: num_boxes x 5 array,  (x1, y1, x2, y2, score) for each box
+//             located at main memory
 //   if num_top <= end,  only top-k results are guaranteed to be sorted
 //   (for efficient computation)
-void sort_box(real list[], const int start, const int end,
+void sort_box(real list_cpu[], const int start, const int end,
               const int num_top);
+
+// given box proposals (sorted in descending order of their scores),
+// discard a box if it is significantly overlapped with
+// one or more previous (= scored higher) boxes
+//   num_boxes: number of box proposals given
+//   boxes: "num_boxes x 5" array (x1, y1, x2, y2, score)
+//          sorted in descending order of scores
+//   aux_data: auxiliary data for NMS operation
+//   num_out: number of remaining boxes
+//   index_out_cpu: "num_out x 1" array
+//                  indices of remaining boxes
+//                  allocated at main memory
+//   base_index: a constant added to index_out_cpu,  usually 0
+//               index_out_cpu[i] = base_index + actual index in boxes
+//   nms_thresh: threshold for determining "significant overlap"
+//               if "intersection area / union area > nms_thresh",
+//               two boxes are thought of as significantly overlapped
+//   bbox_vote: whether bounding-box voting is used (= 1) or not (= 0)
+//   vote_thresh: threshold for selecting overlapped boxes
+//                which are participated in bounding-box voting
+void nms(const int num_boxes, real boxes[], void* const aux_data,
+         int* const num_out, int index_out_cpu[],
+         const int base_index, const real nms_thresh, const int max_num_out,
+         const int bbox_vote, const real vote_thresh);
+
+void malloc_nms_aux_data(void** const p_aux_data,
+                         int num_boxes,
+                         long int* const p_space_cpu,
+                         long int* const p_space_gpu);
+
+void free_nms_aux_data(void* const aux_data);
 
 #ifdef __cplusplus
 } // end extern "C"
@@ -757,34 +707,15 @@ int _max_name_len(void);
 int _max_num_bottoms(void);
 int _max_num_tops(void);
 int _max_num_params(void);
-int _max_num_auxs(void);
-int _max_num_ops_per_layer(void);
 
 int _max_num_tensors(void);
 int _max_num_layers(void);
-int _max_num_layer_data(void);
-int _max_num_ratios(void);
-int _max_num_scales(void);
+int _max_num_shared_blocks(void);
 
 Net* _net(void);
 
 void _init_net(void);
 void _set_net_param_path(const char* const param_path);
-
-void _add_data_layer(const char* const layer_name,
-                     const char* const data_name,
-                     const char* const img_info_name);
-
-void _add_conv_layer(const char* const layer_name,
-                     const char* const bottom_name,
-                     const char* const top_name,
-                     const char* const weight_name,
-                     const char* const bias_name,
-                     const int num_group, const int num_output,
-                     const int kernel_h, const int kernel_w,
-                     const int stride_h, const int stride_w,
-                     const int pad_h, const int pad_w,
-                     const int bias_term);
 
 void _shape_net(void);
 void _malloc_net(void);
@@ -795,8 +726,6 @@ void _detect_net(const unsigned char image_data[],
                  const int width, const int height);
 
 Tensor* _layer_net(const int layer_id, const int top_id);
-
-void _print_layer(const int layer_id);
 
 #ifdef __cplusplus
 } // end extern "C"

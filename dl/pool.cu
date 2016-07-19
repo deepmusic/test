@@ -1,4 +1,5 @@
 #include "layer.h"
+#include <string.h>
 
 // --------------------------------------------------------------------------
 // kernel code
@@ -8,15 +9,14 @@
 // max-pooling bottom3d (C x H x W) -> top3d (C x H' x W')
 //   given (c, h', w'),
 //     top3d[c][h'][w'] = max_{h, w} bottom3d[c][h][w]
-//     argmax3d[c][h'][w'] = argmax_{h, w} bottom3d[c][h][w]
 //   for
 //     h = (-pad_h + stride_h * h') + { 0, 1, ..., kernel_h - 1 }
 //     w = (-pad_w + stride_w * w') + { 0, 1, ..., kernel_w - 1 }
 #ifdef GPU
 __global__
+static
 void max_pool_gpu(const real bottom3d[],
                   real top3d[],
-                  int argmax3d[],
                   const int C, const int bottom_H, const int bottom_W,
                   const int top_H, const int top_W,
                   const int kernel_h, const int kernel_w,
@@ -39,86 +39,74 @@ void max_pool_gpu(const real bottom3d[],
     const int h_end = MIN(-pad_h + stride_h * ht + kernel_h,  bottom_H);
     const int w_end = MIN(-pad_w + stride_w * wt + kernel_w,  bottom_W);
 
-    if (h_start >= h_end || w_start >= w_end) {
-      top3d[index] = 0;
-      argmax3d[index] = -1;
-    }
-
-    // find maximum in the pooling region
-    const real* const p_bottom3d = bottom3d + c * bottom_H * bottom_W;
-    int maxidx = h_start * bottom_W + w_start;
-    real maxval = p_bottom3d[maxidx];
-    for (int h = h_start; h < h_end; ++h) {
-      for (int w = w_start; w < w_end; ++w) {
-        if (p_bottom3d[h * bottom_W + w] > maxval) {
-          maxidx = h * bottom_W + w;
-          maxval = p_bottom3d[maxidx];
-        }
-      }
-    }
-
     // if pooling region is not empty,
     //   top3d[c][h'][w'] = "max in the region"
     // otherwise, assign 0
-    {
-      const int not_empty = (h_start < h_end) * (w_start < w_end);
-      top3d[index] = not_empty * maxval;
-      argmax3d[index] = not_empty * maxidx + (1 - not_empty) * (-1);
+    if (h_start < h_end && w_start < w_end) {
+      // find maximum in the pooling region
+      const real* const p_bottom3d = bottom3d + c * bottom_H * bottom_W;
+      int maxidx = h_start * bottom_W + w_start;
+      real maxval = p_bottom3d[maxidx];
+      for (int h = h_start; h < h_end; ++h) {
+        for (int w = w_start; w < w_end; ++w) {
+          if (p_bottom3d[h * bottom_W + w] > maxval) {
+            maxidx = h * bottom_W + w;
+            maxval = p_bottom3d[maxidx];
+          }
+        }
+      }
+      top3d[index] = maxval;
+    }
+    else {
+      top3d[index] = 0;
     }
   }
 }
 #else
+static
 void max_pool_cpu(const real bottom3d[],
                   real top3d[],
-                  int argmax3d[],
                   const int C, const int bottom_H, const int bottom_W,
                   const int top_H, const int top_W,
                   const int kernel_h, const int kernel_w,
                   const int pad_h, const int pad_w,
                   const int stride_h, const int stride_w)
 {
-  // thread index: (c, h', w') = c*H'*W' + h'*W' + w'
-  for (int index = 0; index < C * top_H * top_W; ++index) {
-    // parse thread index -> (c, h', w')
-    const int c = index / top_H / top_W;
-    const int ht = (index / top_W) % top_H;
-    const int wt = index % top_W; 
-
-    // pooling range in bottom
-    //   h = (-pad_h + stride_h * h') + { 0, 1, ..., kernel_h - 1}
-    //   w = (-pad_w + stride_w * w') + { 0, 1, ..., kernel_w - 1}
+  for (int c = 0; c < C; ++c) {
+  for (int ht = 0; ht < top_H; ++ht) {
     const int h_start = MAX(0,  -pad_h + stride_h * ht);
-    const int w_start = MAX(0,  -pad_w + stride_w * wt);
     const int h_end = MIN(-pad_h + stride_h * ht + kernel_h,  bottom_H);
-    const int w_end = MIN(-pad_w + stride_w * wt + kernel_w,  bottom_W);
-
-    if (h_start >= h_end || w_start >= w_end) {
-      top3d[index] = 0;
-      argmax3d[index] = -1;
+    if (h_start >= h_end) {
+      real* const p_top3d = top3d + (c * top_H + ht) * top_W;
+      memset(p_top3d, 0, top_W * sizeof(real));
+      continue;
     }
 
-    // find maximum in the pooling region
-    const real* const p_bottom3d = bottom3d + c * bottom_H * bottom_W;
-    int maxidx = h_start * bottom_W + w_start;
-    real maxval = p_bottom3d[maxidx];
-    for (int h = h_start; h < h_end; ++h) {
-      for (int w = w_start; w < w_end; ++w) {
-        if (p_bottom3d[h * bottom_W + w] > maxval) {
-          maxidx = h * bottom_W + w;
-          maxval = p_bottom3d[maxidx];
-        }
+    for (int wt = 0; wt < top_W; ++wt) {
+      const int w_start = MAX(0,  -pad_w + stride_w * wt);
+      const int w_end = MIN(-pad_w + stride_w * wt + kernel_w,  bottom_W);
+      real* const p_top3d = top3d + (c * top_H + ht) * top_W + wt;
+      if (w_start >= w_end) {
+        *p_top3d = 0;
       }
-    }
 
-    // if pooling region is not empty,
-    //   top3d[c][h'][w'] = "max in the region"
-    // otherwise, assign 0
-    {
-      const int not_empty = (h_start < h_end) * (w_start < w_end);
-      top3d[index] = not_empty * maxval;
-      argmax3d[index] = not_empty * maxidx + (1 - not_empty) * (-1);
-    }
-  }
+      // find maximum in the pooling region
+      else {
+        const real* const p_bottom3d = bottom3d + c * bottom_H * bottom_W;
+        int maxidx = h_start * bottom_W + w_start;
+        real maxval = p_bottom3d[maxidx];
+        for (int h = h_start; h < h_end; ++h) {
+          for (int w = w_start; w < w_end; ++w) {
+            if (p_bottom3d[h * bottom_W + w] > maxval) {
+              maxidx = h * bottom_W + w;
+              maxval = p_bottom3d[maxidx];
+            }
+          }
+        }
+        *p_top3d = maxval;
+      }
+    } // endfor wt
+  }} // endfor ht, c
 }
 #endif
 
@@ -126,16 +114,14 @@ void max_pool_cpu(const real bottom3d[],
 
 // --------------------------------------------------------------------------
 // layer operator code
-//   pool_forward
 // --------------------------------------------------------------------------
 
 // max-pooling: bottom -> top
 //   bottom: C x H x W
 //   top: C x H' x W'
-//   argmax: C x H' x W' array
+static
 void pool_forward(const Tensor* const bottom3d,
                   Tensor* const top3d,
-                  int argmax_data[],
                   const LayerOption* const option)
 {
   // kernel size, padding size & stride size
@@ -149,7 +135,6 @@ void pool_forward(const Tensor* const bottom3d,
   // do forward-pass for each item in the batch
   const real* p_bottom_item = bottom3d->data;
   real* p_top_item = top3d->data;
-  int* p_argmax_item = argmax_data;
   for (int n = 0; n < bottom3d->num_items; ++n) {
     // bottom shape: C x H x W
     const int C = bottom3d->shape[n][0];  // C
@@ -175,14 +160,14 @@ void pool_forward(const Tensor* const bottom3d,
       const int threads_per_block = 512;
       const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
       max_pool_gpu<<<num_blocks, threads_per_block>>>(
-          p_bottom_item,  p_top_item,  p_argmax_item,
+          p_bottom_item,  p_top_item,
           C,  bottom_H,  bottom_W,  top_H,  top_W,
           kernel_h,  kernel_w,  pad_h,  pad_w,  stride_h,  stride_w);
     }
     #else
     {
       max_pool_cpu(
-          p_bottom_item,  p_top_item,  p_argmax_item,
+          p_bottom_item,  p_top_item,
           C,  bottom_H,  bottom_W,  top_H,  top_W,
           kernel_h,  kernel_w,  pad_h,  pad_w,  stride_h,  stride_w);
     }
@@ -194,7 +179,6 @@ void pool_forward(const Tensor* const bottom3d,
       const int top_size = C * top_H * top_W;
       p_bottom_item += bottom_size;
       p_top_item += top_size;
-      p_argmax_item += top_size;
     }
   } // endfor batch
 
@@ -207,9 +191,9 @@ void pool_forward(const Tensor* const bottom3d,
 // --------------------------------------------------------------------------
 // layer shape calculator code
 // --------------------------------------------------------------------------
+static
 void pool_shape(const Tensor* const bottom3d,
                 Tensor* const top3d,
-                int* const argmax_size,
                 const LayerOption* const option)
 {
   const int kernel_h = option->kernel_h;
@@ -244,9 +228,6 @@ void pool_shape(const Tensor* const bottom3d,
   }
   top3d->ndim = 3;
   top3d->num_items = bottom3d->num_items;
-
-  // argmax data size = top size
-  *argmax_size = total_size;
 }
 
 
@@ -255,24 +236,16 @@ void pool_shape(const Tensor* const bottom3d,
 // API code
 // --------------------------------------------------------------------------
 
-void forward_pool_layer(void* const net_, void* const layer_)
+void forward_max_pool_layer(void* const net_, void* const layer_)
 {
-  Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
 
-  pool_forward(layer->p_bottoms[0], layer->p_tops[0],
-               net->tempint_data, &layer->option);
+  pool_forward(get_bottom(layer, 0), get_top(layer, 0), &layer->option);
 }
 
 void shape_pool_layer(void* const net_, void* const layer_)
 {
-  Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
 
-  int tempint_size;
-
-  pool_shape(layer->p_bottoms[0], layer->p_tops[0],
-             &tempint_size, &layer->option);
-
-  update_net_size(net, layer, 0, tempint_size, 0);
+  pool_shape(get_bottom(layer, 0), get_top(layer, 0), &layer->option);
 }

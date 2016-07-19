@@ -28,6 +28,7 @@
 // compute max2d[n][d] = max_c(data3d[n][c][d])
 #ifdef GPU
 __global__
+static
 void channel_max_gpu(const real data3d[], real max2d[],
                      const int N, const int C, const int D)
 {
@@ -46,6 +47,7 @@ void channel_max_gpu(const real data3d[], real max2d[],
   }
 }
 #else
+static
 void channel_max_cpu(const real data3d[], real max2d[],
                      const int N, const int C, const int D)
 {
@@ -66,6 +68,7 @@ void channel_max_cpu(const real data3d[], real max2d[],
 // in-place subtraction: data3d[n][c][d] = data3d[n][c][d] - max2d[n][d]
 #ifdef GPU
 __global__
+static
 void subtract_max_gpu(real data3d[], const real max2d[],
                       const int N, const int C, const int D)
 {
@@ -79,6 +82,7 @@ void subtract_max_gpu(real data3d[], const real max2d[],
   }
 }
 #else
+static
 void subtract_max_cpu(real data3d[], const real max2d[],
                       const int N, const int C, const int D)
 {
@@ -97,6 +101,7 @@ void subtract_max_cpu(real data3d[], const real max2d[],
 // in-place element-wise exp: data3d[n][c][d] = exp(data[n][c][d])
 #ifdef GPU
 __global__
+static
 void exp_gpu(real data[], const long int data_size)
 {
   const long int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -105,6 +110,7 @@ void exp_gpu(real data[], const long int data_size)
   }
 }
 #else
+static
 void exp_cpu(real data[], const long int data_size)
 {
   for (long int index = 0; index < data_size; ++index) {
@@ -116,6 +122,7 @@ void exp_cpu(real data[], const long int data_size)
 // compute sum2d[n][d] = sum_c(data3d[n][c][d])
 #ifdef GPU
 __global__
+static
 void channel_sum_gpu(const real data3d[], real sum2d[],
                      const int N, const int C, const int D)
 {
@@ -134,6 +141,7 @@ void channel_sum_gpu(const real data3d[], real sum2d[],
   }
 }
 #else
+static
 void channel_sum_cpu(const real data3d[], real sum2d[],
                      const int N, const int C, const int D)
 {
@@ -154,6 +162,7 @@ void channel_sum_cpu(const real data3d[], real sum2d[],
 // in-place division: data3d[n][c][d] = data3d[n][c][d] / sum2d[n][d]
 #ifdef GPU
 __global__
+static
 void div_sum_gpu(real data3d[], const real sum2d[],
                  const int N, const int C, const int D)
 {
@@ -166,6 +175,7 @@ void div_sum_gpu(real data3d[], const real sum2d[],
   }
 }
 #else
+static
 void div_sum_cpu(real data3d[], const real sum2d[],
                  const int N, const int C, const int D)
 {
@@ -186,6 +196,7 @@ void div_sum_cpu(real data3d[], const real sum2d[],
 //   bottom3d: N x C x D array
 //   temp_data: N * D array,  temporary space for channel-wise sum or max
 //     e.g., temp_data[n][d] = sum_c(exp(bottom3d[n][c][d]))
+static
 void softmax_inplace(real bottom3d[], real temp_data[],
                      const int N, const int C, const int D)
 {
@@ -260,63 +271,48 @@ void softmax_inplace(real bottom3d[], real temp_data[],
 
 // --------------------------------------------------------------------------
 // layer operator code
-//   softmax_forward
-//   softmax_forward_inplace
 // --------------------------------------------------------------------------
 
 // channel-wise softmax transform: bottom3d (N x C x D) -> top3d (N x C x D)
 //   top[n][c][d] = exp(bottom[n][c][d]) / sum_c(exp(bottom[n][c][d]))
+//   option->channel_axis: axis index to be considered as "channel"
+//     e.g., option->channel_axis = 0 if bottom = C x H x W tensor
+//     N = product of shape[0, ..., option->channel_axis-1]
+//     C = shape[option->channel_axis]
+//     D = product of shape[option->channel_axis+1, ..., ndim-1]
 //   temp_data: N * D array,  temporary space for channel-wise sum or max
 //     e.g., temp_data[n][d] = sum_c(exp(bottom[n][c][d]))
-void softmax_forward(const Tensor* const bottom3d,
-                     Tensor* const top3d,
-                     real temp_data[])
+static
+void softmax_forward(const Tensor* const bottom,
+                     Tensor* const top,
+                     real temp_data[],
+                     const LayerOption* const option)
 {
   // copy bottom -> top, and then perform inplace operation
-  if (bottom3d->data != top3d->data) {
-    const long int data_size = flatten_size(bottom3d);
+  if (bottom->data != top->data) {
+    const long int data_size = get_data_size(bottom);
 
     #ifdef GPU
-    cudaMemcpyAsync(top3d->data, bottom3d->data, data_size * sizeof(real),
+    cudaMemcpyAsync(top->data, bottom->data, data_size * sizeof(real),
                     cudaMemcpyDeviceToDevice);
     #else
-    memcpy(top3d->data, bottom3d->data, data_size * sizeof(real));
+    memcpy(top->data, bottom->data, data_size * sizeof(real));
     #endif
   }
 
-  // perform in-place operation
-  softmax_inplace_forward(top3d, temp_data);
-}
+  // perform in-place softmax operation
+  for (int n = 0; n < bottom->num_items; ++n) {
+    real* const p_top_item = top->data + bottom->start[n];
+    const int C = bottom->shape[n][option->channel_axis];
+    int N = 1, D = 1;
+    for (int i = 0; i < option->channel_axis; ++i) {
+      N *= bottom->shape[n][i];
+    }
+    for (int i = option->channel_axis + 1; i < bottom->ndim; ++i) {
+      D *= bottom->shape[n][i];
+    }
 
-// channel-wise in-place softmax transform:
-//   bottom[n][c][d] = exp(bottom[n][c][d]) / sum_c(exp(bottom[n][c][d]))
-void softmax_inplace_forward(Tensor* const bottom3d, real temp_data[])
-{
-  // do forward-pass for each item in the batch
-  if (bottom3d->ndim == 4) {
-    for (int n = 0; n < bottom3d->num_items; ++n) {
-      const int N = bottom3d->shape[n][0];
-      const int C = bottom3d->shape[n][1];
-      const int H = bottom3d->shape[n][2];
-      const int W = bottom3d->shape[n][3];
-      const int D = H * W;
-      real* const p_bottom_item = bottom3d->data + bottom3d->start[n];
-      real* const p_temp_data = temp_data + bottom3d->start[n];
-      softmax_inplace(p_bottom_item, p_temp_data, N, C, D);
-    } // endfor batch
-  }
-
-  else {
-    for (int n = 0; n < bottom3d->num_items; ++n) {
-      const int N = 1;
-      const int C = bottom3d->shape[n][0];
-      const int H = bottom3d->shape[n][1];
-      const int W = bottom3d->shape[n][2];
-      const int D = H * W;
-      real* const p_bottom_item = bottom3d->data + bottom3d->start[n];
-      real* const p_temp_data = temp_data + bottom3d->start[n];
-      softmax_inplace(p_bottom_item, p_temp_data, N, C, D);
-    } // endfor batch
+    softmax_inplace(p_top_item, temp_data, N, C, D);
   }
 }
 
@@ -326,27 +322,40 @@ void softmax_inplace_forward(Tensor* const bottom3d, real temp_data[])
 // layer shape calculator code
 // --------------------------------------------------------------------------
 
-void softmax_shape(const Tensor* const bottom3d,
-                   Tensor* const top3d,
-                   int* const temp_size)
+static
+void softmax_shape(const Tensor* const bottom,
+                   Tensor* const top,
+                   long int* const p_temp_space,
+                   const LayerOption* const option)
 {
-  // temporary space for channel-wise sum or max: N * D
-  const int N = bottom3d->num_items;
-  const int H = bottom3d->shape[0][1];
-  const int W = bottom3d->shape[0][2];
-  const int D = H * W;
-  *temp_size = N * D;
-
   // top shape = bottom shape
-  top3d->ndim = bottom3d->ndim;
-  top3d->num_items = bottom3d->num_items;
-  for (int n = 0; n < bottom3d->num_items; ++n) {
-    for (int i = 0; i < bottom3d->ndim; ++i) {
-      top3d->shape[n][i] = bottom3d->shape[n][i];
+  if (bottom != top) {
+    top->ndim = bottom->ndim;
+    top->num_items = bottom->num_items;
+    for (int n = 0; n < bottom->num_items; ++n) {
+      for (int i = 0; i < bottom->ndim; ++i) {
+        top->shape[n][i] = bottom->shape[n][i];
+      }
+    }
+    for (int n = 0; n < bottom->num_items; ++n) {
+      top->start[n] = bottom->start[n];
     }
   }
-  for (int n = 0; n < bottom3d->num_items; ++n) {
-    top3d->start[n] = bottom3d->start[n];
+
+  // temporary space for channel-wise sum or max: N * D
+  {
+    int ND_max = 0;
+    for (int n = 0; n < bottom->num_items; ++n) {
+      int N = 1, D = 1;
+      for (int i = 0; i < option->channel_axis; ++i) {
+        N *= bottom->shape[n][i];
+      }
+      for (int i = option->channel_axis + 1; i < bottom->ndim; ++i) {
+        D *= bottom->shape[n][i];
+      }
+      ND_max = MAX(ND_max,  N * D);
+    }
+    *p_temp_space = ND_max * sizeof(real);
   }
 }
 
@@ -356,152 +365,23 @@ void softmax_shape(const Tensor* const bottom3d,
 // API code
 // --------------------------------------------------------------------------
 
-void forward_rpn_pred_layer(void* const net_, void* const layer_)
+void forward_softmax_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
 
-  // 3d tensor: C x H x W
-  Tensor* const score = layer->p_tops[0];
-
-  // reshape to 3d tensor: 2 x (C / 2) x (H * W)
-  score->ndim = 3;
-  for (int n = 0; n < score->num_items; ++n) {
-    const int C = score->shape[n][0];
-    const int H = score->shape[n][1];
-    const int W = score->shape[n][2];
-    score->shape[n][0] = 2;
-    score->shape[n][1] = C / 2;
-    score->shape[n][2] = H * W;
-
-    // backup for reshape to 4d tensor
-    score->shape[n][3] = W;
-  }
-
-  // softmax transform
-  softmax_inplace_forward(score, net->temp_data);
-
-  // reshape to 4d tensor: 2 x (C / 2) x H x W
-  score->ndim = 4;
-  for (int n = 0; n < score->num_items; ++n) {
-    score->shape[n][2] /= score->shape[n][3];
-  }
+  softmax_forward(get_bottom(layer, 0), get_top(layer, 0),
+                  net->temp_data, &layer->option);
 }
 
-void shape_rpn_pred_layer(void* const net_, void* const layer_)
-{
-  Layer* const layer = (Layer*)layer_;
-
-  // 3d tensor: C x H x W
-  Tensor* const score = layer->p_tops[0];
-
-  // reshape to 4d tensor: 2 x (C / 2) x H x W
-  score->ndim = 4;
-  for (int n = 0; n < score->num_items; ++n) {
-    const int C = score->shape[n][0];
-    const int H = score->shape[n][1];
-    const int W = score->shape[n][2];
-    score->shape[n][0] = 2;
-    score->shape[n][1] = C / 2;
-    score->shape[n][2] = H;
-    score->shape[n][3] = W;
-  }
-}
-
-void forward_rpn_bbox_layer(void* const net_, void* const layer_)
-{
-  Layer* const layer = (Layer*)layer_;
-
-  shape_rpn_bbox_layer(net_, layer);
-}
-
-void shape_rpn_bbox_layer(void* const net_, void* const layer_)
-{
-  Layer* const layer = (Layer*)layer_;
-
-  // 3d tensor: C x H x W
-  Tensor* const bbox = layer->p_tops[0];
-
-  // reshape to 4d tensor: (C / 4) x 4 x H x W
-  bbox->ndim = 4;
-  for (int n = 0; n < bbox->num_items; ++n) {
-    const int C = bbox->shape[n][0];
-    const int H = bbox->shape[n][1];
-    const int W = bbox->shape[n][2];
-    bbox->shape[n][0] = C / 4;
-    bbox->shape[n][1] = 4;
-    bbox->shape[n][2] = H;
-    bbox->shape[n][3] = W;
-  }
-}
-
-void forward_rcnn_pred_layer(void* const net_, void* const layer_)
+void shape_softmax_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
+  long int temp_space;
 
-  Tensor* const pred = layer->p_tops[0];
-  const Tensor* const score = layer->p_bottoms[0];
+  softmax_shape(get_bottom(layer, 0), get_top(layer, 0),
+                &temp_space, &layer->option);
 
-  pred->ndim = 4;
-  pred->num_items = 1;
-  pred->shape[0][0] = score->shape[0][0];
-  pred->shape[0][1] = score->shape[0][1];
-  pred->shape[0][2] = 1;
-  pred->shape[0][3] = 1;
-  pred->start[0] = 0;
-
-  softmax_forward(score, pred, net->temp_data);
-
-  shape_rcnn_pred_layer(net, layer);
-}
-
-void shape_rcnn_pred_layer(void* const net_, void* const layer_)
-{
-  Layer* const layer = (Layer*)layer_;
-
-  Tensor* const pred = layer->p_tops[0];
-  const Tensor* const score = layer->p_bottoms[0];
-  const Tensor* const roi = layer->p_bottoms[1];
-
-  pred->ndim = 2;
-  pred->num_items = roi->num_items;
-  {
-    int total_size = 0;
-    for (int n = 0; n < roi->num_items; ++n) {
-      pred->shape[n][0] = roi->shape[n][0];
-      pred->shape[n][1] = score->shape[0][1];
-      pred->start[n] = total_size;
-      total_size += pred->shape[n][0] * pred->shape[n][1];
-    }
-  }
-}
-
-void forward_rcnn_bbox_layer(void* const net_, void* const layer_)
-{
-  Layer* const layer = (Layer*)layer_;
-
-  shape_rcnn_bbox_layer(net_, layer);
-}
-
-void shape_rcnn_bbox_layer(void* const net_, void* const layer_)
-{
-  Layer* const layer = (Layer*)layer_;
-
-  Tensor* const bbox = layer->p_tops[0];
-  const Tensor* const roi = layer->p_bottoms[1];
-
-  bbox->ndim = 3;
-  bbox->num_items = roi->num_items;
-  {
-    const int out_channels = bbox->shape[0][1];
-    int total_size = 0;
-    for (int n = 0; n < roi->num_items; ++n) {
-      bbox->shape[n][0] = roi->shape[n][0];
-      bbox->shape[n][1] = out_channels / 4;
-      bbox->shape[n][2] = 4;
-      bbox->start[n] = total_size;
-      total_size += roi->shape[n][0] * out_channels;
-    }
-  }
+  update_temp_space(net, temp_space);
 }

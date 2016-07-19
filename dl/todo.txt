@@ -1,24 +1,5 @@
-data structure, initializer, finalizer for aux_data
- deconv
- nms
- proposal
-
-modify softmax-related reshape
-
-img_info->data
-
-remove shared_block_id
-
-temp_data, tempint_data, const_data, ...
-
-code clearing for conv
-
-remove inplace for dropout, relu, softmax
-
-modify f_forward, f_shape, f_init
-
-indirect access for p_bottoms, p_tops, p_params
-
 remove shape inference during forward
 
 refactoring add_data_layer & set_input_pvanet & image.cu
+
+layers for frcnn

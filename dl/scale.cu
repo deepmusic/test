@@ -11,6 +11,7 @@
 //   top[i] = bottom[i] * weight + bias
 #ifdef GPU
 __global__
+static
 void scale_const_gpu(const real bottom[], real top[],
                      const real weight, const real bias,
                      const long int data_size)
@@ -21,6 +22,7 @@ void scale_const_gpu(const real bottom[], real top[],
   }
 }
 #else
+static
 void scale_const_cpu(const real bottom[], real top[],
                      const real weight, const real bias,
                      const long int data_size)
@@ -35,6 +37,7 @@ void scale_const_cpu(const real bottom[], real top[],
 //   top[c][i] = bottom[c][i] * weight[c] + bias[c]
 #ifdef GPU
 __global__
+static
 void scale_channel_gpu(const real bottom[], real top[],
                        const real weight[], const real bias[],
                        const int C, const int D)
@@ -47,6 +50,7 @@ void scale_channel_gpu(const real bottom[], real top[],
   }
 }
 #else
+static
 void scale_channel_cpu(const real bottom[], real top[],
                        const real weight[], const real bias[],
                        const int C, const int D)
@@ -63,6 +67,7 @@ void scale_channel_cpu(const real bottom[], real top[],
 //   top[c][i] = bottom[c][i] * weight[c]
 #ifdef GPU
 __global__
+static
 void scale_channel_nobias_gpu(const real bottom[], real top[],
                               const real weight[],
                               const int C, const int D)
@@ -75,6 +80,7 @@ void scale_channel_nobias_gpu(const real bottom[], real top[],
   }
 }
 #else
+static
 void scale_channel_nobias_cpu(const real bottom[], real top[],
                               const real weight[],
                               const int C, const int D)
@@ -95,11 +101,12 @@ void scale_channel_nobias_cpu(const real bottom[], real top[],
 //   scale_channel_forward
 // --------------------------------------------------------------------------
 
+static
 void scale_const_forward(const Tensor* const bottom,
                          Tensor* const top,
                          const LayerOption* const option)
 {
-  const long int data_size = flatten_size(bottom);
+  const long int data_size = get_data_size(bottom);
   const real weight = option->scale_weight;
   const real bias = (option->bias) ? option->scale_bias : 0;
 
@@ -118,6 +125,7 @@ void scale_const_forward(const Tensor* const bottom,
   #endif
 }
 
+static
 void scale_channel_forward(const Tensor* const bottom,
                            Tensor* const top,
                            const Tensor* const weight,
@@ -193,6 +201,7 @@ void scale_const_shape(const Tensor* const bottom,
   }
 }
 
+static
 void scale_channel_shape(const Tensor* const bottom,
                          Tensor* const top,
                          Tensor* const weight,
@@ -228,16 +237,17 @@ void forward_scale_const_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
 
-  scale_const_forward(layer->p_bottoms[0], layer->p_tops[0], &layer->option);
+  scale_const_forward(get_bottom(layer, 0), get_top(layer, 0),
+                      &layer->option);
 }
 
 void forward_scale_channel_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
-  Tensor* const p_bias = (layer->option.bias) ? layer->p_params[1] : NULL;
+  Tensor* const p_bias = (layer->option.bias) ? get_param(layer, 1) : NULL;
 
-  scale_channel_forward(layer->p_bottoms[0], layer->p_tops[0],
-                        layer->p_params[0], p_bias,
+  scale_channel_forward(get_bottom(layer, 0), get_top(layer, 0),
+                        get_param(layer, 0), p_bias,
                         &layer->option);
 }
 
@@ -245,15 +255,15 @@ void shape_scale_const_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
 
-  scale_const_shape(layer->p_bottoms[0], layer->p_tops[0]);
+  scale_const_shape(get_bottom(layer, 0), get_top(layer, 0));
 }
 
 void shape_scale_channel_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
-  Tensor* const p_bias = (layer->option.bias) ? layer->p_params[1] : NULL;
+  Tensor* const p_bias = (layer->option.bias) ? get_param(layer, 1) : NULL;
 
-  scale_channel_shape(layer->p_bottoms[0], layer->p_tops[0],
-                      layer->p_params[0], p_bias,
+  scale_channel_shape(get_bottom(layer, 0), get_top(layer, 0),
+                      get_param(layer, 0), p_bias,
                       &layer->option);
 }

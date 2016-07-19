@@ -7,7 +7,6 @@ static clock_t tick0, tick1, tick00;
 
 // --------------------------------------------------------------------------
 // layer operator code
-//   fc_forward
 // --------------------------------------------------------------------------
 
 // fully-connected: bottom -> top
@@ -16,6 +15,7 @@ static clock_t tick0, tick1, tick00;
 //   weight: D' x D
 //   bias: 1 x D'
 //   const: N-dim array,  const[i] = 1 for all i
+static
 void fc_forward(const Tensor* const bottom2d,
                 Tensor* const top2d,
                 const Tensor* const weight2d,
@@ -146,11 +146,12 @@ void fc_forward(const Tensor* const bottom2d,
 // layer shape calculator code
 // --------------------------------------------------------------------------
 
+static
 void fc_shape(const Tensor* const bottom2d,
               Tensor* const top2d,
               Tensor* const weight2d,
               Tensor* const bias1d,
-              int* const const_size,
+              long int* const p_const_space,
               const LayerOption* const option)
 {
   // bottom shape: N x D
@@ -187,7 +188,7 @@ void fc_shape(const Tensor* const bottom2d,
   }
 
   // constant data size: N
-  *const_size = N;
+  *p_const_space = N * sizeof(real);
 }
 
 
@@ -200,10 +201,10 @@ void forward_fc_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
-  Tensor* const p_bias = (layer->option.bias) ? layer->p_params[1] : NULL;
+  Tensor* const p_bias = (layer->option.bias) ? get_param(layer, 1) : NULL;
 
-  fc_forward(layer->p_bottoms[0], layer->p_tops[0],
-             layer->p_params[0], p_bias,
+  fc_forward(get_bottom(layer, 0), get_top(layer, 0),
+             get_param(layer, 0), p_bias,
              net->const_data, &layer->option);
 
   #ifdef DEBUG
@@ -221,12 +222,12 @@ void shape_fc_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
-  Tensor* const p_bias = (layer->option.bias) ? layer->p_params[1] : NULL;
-  int const_size;
+  Tensor* const p_bias = (layer->option.bias) ? get_param(layer, 1) : NULL;
+  long int const_space;
 
-  fc_shape(layer->p_bottoms[0], layer->p_tops[0],
-           layer->p_params[0], p_bias,
-           &const_size, &layer->option);
+  fc_shape(get_bottom(layer, 0), get_top(layer, 0),
+           get_param(layer, 0), p_bias,
+           &const_space, &layer->option);
 
-  update_net_size(net, layer, 0, 0, const_size);
+  update_const_space(net, const_space);
 }

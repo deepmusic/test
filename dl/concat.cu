@@ -3,13 +3,13 @@
 
 // --------------------------------------------------------------------------
 // layer operator code
-//   concat_forward
 // --------------------------------------------------------------------------
 
 // concat: bottom[0], bottom[1], ..., bottom[M-1] -> top
 //   M = option->num_bottoms
 //   bottom[m]: C_m x H x W  (C_m may different from each other)
 //   top: sum(C_m) x H x W  (channel-wise concatenation)
+static
 void concat_forward(const Tensor* const bottom3d[],
                     Tensor* const top3d,
                     const LayerOption* const option)
@@ -59,6 +59,7 @@ void concat_forward(const Tensor* const bottom3d[],
 // layer shape calculator code
 // --------------------------------------------------------------------------
 
+static
 void concat_shape(const Tensor* const bottom3d[],
                   Tensor* const top3d,
                   const LayerOption* const option)
@@ -101,16 +102,12 @@ void forward_concat_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
 
-  concat_forward(layer->p_bottoms, layer->p_tops[0], &layer->option);
+  concat_forward(layer->p_bottoms, get_top(layer, 0), &layer->option);
 }
 
 void shape_concat_layer(void* const net_, void* const layer_)
 {
-  Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
 
-  concat_shape(layer->p_bottoms, layer->p_tops[0],
-               &layer->option);
-
-  update_net_size(net, layer, 0, 0, 0);
+  concat_shape(layer->p_bottoms, get_top(layer, 0), &layer->option);
 }

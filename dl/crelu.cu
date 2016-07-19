@@ -10,6 +10,7 @@
 //   bottom[i] = -bottom[i]
 #ifdef GPU
 __global__
+static
 void minus_inplace_gpu(real bottom[], const int item_size)
 {
   const long int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -18,6 +19,7 @@ void minus_inplace_gpu(real bottom[], const int item_size)
   }
 }
 #else
+static
 void minus_inplace_cpu(real bottom[], const int item_size)
 {
   for (int index = 0; index < item_size; ++index) {
@@ -30,9 +32,9 @@ void minus_inplace_cpu(real bottom[], const int item_size)
 
 // --------------------------------------------------------------------------
 // layer operator code
-//   crelu_forward
 // --------------------------------------------------------------------------
 
+static
 void crelu_forward(const Tensor* const bottom,
                    Tensor* const top,
                    const LayerOption* const option)
@@ -80,6 +82,7 @@ void crelu_forward(const Tensor* const bottom,
 // layer shape calculator code
 // --------------------------------------------------------------------------
 
+static
 void crelu_shape(const Tensor* const bottom,
                  Tensor* const top)
 {
@@ -106,12 +109,12 @@ void forward_crelu_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
 
-  crelu_forward(layer->p_bottoms[0], layer->p_tops[0], &layer->option);
+  crelu_forward(get_bottom(layer, 0), get_top(layer, 0), &layer->option);
 }
 
 void shape_crelu_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
 
-  crelu_shape(layer->p_bottoms[0], layer->p_tops[0]);
+  crelu_shape(get_bottom(layer, 0), get_top(layer, 0));
 }

@@ -56,6 +56,10 @@ void draw_boxes(cv::Mat* const image,
     const int y2 = (int)ROUND(p_box[4]);
     const int w = x2 - x1 + 1;
     const int h = y2 - y1 + 1;
+
+    if (score < 0.7) {
+      continue;
+    }
     sprintf(label, "%s(%.2f)", class_name, score);
 
     if (score >= 0.8) {
@@ -151,11 +155,7 @@ void test_database(Net* const net,
   int total_count = 0, count = 0, buf_count = 0;
   FILE* fp_list = fopen(db_filename, "r");
 
-  #ifndef DEMO
   FILE* fp_out = fopen(out_filename, "wb");
-  #else
-  FILE* fp_out = NULL;
-  #endif
 
   clock_t tick0, tick1;
   float a_time[2] = { 0, };
@@ -163,12 +163,9 @@ void test_database(Net* const net,
   if (!fp_list) {
     printf("File not found: %s\n", db_filename);
   }
-
-  #ifndef DEMO
   if (!fp_out) {
     printf("File write error: %s\n", out_filename);
   }
-  #endif
 
   tick0 = clock();
 
@@ -277,12 +274,7 @@ void print_usage(void)
   printf("  1. [Live demo using WebCam] live <camera id> <width> <height>\n");
   printf("  2. [Image file] snapshot <image filename>\n");
   printf("  3. [Video file] video <video filename>\n");
-
-  #ifdef DEMO
   printf("  4. [List of images] database <DB filename> <output filename>\n");
-  #else
-  printf("  4. [List of images] database <DB filename> <output filename>\n");
-  #endif
 }
 
 static
@@ -391,19 +383,9 @@ int test(const char* const args[], const int num_args)
   }
 
   else if (strcmp(command, "database") == 0) {
-    #ifdef DEMO
-    const int arg_thresh = 5;
-    #else
-    const int arg_thresh = 6;
-    #endif
-    if (num_args >= arg_thresh) {
+    if (num_args >= 6) {
       const char* const db_filename = args[4];
-
-      #ifdef DEMO
-      const char* const out_filename = NULL;
-      #else
       const char* const out_filename = args[5];
-      #endif
 
       construct_pvanet(&pvanet, model_path,
                        is_light_model, fc_compress,

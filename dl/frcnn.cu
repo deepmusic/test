@@ -13,7 +13,7 @@ Layer* add_data_layer(Net* const net,
   add_top(layer, data);
   add_top(layer, img_info);
 
-  img_info->data_type = CPU_DATA;
+  img_info->data_type = PRIVATE_DATA;
   init_input_layer(net, data, img_info);
 
   return layer;
@@ -97,8 +97,7 @@ Layer* add_conv_layer(Net* const net,
                       const int kernel_h, const int kernel_w,
                       const int stride_h, const int stride_w,
                       const int pad_h, const int pad_w,
-                      const int bias_term,
-                      const int do_relu)
+                      const int bias_term)
 {
   Layer* const layer = add_param_layer(net, layer_name,
       bottom_name, top_name, weight_name, bias_name, bias_term);
@@ -114,11 +113,8 @@ Layer* add_conv_layer(Net* const net,
   layer->option.bias = bias_term;
   layer->option.handle = (void*)&net->blas_handle;
 
-  layer->f_forward[0] = forward_conv_layer;
-  if (do_relu) {
-    layer->f_forward[1] = forward_inplace_relu_layer;
-  }
-  layer->f_shape[0] = shape_conv_layer;
+  layer->f_forward = forward_conv_layer;
+  layer->f_shape = shape_conv_layer;
 
   return layer;
 }
@@ -133,18 +129,17 @@ Layer* add_deconv_layer(Net* const net,
                         const int kernel_h, const int kernel_w,
                         const int stride_h, const int stride_w,
                         const int pad_h, const int pad_w,
-                        const int bias_term,
-                        const int do_relu)
+                        const int bias_term)
 {
   Layer* const layer = add_conv_layer(net, layer_name,
       bottom_name, top_name, weight_name, bias_name, num_group, num_output,
-      kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w,
-      bias_term, do_relu);
+      kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w, bias_term);
 
-  layer->f_forward[0] = forward_deconv_layer;
-  layer->f_shape[0] = shape_deconv_layer;
-  layer->f_malloc = malloc_deconv_layer;
+  layer->f_forward = forward_deconv_layer;
+  layer->f_shape = shape_deconv_layer;
   layer->f_free = free_deconv_layer;
+
+  malloc_deconv_layer(net, layer);
 
   return layer;
 }
@@ -156,8 +151,7 @@ Layer* add_fc_layer(Net* const net,
                     const char* const weight_name,
                     const char* const bias_name,
                     const int num_output,
-                    const int bias_term,
-                    const int do_relu)
+                    const int bias_term)
 {
   Layer* const layer = add_param_layer(net, layer_name,
       bottom_name, top_name, weight_name, bias_name, bias_term);
@@ -166,22 +160,19 @@ Layer* add_fc_layer(Net* const net,
   layer->option.bias = bias_term;
   layer->option.handle = (void*)&net->blas_handle;
 
-  layer->f_forward[0] = forward_fc_layer;
-  if (do_relu) {
-    layer->f_forward[1] = forward_inplace_relu_layer;
-  }
-  layer->f_shape[0] = shape_fc_layer;
+  layer->f_forward = forward_fc_layer;
+  layer->f_shape = shape_fc_layer;
 
   return layer;
 }
 
-Layer* add_pool_layer(Net* const net,
-                      const char* const layer_name,
-                      const char* const bottom_name,
-                      const char* const top_name,
-                      const int kernel_h, const int kernel_w,
-                      const int stride_h, const int stride_w,
-                      const int pad_h, const int pad_w)
+Layer* add_max_pool_layer(Net* const net,
+                          const char* const layer_name,
+                          const char* const bottom_name,
+                          const char* const top_name,
+                          const int kernel_h, const int kernel_w,
+                          const int stride_h, const int stride_w,
+                          const int pad_h, const int pad_w)
 {
   Layer* const layer =
       add_chain_layer(net, layer_name, bottom_name, top_name);
@@ -193,8 +184,8 @@ Layer* add_pool_layer(Net* const net,
   layer->option.pad_h = pad_h;
   layer->option.pad_w = pad_w;
 
-  layer->f_forward[0] = forward_pool_layer;
-  layer->f_shape[0] = shape_pool_layer;
+  layer->f_forward = forward_max_pool_layer;
+  layer->f_shape = shape_pool_layer;
 
   return layer;
 }
@@ -214,8 +205,8 @@ Layer* add_scale_const_layer(Net* const net,
   layer->option.scale_bias = bias;
   layer->option.bias = bias_term;
 
-  layer->f_forward[0] = forward_scale_const_layer;
-  layer->f_shape[0] = shape_scale_const_layer;
+  layer->f_forward = forward_scale_const_layer;
+  layer->f_shape = shape_scale_const_layer;
 
   return layer;
 }
@@ -233,8 +224,8 @@ Layer* add_scale_channel_layer(Net* const net,
 
   layer->option.bias = bias_term;
 
-  layer->f_forward[0] = forward_scale_channel_layer;
-  layer->f_shape[0] = shape_scale_channel_layer;
+  layer->f_forward = forward_scale_channel_layer;
+  layer->f_shape = shape_scale_channel_layer;
 
   return layer;
 }
@@ -248,8 +239,8 @@ Layer* add_concat_layer(Net* const net,
   Layer* const layer = add_hub_layer(net, layer_name,
       p_bottom_names, top_name, num_bottoms);
 
-  layer->f_forward[0] = forward_concat_layer;
-  layer->f_shape[0] = shape_concat_layer;
+  layer->f_forward = forward_concat_layer;
+  layer->f_shape = shape_concat_layer;
 
   return layer;
 }
@@ -263,8 +254,8 @@ Layer* add_eltwise_layer(Net* const net,
   Layer* const layer = add_hub_layer(net, layer_name,
       p_bottom_names, top_name, num_bottoms);
 
-  layer->f_forward[0] = forward_eltwise_sum_layer;
-  layer->f_shape[0] = shape_eltwise_layer;
+  layer->f_forward = forward_eltwise_sum_layer;
+  layer->f_shape = shape_eltwise_layer;
 
   return layer;
 }
@@ -280,8 +271,8 @@ Layer* add_relu_layer(Net* const net,
 
   layer->option.negative_slope = negative_slope;
 
-  layer->f_forward[0] = forward_relu_layer;
-  layer->f_shape[0] = shape_relu_layer;
+  layer->f_forward = forward_relu_layer;
+  layer->f_shape = shape_relu_layer;
 
   return layer;
 }
@@ -299,174 +290,91 @@ Layer* add_dropout_layer(Net* const net,
   layer->option.test = is_test;
   layer->option.scaled = is_scaled;
 
-  layer->f_forward[0] = forward_dropout_layer;
-  layer->f_shape[0] = shape_dropout_layer;
+  layer->f_forward = forward_dropout_layer;
+  layer->f_shape = shape_dropout_layer;
 
   return layer;
 }
 
-static
-void setup_inception_sub(Net* const net,
-                         const char* const sub_name,
-                         const char* const input_name,
-                         const int out_channels[],
-                         const int stride)
+Layer* add_reshape_layer(Net* const net,
+                         const char* const layer_name,
+                         const char* const bottom_name,
+                         const char* const top_name,
+                         const int shape[],
+                         const int ndim)
 {
-  char bottom_name[MAX_NAME_LEN];
-  char top_name[MAX_NAME_LEN];
-  char top_name2[MAX_NAME_LEN];
+  Layer* const layer =
+      add_chain_layer(net, layer_name, bottom_name, top_name);
 
-  if (stride > 1) {
-    // pool1
-    sprintf(top_name, "%s_pool1", sub_name);
-    add_pool_layer(net, top_name, input_name, top_name,
-                   3, 3, stride, stride, 0, 0);
-    // conv1
-    sprintf(bottom_name, "%s_pool1", sub_name);
-    sprintf(top_name, "%s_conv1", sub_name);
-    add_conv_layer(net, top_name, bottom_name, top_name, NULL, NULL,
-                     1, out_channels[0], 1, 1, 1, 1, 0, 0, 1, 0);
+  for (int i = 0; i < ndim; ++i) {
+    layer->option.reshape[i] = shape[i];
   }
-  else {
-    // conv1
-    sprintf(top_name, "%s_conv1", sub_name);
-    add_conv_layer(net, top_name, input_name, top_name, NULL, NULL,
-                     1, out_channels[0], 1, 1, 1, 1, 0, 0, 1, 0);
-  }
-  sprintf(top_name2, "%s_relu1", sub_name);
-  add_relu_layer(net, top_name2, top_name, top_name, 0);
+  layer->option.reshape_ndim = ndim;
 
-  // conv3_1
-  sprintf(top_name, "%s_conv3_1", sub_name);
-  add_conv_layer(net, top_name, input_name, top_name, NULL, NULL,
-                   1, out_channels[1], 1, 1, 1, 1, 0, 0, 1, 0);
-  sprintf(top_name2, "%s_relu3_1", sub_name);
-  add_relu_layer(net, top_name2, top_name, top_name, 0);
+  layer->f_forward = forward_reshape_layer;
+  layer->f_shape = shape_reshape_layer;
 
-  // conv3_2
-  sprintf(bottom_name, "%s_conv3_1", sub_name);
-  sprintf(top_name, "%s_conv3_2", sub_name);
-  add_conv_layer(net, top_name, bottom_name, top_name, NULL, NULL,
-                   1, out_channels[2], 3, 3, stride, stride, 1, 1, 1, 0);
-  sprintf(top_name2, "%s_relu3_2", sub_name);
-  add_relu_layer(net, top_name2, top_name, top_name, 0);
-
-  // conv5_1
-  sprintf(top_name, "%s_conv5_1", sub_name);
-  add_conv_layer(net, top_name, input_name, top_name, NULL, NULL,
-                   1, out_channels[3], 1, 1, 1, 1, 0, 0, 1, 0);
-  sprintf(top_name2, "%s_relu5_1", sub_name);
-  add_relu_layer(net, top_name2, top_name, top_name, 0);
-
-  // conv5_2
-  sprintf(bottom_name, "%s_conv5_1", sub_name);
-  sprintf(top_name, "%s_conv5_2", sub_name);
-  add_conv_layer(net, top_name, bottom_name, top_name, NULL, NULL,
-                   1, out_channels[4], 3, 3, 1, 1, 1, 1, 1, 0);
-  sprintf(top_name2, "%s_relu5_2", sub_name);
-  add_relu_layer(net, top_name2, top_name, top_name, 0);
-
-  // conv5_2
-  sprintf(bottom_name, "%s_conv5_2", sub_name);
-  sprintf(top_name, "%s_conv5_3", sub_name);
-  add_conv_layer(net, top_name, bottom_name, top_name, NULL, NULL,
-                   1, out_channels[5], 3, 3, stride, stride, 1, 1, 1, 0);
-  sprintf(top_name2, "%s_relu5_3", sub_name);
-  add_relu_layer(net, top_name2, top_name, top_name, 0);
-
-  // concat
-  {
-    char bottom_names[3][MAX_NAME_LEN];
-    char* const p_bottom_names[3] = {
-        bottom_names[0], bottom_names[1], bottom_names[2]
-    };
-    sprintf(p_bottom_names[0], "%s_conv1", sub_name);
-    sprintf(p_bottom_names[1], "%s_conv3_2", sub_name);
-    sprintf(p_bottom_names[2], "%s_conv5_3", sub_name);
-    sprintf(top_name, "%s", sub_name);
-    add_concat_layer(net, top_name, p_bottom_names, top_name, 3);
-  }
+  return layer;
 }
 
-void setup_hyper_sub(Net* const net,
-                     const char* const downsample_name,
-                     const char* const as_is_name,
-                     const char* const upsample_name,
-                     const int out_channels[])
+Layer* add_softmax_layer(Net* const net,
+                         const char* const layer_name,
+                         const char* const bottom_name,
+                         const char* const top_name,
+                         const int channel_axis)
 {
-  const char* const p_hyper_names[3] = {
-      "downsample", as_is_name, "upsample"
-  };
+  Layer* const layer =
+      add_chain_layer(net, layer_name, bottom_name, top_name);
 
-  // downsample
-  add_pool_layer(net, p_hyper_names[0], downsample_name, p_hyper_names[0],
-                 3, 3, 2, 2, 0, 0);
+  layer->option.channel_axis = channel_axis;
 
-  // upsample
-  add_deconv_layer(net, p_hyper_names[2], upsample_name, p_hyper_names[2],
-                   NULL, NULL, out_channels[0], out_channels[0],
-                   4, 4, 2, 2, 1, 1, 0, 0);
+  layer->f_forward = forward_softmax_layer;
+  layer->f_shape = shape_softmax_layer;
 
-  // concat
-  add_concat_layer(net, "concat", p_hyper_names, "concat", 3);
-
-  // convf
-  add_conv_layer(net, "convf", "concat", "convf", NULL, NULL,
-                 1, out_channels[1], 1, 1, 1, 1, 0, 0, 1, 0);
-  add_relu_layer(net, "reluf", "convf", "convf", 0);
+  return layer;
 }
 
-void setup_inception(Net* const net)
+Layer* add_proposal_layer(Net* const net,
+                          const char* const layer_name,
+                          const char* const score_name,
+                          const char* const bbox_name,
+                          const char* const img_info_name,
+                          const char* const top_name,
+                          real anchor_scales[], const int num_scales,
+                          real anchor_ratios[], const int num_ratios,
+                          const int feat_stride,
+                          const int base_size, const int min_size,
+                          const int pre_nms_topn, const int post_nms_topn,
+                          const real nms_thresh,
+                          const int bbox_vote, const real vote_thresh)
 {
-  // data
-  add_data_layer(net, "data", "data", "img_info");
+  Layer* const layer = add_layer(net, layer_name);
 
-  // conv1
-  add_conv_layer(net, "conv1", "data", "conv1", NULL, NULL,
-                 1, 32, 4, 4, 2, 2, 1, 1, 1, 0);
-  add_relu_layer(net, "relu1", "conv1", "conv1", 0);
-  get_tensor_by_name(net, "conv1")->data_type = PRIVATE_DATA;
+  add_bottom(layer, get_tensor_by_name(net, score_name));
+  add_bottom(layer, get_tensor_by_name(net, bbox_name));
+  add_bottom(layer, get_tensor_by_name(net, img_info_name));
+  add_top(layer, add_tensor(net, top_name));
 
-  // conv2
-  add_conv_layer(net, "conv2", "conv1", "conv2", NULL, NULL,
-                 1, 48, 3, 3, 2, 2, 1, 1, 1, 0);
-  add_relu_layer(net, "relu2", "conv2", "conv2", 0);
+  layer->option.num_scales = num_scales;
+  layer->option.num_ratios = num_ratios;
+  layer->option.base_size = base_size;
+  layer->option.feat_stride = feat_stride;
+  layer->option.min_size = min_size;
+  layer->option.pre_nms_topn = pre_nms_topn;
+  layer->option.post_nms_topn = post_nms_topn;
+  layer->option.nms_thresh = nms_thresh;
+  layer->option.bbox_vote = bbox_vote;
+  layer->option.vote_thresh = vote_thresh;
+  layer->option.scales = anchor_scales;
+  layer->option.ratios = anchor_ratios;
 
-  // conv3
-  add_conv_layer(net, "conv3", "conv2", "conv3", NULL, NULL,
-                 1, 96, 3, 3, 2, 2, 1, 1, 1, 0);
-  add_relu_layer(net, "relu3", "conv3", "conv3", 0);
-  get_tensor_by_name(net, "conv3")->data_type = PRIVATE_DATA;
+  layer->f_forward = forward_proposal_layer;
+  layer->f_shape = shape_proposal_layer;
+  layer->f_free = free_proposal_layer;
 
-  // inc3
-  {
-    const int out_channels[] = { 96, 16, 64, 16, 32, 32 };
+  malloc_proposal_layer(net, layer);
 
-    setup_inception_sub(net, "inc3a", "conv3", out_channels, 2);
-    setup_inception_sub(net, "inc3b", "inc3a", out_channels, 1);
-    setup_inception_sub(net, "inc3c", "inc3b", out_channels, 1);
-    setup_inception_sub(net, "inc3d", "inc3c", out_channels, 1);
-    setup_inception_sub(net, "inc3e", "inc3d", out_channels, 1);
-  }
-
-  // inc4
-  {
-    const int out_channels[] = { 128, 32, 96, 16, 32, 32 };
-
-    setup_inception_sub(net, "inc4a", "inc3e", out_channels, 2);
-    setup_inception_sub(net, "inc4b", "inc4a", out_channels, 1);
-    setup_inception_sub(net, "inc4c", "inc4b", out_channels, 1);
-    setup_inception_sub(net, "inc4d", "inc4c", out_channels, 1);
-    setup_inception_sub(net, "inc4e", "inc4d", out_channels, 1);
-  }
-
-  // hypercolumn
-  {
-    const int out_channels[] = { 256, 256 };
-
-    setup_hyper_sub(net, "conv3", "inc3e", "inc4e",
-                    out_channels);
-  }
+  return layer;
 }
 
 void setup_frcnn(Net* const net,
@@ -475,65 +383,50 @@ void setup_frcnn(Net* const net,
                  const int rpn_channels,
                  const int rpn_kernel_h, const int rpn_kernel_w,
                  const int fc_compress,
-                 const int fc6_channels, const int fc7_channels,
+                 const int fc6_dim, const int fc7_dim,
                  const int pre_nms_topn, const int post_nms_topn)
 {
   add_conv_layer(net, "rpn_conv1", rpn_input_name, "rpn_conv1", NULL, NULL,
                  1, rpn_channels, rpn_kernel_h, rpn_kernel_w, 1, 1,
-                 (rpn_kernel_h - 1) / 2, (rpn_kernel_w - 1) / 2, 1, 0);
+                 (rpn_kernel_h - 1) / 2, (rpn_kernel_w - 1) / 2, 1);
   add_relu_layer(net, "rpn_relu1", "rpn_conv1", "rpn_conv1", 0);
 
   add_conv_layer(net, "rpn_cls_score", "rpn_conv1", "rpn_cls_score",
                  NULL, NULL,
-                 1, 50, 1, 1, 1, 1, 0, 0, 1, 0);
-  get_layer_by_name(net, "rpn_cls_score")->f_forward[1]
-      = forward_rpn_pred_layer;
-  get_layer_by_name(net, "rpn_cls_score")->f_shape[1]
-      = shape_rpn_pred_layer;
+                 1, 50, 1, 1, 1, 1, 0, 0, 1);
+
+  {
+    //int rpn_score_shape[] = { 2, 0, 0, -1 };
+    int rpn_score_shape[] = { 2, -1, 0 };
+    add_reshape_layer(net, "rpn_cls_score_reshape",
+                      "rpn_cls_score", "rpn_cls_score", rpn_score_shape, 3);
+  }
+
+  add_softmax_layer(net, "rpn_cls_pred", "rpn_cls_score", "rpn_cls_score",
+                    0);
+
+  {
+    //int rpn_pred_shape[] = { -1, 0, 0 };
+    int rpn_pred_shape[] = { 50, -1, 0 };
+    add_reshape_layer(net, "rpn_cls_pred_reshape",
+                      "rpn_cls_score", "rpn_cls_score", rpn_pred_shape, 3);
+  }
 
   add_conv_layer(net, "rpn_bbox_pred", "rpn_conv1", "rpn_bbox_pred",
                  NULL, NULL,
-                 1, 100, 1, 1, 1, 1, 0, 0, 1, 0);
-  get_layer_by_name(net, "rpn_bbox_pred")->f_forward[1]
-      = forward_rpn_bbox_layer;
-  get_layer_by_name(net, "rpn_bbox_pred")->f_shape[1]
-      = shape_rpn_bbox_layer;
+                 1, 100, 1, 1, 1, 1, 0, 0, 1);
 
   // proposal, RoI-pooling
   {
     real anchor_scales[5] = { 3.0f, 6.0f, 9.0f, 16.0f, 32.0f };
     real anchor_ratios[5] = { 0.5f, 0.667f, 1.0f, 1.5f, 2.0f };
-    Layer* const layer = add_layer(net, "proposal");
-    layer->option.num_scales = 5;
-    layer->option.num_ratios = 5;
-
-    memcpy(net->anchor_scales, anchor_scales,
-           layer->option.num_scales * sizeof(real));
-    memcpy(net->anchor_ratios, anchor_ratios,
-           layer->option.num_ratios * sizeof(real));
-
-    layer->option.base_size = 16;
-    layer->option.feat_stride = 16;
-    layer->option.min_size = 16;
-    layer->option.pre_nms_topn = pre_nms_topn;
-    layer->option.post_nms_topn = post_nms_topn;
-    layer->option.nms_thresh = 0.7f;
-    layer->option.bbox_vote = 0;
-    layer->option.vote_thresh = 0.7f;
-    layer->option.scales = &net->anchor_scales[0];
-    layer->option.ratios = &net->anchor_ratios[0];
-    add_bottom(layer, get_tensor_by_name(net, "rpn_cls_score"));
-    add_bottom(layer, get_tensor_by_name(net, "rpn_bbox_pred"));
-    add_bottom(layer, get_tensor_by_name(net, "img_info"));
-    add_top(layer, add_tensor(net, "rpn_roi"));
-    layer->f_forward[0] = forward_proposal_layer;
-    layer->f_shape[0] = shape_proposal_layer;
-    layer->f_malloc = malloc_proposal_layer;
-    layer->f_free = free_proposal_layer;
+    add_proposal_layer(net, "proposal", "rpn_cls_score", "rpn_bbox_pred", "img_info", "rpn_roi",
+                       anchor_scales, 5, anchor_ratios, 5, 16, 16, 16, pre_nms_topn, post_nms_topn, 0.7f, 0, 0.7f);
   }
   {
     Layer* const layer = add_layer(net, "rcnn_roipool");
     Tensor* const top = add_tensor(net, "rcnn_roipool");
+    top->data_type = PRIVATE_DATA;
     layer->option.pooled_height = 6;
     layer->option.pooled_width = 6;
     layer->option.spatial_scale = 0.0625;
@@ -541,94 +434,58 @@ void setup_frcnn(Net* const net,
     add_bottom(layer, get_tensor_by_name(net, rcnn_input_name));
     add_bottom(layer, get_tensor_by_name(net, "rpn_roi"));
     add_top(layer, top);
-    top->data_type = PRIVATE_DATA;
-    layer->f_forward[0] = forward_roipool_layer;
-    layer->f_shape[0] = shape_roipool_layer;
+    layer->f_forward = forward_roipool_layer;
+    layer->f_shape = shape_roipool_layer;
   }
 
   if (fc_compress) {
     add_fc_layer(net, "fc6_L", "rcnn_roipool", "fc6_L", NULL, NULL,
-                 fc6_channels, 0, 0);
-    add_fc_layer(net, "fc6_U", "fc6_L", "fc6_U", NULL, NULL,
-                 4096, 1, 0);
+                 fc6_dim, 0);
+    add_fc_layer(net, "fc6_U", "fc6_L", "fc6_U", NULL, NULL, 4096, 1);
     add_relu_layer(net, "relu6", "fc6_U", "fc6_U", 0);
     add_dropout_layer(net, "drop6", "fc6_U", "fc6_U", 1, 1);
 
-    add_fc_layer(net, "fc7_L", "fc6_U", "fc7_L", NULL, NULL,
-                 fc7_channels, 0, 0);
-    add_fc_layer(net, "fc7_U", "fc7_L", "fc7_U", NULL, NULL,
-                 4096, 1, 0);
+    add_fc_layer(net, "fc7_L", "fc6_U", "fc7_L", NULL, NULL, fc7_dim, 0);
+    add_fc_layer(net, "fc7_U", "fc7_L", "fc7_U", NULL, NULL, 4096, 1);
     add_relu_layer(net, "relu7", "fc7_U", "fc7_U", 0);
     add_dropout_layer(net, "drop7", "fc7_U", "fc7_U", 1, 1);
 
-    add_fc_layer(net, "cls_score", "fc7_U", "cls_score", NULL, NULL,
-                 21, 1, 0);
+    add_fc_layer(net, "cls_score", "fc7_U", "cls_score", NULL, NULL, 21, 1);
+    add_fc_layer(net, "bbox_pred", "fc7_U", "bbox_pred", NULL, NULL, 84, 1);
   }
   else {
-    add_fc_layer(net, "fc6", "rcnn_roipool", "fc6", NULL, NULL,
-                 4096, 1, 0);
+    add_fc_layer(net, "fc6", "rcnn_roipool", "fc6", NULL, NULL, 4096, 1);
     add_relu_layer(net, "relu6", "fc6", "fc6", 0);
     add_dropout_layer(net, "drop6", "fc6", "fc6", 1, 1);
 
-    add_fc_layer(net, "fc7", "fc6", "fc7", NULL, NULL,
-                 4096, 1, 0);
+    add_fc_layer(net, "fc7", "fc6", "fc7", NULL, NULL, 4096, 1);
     add_relu_layer(net, "relu7", "fc7", "fc7", 0);
     add_dropout_layer(net, "drop7", "fc7", "fc7", 1, 1);
 
-    add_fc_layer(net, "cls_score", "fc7", "cls_score", NULL, NULL,
-                 21, 1, 0);
+    add_fc_layer(net, "cls_score", "fc7", "cls_score", NULL, NULL, 21, 1);
+    add_fc_layer(net, "bbox_pred", "fc7", "bbox_pred", NULL, NULL, 84, 1);
   }
 
-  {
-    Layer* const layer = add_layer(net, "cls_pred");
-    add_bottom(layer, get_tensor_by_name(net, "cls_score"));
-    add_bottom(layer, get_tensor_by_name(net, "rpn_roi"));
-    add_top(layer, add_tensor(net, "cls_pred"));
-    get_layer_by_name(net, "cls_pred")->f_forward[0]
-        = forward_rcnn_pred_layer;
-    get_layer_by_name(net, "cls_pred")->f_shape[0]
-        = shape_rcnn_pred_layer;
-  }
-  {
-    Layer* const layer = (fc_compress) ?
-        add_fc_layer(net, "bbox_pred",
-                     "fc7_U", "bbox_pred", NULL, NULL, 84, 1, 0)
-        : add_fc_layer(net, "bbox_pred",
-                       "fc7", "bbox_pred", NULL, NULL, 84, 1, 0);
+  add_softmax_layer(net, "cls_pred", "cls_score", "cls_score", 1);
 
-    add_bottom(layer, get_tensor_by_name(net, "rpn_roi"));
-    get_layer_by_name(net, "bbox_pred")->f_forward[1]
-        = forward_rcnn_bbox_layer;
-    get_layer_by_name(net, "bbox_pred")->f_shape[1]
-        = shape_rcnn_bbox_layer;
-  }
   {
     Layer* const layer = add_layer(net, "out");
     layer->option.min_size = 16;
+    layer->option.pre_nms_topn = post_nms_topn;
     layer->option.score_thresh = 0.7f;
     layer->option.nms_thresh = 0.4f;
     layer->option.bbox_vote = 0;
     layer->option.vote_thresh = 0.5f;
-    add_bottom(layer, get_tensor_by_name(net, "cls_pred"));
+    add_bottom(layer, get_tensor_by_name(net, "cls_score"));
     add_bottom(layer, get_tensor_by_name(net, "bbox_pred"));
     add_bottom(layer, get_tensor_by_name(net, "rpn_roi"));
     add_bottom(layer, get_tensor_by_name(net, "img_info"));
     add_top(layer, add_tensor(net, "out"));
-    layer->f_forward[0] = forward_odout_layer;
-    layer->f_shape[0] = shape_odout_layer;
+    layer->f_forward = forward_odout_layer;
+    layer->f_shape = shape_odout_layer;
+    layer->f_free = free_odout_layer;
+    malloc_odout_layer(net, layer);
   }
-  #ifndef DEMO
-  {
-    Layer* const layer = add_layer(net, "test");
-    add_bottom(layer, get_tensor_by_name(net, "cls_pred"));
-    add_bottom(layer, get_tensor_by_name(net, "bbox_pred"));
-    add_bottom(layer, get_tensor_by_name(net, "rpn_roi"));
-    add_bottom(layer, get_tensor_by_name(net, "img_info"));
-    add_top(layer, add_tensor(net, "test"));
-    layer->f_forward[0] = forward_odtest_layer;
-    layer->f_shape[0] = shape_odtest_layer;
-  }
-  #endif
 }
 
 void construct_pvanet(Net* const pvanet,
@@ -657,26 +514,7 @@ void construct_pvanet(Net* const pvanet,
 
   shape_net(pvanet);
 
-  printf("Max layer size = %ld\n", pvanet->layer_size);
-  printf("Max param size = %ld\n", pvanet->param_size);
-  printf("Max temp size = %ld\n", pvanet->temp_size);
-  printf("Max tempint size = %ld\n", pvanet->tempint_size);
-  printf("Max const size = %ld\n", pvanet->const_size);
-
   malloc_net(pvanet);
-
-  // print total memory size required
-  {
-  #ifdef GPU
-    printf("%ldMB of main memory allocated\n",
-           DIV_THEN_CEIL(pvanet->space_cpu,  1000000));
-    printf("%ldMB of GPU memory allocated\n",
-           DIV_THEN_CEIL(pvanet->space,  1000000));
-  #else
-    printf("%ldMB of main memory allocated\n",
-           DIV_THEN_CEIL(pvanet->space + pvanet->space_cpu,  1000000));
-  #endif
-  }
 }
 
 void set_input_pvanet(Net* const net,
@@ -691,9 +529,18 @@ void set_input_pvanet(Net* const net,
   int shape_changed = (input->num_items != num_images);
 
   if (!shape_changed) {
+    #ifdef GPU
+    real img_info_cpu[BATCH_SIZE * 6];
+    const real* const p_img_info_cpu = img_info_cpu;
+    cudaMemcpyAsync(img_info_cpu, img_info->data,
+                    get_data_size(img_info) * sizeof(real),
+                    cudaMemcpyDeviceToHost);
+    #else
+    const real* const p_img_info_cpu = img_info->data;
+    #endif
     for (int n = 0; n < num_images; ++n) {
-      if (img_info->data[n * 6 + 4] != (real)heights[n] ||
-          img_info->data[n * 6 + 5] != (real)widths[n])
+      if (p_img_info_cpu[n * 6 + 4] != (real)heights[n] ||
+          p_img_info_cpu[n * 6 + 5] != (real)widths[n])
       {
         shape_changed = 1;
         break;
@@ -725,60 +572,44 @@ void get_output_pvanet(Net* const net,
                        FILE* fp)
 {
   // retrieve & save test output for measuring performance
-  #ifndef DEMO
-  {
-    const Tensor* const out = get_tensor_by_name(net, "test");
-    const long int output_size = flatten_size(out);
+  const Tensor* const out = get_tensor_by_name(net, "out");
+  const long int output_size = get_data_size(out);
 
   #ifdef GPU
-    cudaMemcpyAsync(net->temp_cpu_data, out->data,
-                    output_size * sizeof(real),
-                    cudaMemcpyDeviceToHost);
+  cudaMemcpyAsync(net->temp_cpu_data, out->data,
+                  output_size * sizeof(real),
+                  cudaMemcpyDeviceToHost);
   #else
-    memcpy(net->temp_cpu_data, out->data, output_size * sizeof(real));
+  memcpy(net->temp_cpu_data, out->data, output_size * sizeof(real));
   #endif
 
-    if (fp) {
-      for (int n = 0; n < out->num_items; ++n) {
-        const real* const p_out_item = net->temp_cpu_data + out->start[n];
-
-        fwrite(&out->ndim, sizeof(int), 1, fp);
-        fwrite(out->shape[n], sizeof(int), out->ndim, fp);
-        fwrite(p_out_item, sizeof(real), out->shape[n][0] * 6, fp);
-      }
+  if (fp) {
+    for (int n = 0; n < out->num_items; ++n) {
+      const real* const p_out_item = net->temp_cpu_data + out->start[n];
+      fwrite(&out->ndim, sizeof(int), 1, fp);
+      fwrite(out->shape[n], sizeof(int), out->ndim, fp);
+      fwrite(p_out_item, sizeof(real), out->shape[n][0] * 6, fp);
     }
   }
-  #endif
 
-  // retrieve & print output
-  {
-    const Tensor* const out = get_tensor_by_name(net, "out");
-    const long int output_size = flatten_size(out);
+  net->num_output_boxes = 0;
+  for (int n = 0; n < out->num_items; ++n) {
+    const int image_index = image_start_index + n;
+    const real* const p_out_item = net->temp_cpu_data + out->start[n];
 
-  #ifdef GPU
-    cudaMemcpyAsync(net->temp_cpu_data, out->data,
-                    output_size * sizeof(real),
-                    cudaMemcpyDeviceToHost);
-  #else
-    memcpy(net->temp_cpu_data, out->data, output_size * sizeof(real));
-  #endif
+    for (int i = 0; i < out->shape[n][0]; ++i) {
+      const int class_index = (int)p_out_item[i * 6 + 0];
 
-    net->num_output_boxes = 0;
-    for (int n = 0; n < out->num_items; ++n) {
-      const int image_index = image_start_index + n;
-      const real* const p_out_item = net->temp_cpu_data + out->start[n];
-
-      for (int i = 0; i < out->shape[n][0]; ++i) {
-        const int class_index = (int)p_out_item[i * 6 + 0];
-
-        printf("Image %d / Box %d: ", image_index, i);
-        printf("class %d, score %f, p1 = (%.2f, %.2f), p2 = (%.2f, %.2f)\n",
-               class_index, p_out_item[i * 6 + 5],
-               p_out_item[i * 6 + 1], p_out_item[i * 6 + 2],
-               p_out_item[i * 6 + 3], p_out_item[i * 6 + 4]);
+      if (p_out_item[i * 6 + 5] < 0.7f) {
+        continue;
       }
-      net->num_output_boxes += out->shape[n][0];
+      printf("Image %d / Box %d: ", image_index, i);
+      printf("class %d, score %f, p1 = (%.2f, %.2f), p2 = (%.2f, %.2f)\n",
+             class_index, p_out_item[i * 6 + 5],
+             p_out_item[i * 6 + 1], p_out_item[i * 6 + 2],
+             p_out_item[i * 6 + 3], p_out_item[i * 6 + 4]);
     }
+    net->num_output_boxes += out->shape[n][0];
   }
 }
 

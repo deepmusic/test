@@ -12,53 +12,51 @@ void set_tensor_name(Tensor* const tensor, const char* const name)
   strcpy(tensor->name, name);
 }
 
+// total number of elements in a tensor
+long int get_data_size(const Tensor* const tensor)
+{
+  long int total_size = 0;
+  for (int n = 0; n < tensor->num_items; ++n) {
+    long int size = 1;
+    for (int d = 0; d < tensor->ndim; ++d) {
+      size *= tensor->shape[n][d];
+    }
+    total_size += size;
+  }
+  return total_size;
+}
+
 // allocate memory for tensor
 //   allocate GPU memory in GPU mode, or CPU memory in CPU mode
 long int malloc_tensor_data(Tensor* const tensor,
-                            real* const shared_blocks[])
+                            real* const shared_block)
 {
-  long int space = 0;
+  long int space = get_data_size(tensor) * sizeof(real);
 
-  if (tensor->max_data_size) {
-    printf("[ERROR] Data size %ld for tensor %s seems not be initialized\n",
-           tensor->max_data_size, tensor->name);
-    return space;
-  }
   if (tensor->data) {
     printf("[ERROR] Tensor %s already refers to some memory\n",
            tensor->name);
     return space;
   }
 
-  tensor->max_data_size = flatten_size(tensor);
-
-  if (tensor->data_type == CPU_DATA) {
-    tensor->data = (real*)malloc(tensor->max_data_size * sizeof(real));
-    space = tensor->max_data_size * sizeof(real);
-  }
-  else if (tensor->data_type != SHARED_DATA) {
+  if (tensor->data_type != SHARED_DATA) {
     #ifdef GPU
-    cudaMalloc(&tensor->data, tensor->max_data_size * sizeof(real));
+    cudaMalloc(&tensor->data, space);
+    cudaMemset(tensor->data, 0, space);
     #else
-    tensor->data = (real*)malloc(tensor->max_data_size * sizeof(real));
+    tensor->data = (real*)malloc(space);
+    memset(tensor->data, 0, space);
     #endif
-    space = tensor->max_data_size * sizeof(real);
   }
   else {
-    tensor->data = shared_blocks[tensor->shared_block_id];
+    tensor->data = shared_block;
+    space = 0;
   }
 
   #ifdef DEBUG
   {
-    if (tensor->data_type == CPU_DATA) {
-      printf("%s: CPU memory allocated, %ld byte\n", tensor->name, space);
-    }
-    else if (tensor->data_type != SHARED_DATA) {
+    if (tensor->data_type != SHARED_DATA) {
       printf("%s: Memory allocated, %ld byte\n", tensor->name, space);
-    }
-    else {
-      printf("%s: Shared memory assigned, block %d\n",
-             tensor->name, tensor->shared_block_id);
     }
   }
   #endif
@@ -67,31 +65,21 @@ long int malloc_tensor_data(Tensor* const tensor,
 }
 
 // deallocate memory
-long int free_tensor_data(Tensor* const tensor)
+void free_tensor_data(Tensor* const tensor)
 {
-  long int space = 0;
-
   if (!tensor->data) {
     printf("[ERROR] Tensor %s: Data memory was not allocated\n",
            tensor->name);
   }
 
   else if (tensor->data_type != SHARED_DATA) {
-    if (tensor->data_type == CPU_DATA) {
-      free(tensor->data);
-    }
-    else {
-      #ifdef GPU
-      cudaFree(tensor->data);
-      #else
-      free(tensor->data);
-      #endif
-    }
+    #ifdef GPU
+    cudaFree(tensor->data);
+    #else
+    free(tensor->data);
+    #endif
     tensor->data = NULL;
-    space = tensor->max_data_size * sizeof(real);
   }
-
-  return space;
 }
 
 // load binary data from file & store to CPU memory
@@ -166,10 +154,10 @@ void load_tensor_data(const char* const filename,
     return;
   }
 
-  if (data_size != flatten_size(tensor)) {
+  if (data_size != get_data_size(tensor)) {
     printf("[ERROR] Size mismatch: %s (%ld) != tensor (%ld)\n",
-           filename, data_size, flatten_size(tensor));
-    data_size = MIN(data_size,  flatten_size(tensor));
+           filename, data_size, get_data_size(tensor));
+    data_size = MIN(data_size,  get_data_size(tensor));
   }
 
   #ifdef GPU
@@ -193,7 +181,7 @@ void save_tensor_data(const char* const filename,
   #ifdef GPU
     p_temp_cpu_data = temp_cpu_data;
     cudaMemcpyAsync(p_temp_cpu_data, tensor->data,
-                    flatten_size(tensor) * sizeof(real),
+                    get_data_size(tensor) * sizeof(real),
                     cudaMemcpyDeviceToHost);
   #else
     p_temp_cpu_data = tensor->data;
@@ -216,26 +204,12 @@ void save_tensor_data(const char* const filename,
   fclose(fp);
 }
 
-// total number of elements in a tensor
-long int flatten_size(const Tensor* const tensor)
-{
-  long int total_size = 0;
-  for (int n = 0; n < tensor->num_items; ++n) {
-    long int size = 1;
-    for (int d = 0; d < tensor->ndim; ++d) {
-      size *= tensor->shape[n][d];
-    }
-    total_size += size;
-  }
-  return total_size;
-}
-
 // print shapes for all batch items in tensor
 void print_tensor_info(const Tensor* const tensor)
 {
   #ifdef DEBUG
   {
-    printf("%s (size = %ld): ", tensor->name, flatten_size(tensor));
+    printf("%s (size = %ld): ", tensor->name, get_data_size(tensor));
     if (tensor->num_items > 1) {
       printf("batch size = %d\n", tensor->num_items);
       for (int n = 0; n < tensor->num_items; ++n) {

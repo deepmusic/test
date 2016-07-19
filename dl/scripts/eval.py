@@ -42,18 +42,16 @@ def test_net(filename, **kwargs):
   for i in xrange(num_images):
     ndim = unpack("i", f.read(4))[0]
     shape = np.frombuffer(f.read(ndim * 4), dtype=np.int32, count=-1)
-    num_classes = 21
-    num_boxes = shape[0] / num_classes
     data = np.frombuffer(f.read(np.prod(shape) * 4), dtype=np.float32, count=-1) \
-             .reshape((num_boxes, num_classes, 6))
-    scores = data[:,:imdb.num_classes,5]
-    boxes = data[:,:imdb.num_classes,1:5].reshape(num_boxes, -1)
-    print [i, scores.shape, boxes.shape]
+             .reshape(shape)
 
     for j in xrange(1, imdb.num_classes):
-      inds = np.where(scores[:, j] > thresh[j])[0]
-      cls_scores = scores[inds, j]
-      cls_boxes = boxes[inds, j*4:(j+1)*4]
+      box_idx = np.where(data[:, 0] == j)
+      scores = data[box_idx, 5][0]
+      boxes = data[box_idx, 1:5][0]
+      inds = np.where(scores > thresh[j])[0]
+      cls_scores = scores[inds]
+      cls_boxes = boxes[inds, :]
       top_inds = np.argsort(-cls_scores)[:max_per_image]
       cls_scores = cls_scores[top_inds]
       cls_boxes = cls_boxes[top_inds, :]
@@ -73,11 +71,8 @@ def test_net(filename, **kwargs):
       inds = np.where(all_boxes[j][i][:, -1] > thresh[j])[0]
       all_boxes[j][i] = all_boxes[j][i][inds, :]
 
-  print 'Applying NMS to all detections'
-  nms_dets = apply_nms(all_boxes, 0.4)
-
   print 'Evaluating detections'
-  imdb.evaluate_detections(nms_dets, outdir)
+  imdb.evaluate_detections(all_boxes, outdir)
 
 if __name__ == '__main__':
   test_net(sys.argv[1])

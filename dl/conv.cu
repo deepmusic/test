@@ -7,13 +7,20 @@
 static float a_time[8] = { 0, };
 static clock_t tick0, tick1, tick00, tick01;
 
+// --------------------------------------------------------------------------
+// kernel code
+//   conv_winograd_cpu
+//   convert_bottom_{gpu, cpu}
+// --------------------------------------------------------------------------
+
 #ifndef GPU
-void conv_k3s1p1(const real bottom3d[],
-                 const real weight4d[],
-                 real temp_data[],
-                 real top3d[],
-                 const int top_C, const int bottom_C,
-                 const int H, const int W)
+static
+void conv_winograd_cpu(const real bottom3d[],
+                       const real weight4d[],
+                       real temp_data[],
+                       real top3d[],
+                       const int top_C, const int bottom_C,
+                       const int H, const int W)
 {
   const int H2 = DIV_THEN_CEIL(H,  2);
   const int W2 = DIV_THEN_CEIL(W,  2);
@@ -157,221 +164,7 @@ void conv_k3s1p1(const real bottom3d[],
   a_time[3] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
   a_time[4] = (float)(tick1 - tick01) / CLOCKS_PER_SEC;
 }
-
-void conv_str1(const real bottom3d[],
-               const real weight4d[],
-               real top3d[],
-               const int C, const int H, const int W,
-               const int C5, const int H5, const int W5,
-               const int pad_h, const int pad_w)
-{
-  clock_t tick0, tick1, tick00;
-
-  real u_[1024][16];
-  real d_[4][4];
-  real v[16];
-  real uv[16];
-
-  if (H != H5 || W != W5) {
-    printf("[ERROR] Size mismatch! bottom:(%d x %d) vs. top:(%d x %d)\n",
-           H, W, H5, W5);
-  }
-
-  tick0 = clock();
-  tick00 = clock();
-
-  memset(top3d, 0, sizeof(real) * C5 * H5 * W5);
-
-  tick1 = clock();
-  a_time[0] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-
-  for (int c = 0; c < C; ++c) {
-    tick0 = clock();
-    {
-      for (int k = 0; k < C5; ++k) {
-        const real* const g = weight4d + (k * C + c) * 9;
-        real* const u = u_[k];
-        const real g_sum = (g[0] + g[1] + g[2] +
-                            g[3] + g[4] + g[5] +
-                            g[6] + g[7] + g[8]) / 4;
-        u[0] = g[0];
-        u[1] = (g[0] + g[1] + g[2]) / 2;
-        u[2] = (g[0] - g[1] + g[2]) / 2;
-        u[3] = g[2];
-        u[4] = (g[0] + g[3] + g[6]) / 2;
-        u[5] = g_sum;
-        u[6] = g_sum - (g[1] + g[4] + g[7]) / 2;
-        u[7] = (g[2] + g[5] + g[8]) / 2;
-        u[8] = (g[0] - g[3] + g[6]) / 2;
-        u[9] = g_sum - (g[3] + g[4] + g[5]) / 2;
-        u[10] = g_sum - (g[1] + g[3] + g[5] + g[7]) / 2;
-        u[11] = (g[2] - g[5] + g[8]) / 2;
-        u[12] = g[6];
-        u[13] = (g[6] + g[7] + g[8]) / 2;
-        u[14] = (g[6] - g[7] + g[8]) / 2;
-        u[15] = g[8];
-      }
-    }
-    tick1 = clock();
-    a_time[1] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-
-    tick0 = clock();
-    {
-      for (int h = 0; h < H; h += 2) {
-      for (int w = 0; w < W; w += 2) {
-        const real* const d
-            = bottom3d + (c * H + h - pad_h) * W + w - pad_w;
-        for (int j = 0; j < 4; ++j) {
-          for (int i = 0; i < 4; ++i) {
-            const int hh = h - pad_h + j;
-            const int ww = w - pad_w + i;
-            d_[j][i] = (hh >= 0 && hh < H && ww >= 0 && ww < W) ?
-                       d[j * W + i] : 0;
-          }
-        }
-
-        v[0] = d_[0][0] - d_[0][2] - d_[2][0] + d_[2][2];
-        v[1] = d_[0][1] + d_[0][2] - d_[2][1] - d_[2][2];
-        v[2] = -d_[0][1] + d_[0][2] + d_[2][1] - d_[2][2];
-        v[3] = d_[0][1] - d_[0][3] - d_[2][1] + d_[2][3];
-        v[4] = d_[1][0] - d_[1][2] + d_[2][0] - d_[2][2];
-        v[5] = d_[1][1] + d_[1][2] + d_[2][1] + d_[2][2];
-        v[6] = -d_[1][1] + d_[1][2] - d_[2][1] + d_[2][2];
-        v[7] = d_[1][1] - d_[1][3] + d_[2][1] - d_[2][3];
-        v[8] = -d_[1][0] + d_[1][2] + d_[2][0] - d_[2][2];
-        v[9] = -d_[1][1] - d_[1][2] + d_[2][1] + d_[2][2];
-        v[10] = d_[1][1] - d_[1][2] - d_[2][1] + d_[2][2];
-        v[11] = -d_[1][1] + d_[1][3] + d_[2][1] - d_[2][3];
-        v[12] = d_[1][0] - d_[1][2] - d_[3][0] + d_[3][2];
-        v[13] = d_[1][1] + d_[1][2] - d_[3][1] - d_[3][2];
-        v[14] = -d_[1][1] + d_[1][2] + d_[3][1] - d_[3][2];
-        v[15] = d_[1][1] - d_[1][3] - d_[3][1] + d_[3][3];
-
-        for (int k = 0; k < C5; ++k) {
-          const real* const u = u_[k];
-          for (int i = 0; i < 16; ++i) {
-            uv[i] = u[i] * v[i];
-          }
-
-          real* const y = top3d + (k * H + h) * W + w;
-
-          y[0] += uv[0] + uv[1] + uv[2] +
-                  uv[4] + uv[5] + uv[6] +
-                  uv[8] + uv[9] + uv[10];
-          if (w + 1 < W) {
-            y[1] += uv[1] - uv[2] - uv[3] +
-                    uv[5] - uv[6] - uv[7] +
-                    uv[9] - uv[10] - uv[11];
-          }
-          if (h + 1 < H) {
-            y[W] += uv[4] + uv[5] + uv[6]
-                    - uv[8] - uv[9] - uv[10]
-                    - uv[12] - uv[13] - uv[14];
-            if (w + 1 < W) {
-              y[W + 1] += uv[5] - uv[6] - uv[7]
-                          - uv[9] + uv[10] + uv[11]
-                          - uv[13] + uv[14] + uv[15];
-            }
-          }
-        }
-      }}
-    }
-    tick1 = clock();
-    a_time[2] += (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-  }
-
-  tick1 = clock();
-  a_time[4] += (float)(tick1 - tick00) / CLOCKS_PER_SEC;
-}
-
-void convert_bottom_hwc(const real bottom3d[],
-                        real bottom5d[],
-                        const int C, const int H, const int W,
-                        const int H5, const int W5,
-                        const int kernel_h, const int kernel_w,
-                        const int pad_h, const int pad_w,
-                        const int stride_h, const int stride_w)
-{
-  const int stride_kw = C;
-  const int stride_kh = kernel_w * stride_kw;
-  const int stride_w5 = kernel_h * stride_kh;
-  const int stride_h5 = W5 * stride_w5;
-  const int stride_w3 = C;
-  const int stride_h3 = W * stride_w3;
-
-  for (int h5 = 0; h5 < H5; ++h5) {
-    real* const p_bottom5d = bottom5d + h5 * stride_h5;
-    int h = h5 * stride_h - pad_h;
-    int h5_start = 0;
-    int kh = kernel_h;
-
-    if (h < 0) {
-      const int zero_padded_rows = -h;
-      for (int w5 = 0; w5 < W5; ++w5) {
-        memset(p_bottom5d + w5 * stride_w5, 0,
-               zero_padded_rows * stride_kh * sizeof(real));
-      }
-      h5_start = zero_padded_rows * stride_kh;
-      kh = kernel_h - zero_padded_rows;
-      h = 0;
-    }
-    else if (h > H - kernel_h) {
-      const int zero_padded_rows = h + kernel_h - H;
-      real* const p_bottom5d_ =
-          p_bottom5d + (kernel_h - zero_padded_rows) * stride_kh;
-      for (int w5 = 0; w5 < W5; ++w5) {
-        memset(p_bottom5d_ + w5 * stride_w5, 0,
-               zero_padded_rows * stride_kh * sizeof(real));
-      }
-      kh = kernel_h - zero_padded_rows;
-    }
-
-    for (int w5 = 0; w5 < W5; ++w5) {
-      real* const p_bottom5d_ = p_bottom5d + w5 * stride_w5 + h5_start;
-      int w = w5 * stride_w - pad_w;
-      int w5_start = 0;
-      int kw = kernel_w;
-
-      if (w < 0) {
-        const int zero_padded_cols = -w;
-        for (int i = 0; i < kh; ++i) {
-          memset(p_bottom5d_ + i * stride_kh, 0,
-                 zero_padded_cols * stride_kw * sizeof(real));
-        }
-        w5_start = zero_padded_cols * stride_kw;
-        kw = kernel_w - zero_padded_cols;
-        w = 0;
-      }
-      else if (w > W - kernel_w) {
-        const int zero_padded_cols = w + kernel_w - W;
-        real* const p_bottom5d__ =
-          p_bottom5d_ + (kernel_w - zero_padded_cols) * stride_kw;
-        for (int i = 0; i < kh; ++i) {
-          memset(p_bottom5d__ + i * stride_kh, 0,
-                 zero_padded_cols * stride_kw * sizeof(real));
-        }
-        kw = kernel_w - zero_padded_cols;
-      }
-
-      {
-        const real* const p_bottom3d = bottom3d +
-                                       h * stride_h3 + w * stride_w3;
-        real* const p_bottom5d__ = p_bottom5d_ + w5_start;
-        for (int i = 0; i < kh; ++i) {
-          memcpy(p_bottom5d__ + i * stride_kh,
-                 p_bottom3d + i * stride_h3,
-                 kw * stride_kw * sizeof(real));
-        }
-      }
-    } // endfor w5
-  } // endfor h5
-}
 #endif
-
-// --------------------------------------------------------------------------
-// kernel code
-//   convert_bottom_{gpu, cpu}
-// --------------------------------------------------------------------------
 
 // convert bottom3d (C x H x W)
 //         -> bottom5d (C x kernel_h x kernel_w x H5 x W5)
@@ -382,6 +175,7 @@ void convert_bottom_hwc(const real bottom3d[],
 //       if !(0 <= h < H) or !(0 <= w < W), assign 0
 #ifdef GPU
 __global__
+static
 void convert_bottom_gpu(const real bottom3d[],
                         real bottom5d[],
                         const int C, const int H, const int W,
@@ -422,6 +216,7 @@ void convert_bottom_gpu(const real bottom3d[],
   }
 }
 #else
+static
 void convert_bottom_cpu(const real bottom3d[],
                         real bottom5d[],
                         const int C, const int H, const int W,
@@ -485,7 +280,6 @@ void convert_bottom_cpu(const real bottom3d[],
 
 // --------------------------------------------------------------------------
 // layer operator code
-//   conv_forward
 // --------------------------------------------------------------------------
 
 // convolution: bottom -> top
@@ -496,6 +290,7 @@ void convert_bottom_cpu(const real bottom3d[],
 //   bias: (G * C') x 1
 //   temp: (G * C * kernel_h * kernel_w) x (H' * W') array
 //   const: 1 x (H' * W') array,  const[i] = 1 for all i
+static
 void conv_forward(const Tensor* const bottom3d,
                   Tensor* const top3d,
                   const Tensor* const weight5d,
@@ -538,14 +333,15 @@ void conv_forward(const Tensor* const bottom3d,
     top3d->shape[n][1] = top_H;
     top3d->shape[n][2] = top_W;
   #ifndef GPU
-    if (top_C >= 64 &&
+    if (top_C >= 48 &&
         kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1)
     {
-      //conv_str1(p_bottom_item, weight5d->data, p_top_item,
-      //          bottom_C, bottom_H, bottom_W, top_C, top_H, top_W,
-      //          pad_h, pad_w);
-      conv_k3s1p1(p_bottom_item, weight5d->data, temp_data, p_top_item,
-                  top_C, bottom_C, bottom_H, bottom_W);
+      conv_winograd_cpu(
+          p_bottom_item,  weight5d->data,  temp_data,  p_top_item,
+          top_C, bottom_C, bottom_H, bottom_W);
+      #ifdef DEBUG
+      printf("%s -> %s: Winograd conv\n", bottom3d->name, top3d->name);
+      #endif
     }
     else {
   #endif
@@ -679,16 +475,6 @@ void conv_forward(const Tensor* const bottom3d,
       //   do_transpose_X (= false),  do_transpose_Y (= false),
       //   m = G * C',  n = H' * W',  p = 1
       //   alpha = 1,  beta = 1
-/*
-      cblas_sgemm(CblasRowMajor,
-                  CblasNoTrans,  CblasNoTrans,
-                  top_channels,  top_area,  1,
-                  1,
-                  bias1d->data,  1,
-                  const_data,  top_area,
-                  1,
-                  p_top_item,  top_area);
-*/
       cblas_sger(CblasRowMajor,
                  top_channels,  top_area,
                  1,
@@ -705,11 +491,8 @@ void conv_forward(const Tensor* const bottom3d,
     {
       const int bottom_size = num_groups * bottom_C * bottom_H * bottom_W;
       const int top_size = num_groups * top_C * top_H * top_W;
-      //const int temp_size =
-      //    num_groups * bottom_C * kernel_h * kernel_w * top_H * top_W;
       p_bottom_item += bottom_size;
       p_top_item += top_size;
-      //p_temp_data += temp_size;
     }
   } // endfor batch
 
@@ -727,12 +510,13 @@ void conv_forward(const Tensor* const bottom3d,
 // layer shape calculator code
 // --------------------------------------------------------------------------
 
+static
 void conv_shape(const Tensor* const bottom3d,
                 Tensor* const top3d,
                 Tensor* const weight5d,
                 Tensor* const bias1d,
-                int* const temp_size,
-                int* const const_size,
+                long int* const p_temp_space,
+                long int* const p_const_space,
                 const LayerOption* const option)
 {
   const int num_groups = option->num_groups; // G
@@ -746,7 +530,7 @@ void conv_shape(const Tensor* const bottom3d,
   const int stride_w = option->stride_w;
 
   // calculate shape for each item in the batch
-  int total_size = 0, total_top_area = 0, max_top_area = 0;
+  int total_size = 0, max_top_area = 0;
   for (int n = 0; n < bottom3d->num_items; ++n) {
     // bottom shape: (G * C) x H x W
     const int bottom_H = bottom3d->shape[n][1];  // H
@@ -766,8 +550,7 @@ void conv_shape(const Tensor* const bottom3d,
     top3d->start[n] = total_size;
     total_size += num_groups * top_C * top_H * top_W;
 
-    // sum(H' * W') & max(H' * W') in the batch
-    total_top_area += top_area;
+    // max(H' * W') in the batch
     max_top_area = MAX(max_top_area,  top_area);
   }
   top3d->ndim = 3;
@@ -797,13 +580,15 @@ void conv_shape(const Tensor* const bottom3d,
     bias1d->start[0] = 0;
   }
 
-  // temporary data size: G * C * kernel_h * kernel_w * sum(H' * W')
-  *temp_size = num_groups * bottom_C * kernel_h * kernel_w * max_top_area
-               + num_groups * top_C * max_top_area * 4
-               + num_groups * top_C * bottom_C * 4 * 4;
+  // temporary data size: G * C * kernel_h * kernel_w * max(H' * W')
+  //                      + additional space for Winograd convolution
+  *p_temp_space = sizeof(real) * (
+      num_groups * bottom_C * kernel_h * kernel_w * max_top_area
+      + num_groups * top_C * max_top_area * 4
+      + num_groups * top_C * bottom_C * 4 * 4);
 
   // constant data size: max(H' * W')
-  *const_size = max_top_area;
+  *p_const_space = max_top_area * sizeof(real);
 }
 
 
@@ -816,10 +601,10 @@ void forward_conv_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
-  Tensor* const p_bias = (layer->option.bias) ? layer->p_params[1] : NULL;
+  Tensor* const p_bias = (layer->option.bias) ? get_param(layer, 1) : NULL;
 
-  conv_forward(layer->p_bottoms[0], layer->p_tops[0],
-               layer->p_params[0], p_bias,
+  conv_forward(get_bottom(layer, 0), get_top(layer, 0),
+               get_param(layer, 0), p_bias,
                net->temp_data, net->const_data, &layer->option);
 
   #ifdef DEBUG
@@ -837,95 +622,13 @@ void shape_conv_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
-  Tensor* const p_bias = (layer->option.bias) ? layer->p_params[1] : NULL;
-  int temp_size, const_size;
+  Tensor* const p_bias = (layer->option.bias) ? get_param(layer, 1) : NULL;
+  long int temp_space, const_space;
 
-  conv_shape(layer->p_bottoms[0], layer->p_tops[0],
-             layer->p_params[0], p_bias,
-             &temp_size, &const_size, &layer->option);
+  conv_shape(get_bottom(layer, 0), get_top(layer, 0),
+             get_param(layer, 0), p_bias,
+             &temp_space, &const_space, &layer->option);
 
-  update_net_size(net, layer, temp_size, 0, const_size);
+  update_temp_space(net, temp_space);
+  update_const_space(net, const_space);
 }
-
-#ifdef PASS
-void init_conv_layer(void* const net_, void* const layer_,
-                     const void* const entry_)
-{
-  Net* const net = (Net*)net_;
-  Layer* const layer = (Layer*)layer_;
-  LayerOption* const option = &layer->option;
-
-  layer->num_params = 2;
-  option->num_groups = 1;
-  option->pad_h = 0;
-  option->pad_w = 0;
-  option->stride_h = 1;
-  option->stride_w = 1;
-  option->bias = 1;
-  #ifdef GPU
-  option->handle = (void*)&net->cublas_handle;
-  #endif
-
-  option->out_channels = 0;
-  option->kernel_h = 0;
-  option->kernel_w = 0;
-
-  {
-    const HashEntry* const p_entry =
-        find_value_from_hash_entry((HashEntry*)entry_, "convolution_param");
-
-    if (p_entry) {
-      for (int n = 0; n < p_entry->num_values; ++n) {
-        HashEntry* p_child = (HashEntry*)p_entry->p_values[n];
-        if (strcmp(p_child->p_name, "num_output") == 0) {
-          option->out_channels = atoi((char*)p_child->p_values[0]);
-        }
-        else if (strcmp(p_child->p_name, "kernel_size") == 0) {
-          option->kernel_h = atoi((char*)p_child->p_values[0]);
-          option->kernel_w = option->kernel_h;
-        }
-        else if (strcmp(p_child->p_name, "stride") == 0) {
-          option->stride_h = atoi((char*)p_child->p_values[0]);
-          option->stride_w = option->stride_h;
-        }
-        else if (strcmp(p_child->p_name, "pad") == 0) {
-          option->pad_h = atoi((char*)p_child->p_values[0]);
-          option->pad_w = option->pad_h;
-        }
-        else if (strcmp(p_child->p_name, "kernel_h") == 0) {
-          option->kernel_h = atoi((char*)p_child->p_values[0]);
-        }
-        else if (strcmp(p_child->p_name, "kernel_w") == 0) {
-          option->kernel_w = atoi((char*)p_child->p_values[0]);
-        }
-        else if (strcmp(p_child->p_name, "stride_h") == 0) {
-          option->stride_h = atoi((char*)p_child->p_values[0]);
-        }
-        else if (strcmp(p_child->p_name, "stride_w") == 0) {
-          option->stride_w = atoi((char*)p_child->p_values[0]);
-        }
-        else if (strcmp(p_child->p_name, "pad_h") == 0) {
-          option->pad_h = atoi((char*)p_child->p_values[0]);
-        }
-        else if (strcmp(p_child->p_name, "pad_w") == 0) {
-          option->pad_w = atoi((char*)p_child->p_values[0]);
-        }
-        else if (strcmp(p_child->p_name, "group") == 0) {
-          option->num_groups = atoi((char*)p_child->p_values[0]);
-        }
-        else if (strcmp(p_child->p_name, "bias_term") == 0) {  
-          if (strcmp((char*)p_child->p_values[0], "false") == 0) {
-            option->bias = 0;
-            layer->num_params = 1;
-          }
-        }
-      }
-    }
-  }
-
-  if (!option->out_channels || !option->kernel_h || !option->kernel_w) {
-    printf("[ERROR] Essential parameters are not given for Layer %s\n",
-           layer->name);
-  }
-}
-#endif

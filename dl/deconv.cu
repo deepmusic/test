@@ -93,7 +93,6 @@ void convert_top_cpu(const real top5d[], real top3d[],
 
 // --------------------------------------------------------------------------
 // layer operator code
-//   deconv_forward
 // --------------------------------------------------------------------------
 
 #ifdef GPU
@@ -111,11 +110,13 @@ typedef struct DeconvAuxData_ {
 static
 void malloc_deconv_aux_data(DeconvAuxData* const aux_data,
                             const int num_groups,
-                            int* const p_space_cpu,
-                            int* const p_space_gpu)
+                            long int* const p_space_cpu,
+                            long int* const p_space_gpu)
 {
-  aux_data->p_groups = (real**)malloc(3 * num_groups * sizeof(real*));
+  aux_data->p_groups = (real**)calloc(3 * num_groups, sizeof(real*));
+
   cudaMalloc(&aux_data->p_groups_gpu, 3 * num_groups * sizeof(real*));
+  cudaMemset(aux_data->p_groups_gpu, 0, 3 * num_groups * sizeof(real*));
 
   *p_space_cpu = 3 * num_groups * sizeof(real*);
   *p_space_gpu = 3 * num_groups * sizeof(real*);
@@ -139,6 +140,8 @@ void free_deconv_aux_data(DeconvAuxData* const aux_data)
 //   bias: (G * C) x 1
 //   temp: (G * C * kernel_h * kernel_w) x (H' * W') array
 //   const: 1 x (H * W) array,  const[i] = 1 for all i
+//   aux_data: auxiliary data for batched-CuBLAS
+//             = NULL in CPU mode
 static
 void deconv_forward(const Tensor* const bottom3d,
                     Tensor* const top3d,
@@ -353,8 +356,8 @@ void deconv_shape(const Tensor* const bottom3d,
                   Tensor* const top3d,
                   Tensor* const weight5d,
                   Tensor* const bias1d,
-                  int* const temp_size,
-                  int* const const_size,
+                  long int* const p_temp_space,
+                  long int* const p_const_space,
                   const LayerOption* const option)
 {
   const int num_groups = option->num_groups; // G
@@ -424,10 +427,11 @@ void deconv_shape(const Tensor* const bottom3d,
   }
 
   // temporary data size: G * C * kernel_h * kernel_w * max_n(H' * W')
-  *temp_size = num_groups * top_C * kernel_h * kernel_w * max_bottom_area;
+  *p_temp_space = sizeof(real) * (
+      num_groups * top_C * kernel_h * kernel_w * max_bottom_area);
 
   // constant data size: max_n(H * W)
-  *const_size = max_top_area;
+  *p_const_space = max_top_area * sizeof(real);
 }
 
 
@@ -440,10 +444,10 @@ void forward_deconv_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
-  Tensor* const p_bias = (layer->option.bias) ? layer->p_params[1] : NULL;
+  Tensor* const p_bias = (layer->option.bias) ? get_param(layer, 1) : NULL;
 
-  deconv_forward(layer->p_bottoms[0], layer->p_tops[0],
-                 layer->p_params[0], p_bias,
+  deconv_forward(get_bottom(layer, 0), get_top(layer, 0),
+                 get_param(layer, 0), p_bias,
                  net->temp_data, net->const_data,
                  layer->aux_data,  &layer->option);
 }
@@ -452,14 +456,15 @@ void shape_deconv_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
-  Tensor* const p_bias = (layer->option.bias) ? layer->p_params[1] : NULL;
-  int temp_size, const_size;
+  Tensor* const p_bias = (layer->option.bias) ? get_param(layer, 1) : NULL;
+  long int temp_space, const_space;
 
-  deconv_shape(layer->p_bottoms[0], layer->p_tops[0],
-               layer->p_params[0], p_bias,
-               &temp_size, &const_size, &layer->option);
+  deconv_shape(get_bottom(layer, 0), get_top(layer, 0),
+               get_param(layer, 0), p_bias,
+               &temp_space, &const_space, &layer->option);
 
-  update_net_size(net, layer, temp_size, 0, const_size);
+  update_temp_space(net, temp_space);
+  update_const_space(net, const_space);
 }
 
 void malloc_deconv_layer(void* const net_, void* const layer_)
@@ -468,7 +473,7 @@ void malloc_deconv_layer(void* const net_, void* const layer_)
   {
     Net* const net = (Net*)net_;
     Layer* const layer = (Layer*)layer_;
-    int space_cpu = 0, space_gpu = 0;
+    long int space_cpu, space_gpu;
 
     layer->aux_data = (void*)malloc(sizeof(DeconvAuxData));
 
@@ -478,6 +483,13 @@ void malloc_deconv_layer(void* const net_, void* const layer_)
 
     net->space_cpu += space_cpu + sizeof(DeconvAuxData);
     net->space += space_gpu;
+
+    #ifdef DEBUG
+    {
+      printf("%s: Memory allocated, CPU %ld byte and GPU %ld byte\n",
+             layer->name, space_cpu, space_gpu);
+    }
+    #endif
   }
   #endif
 }

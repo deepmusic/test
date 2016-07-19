@@ -11,8 +11,9 @@
 //       hb, wb: pooling region corresponding to (h, w)
 #ifdef GPU
 __global__
+static
 void roi_pool_gpu(const real bottom3d[], const real roi2d[],
-                  real top4d[], int argmax4d[],
+                  real top4d[],
                   const int R, const int C, const int H, const int W,
                   const int top_H, const int top_W,
                   const real spatial_scale)
@@ -64,15 +65,13 @@ void roi_pool_gpu(const real bottom3d[], const real roi2d[],
     {
       const int not_empty = (hb_start < hb_end) * (wb_start < wb_end);
       top4d[index] = not_empty * maxval;
-      #ifdef BACKWARD
-      argmax4d[index] = not_empty * maxidx + (1 - not_empty) * (-1);
-      #endif
     }
   }
 }
 #else
+static
 void roi_pool_cpu(const real bottom3d[], const real roi2d[],
-                  real top4d[], int argmax4d[],
+                  real top4d[],
                   const int R, const int C, const int H, const int W,
                   const int top_H, const int top_W,
                   const real spatial_scale)
@@ -108,9 +107,6 @@ void roi_pool_cpu(const real bottom3d[], const real roi2d[],
       if (hb_start >= hb_end || wb_start >= wb_end) {
         for (int c = 0; c < C; ++c) {
           top4d[top_index + c * top_area] = 0;
-          #ifdef BACKWARD
-          argmax4d[top_index + c * top_area] = -1;
-          #endif
         }
         continue;
       }
@@ -128,9 +124,6 @@ void roi_pool_cpu(const real bottom3d[], const real roi2d[],
           }
         }
         top4d[top_index + c * top_area] = p_bottom3d[maxidx];
-        #ifdef BACKWARD
-        argmax4d[top_index + c * top_area] = maxidx;
-        #endif
       } // endfor c
     }} // endfor h, w
   } // endfor r
@@ -141,18 +134,16 @@ void roi_pool_cpu(const real bottom3d[], const real roi2d[],
 
 // --------------------------------------------------------------------------
 // layer operator code
-//   roipool_forward
 // --------------------------------------------------------------------------
 
 // RoI pooling: bottom -> top
 //   bottom: C x H x W
 //   roi: R x 5
 //   top: R x C x H' x W'
-//   argmax: R * C * H' * W' array
+static
 void roipool_forward(const Tensor* const bottom3d,
                      const Tensor* const roi2d,
                      Tensor* const top4d,
-                     int argmax_data[],
                      const LayerOption* option)
 {
   // top height & width
@@ -163,7 +154,6 @@ void roipool_forward(const Tensor* const bottom3d,
   const real* p_bottom_item = bottom3d->data;
   const real* p_roi_item = roi2d->data;
   real* p_top_item = top4d->data;
-  int* p_argmax_item = argmax_data;
   for (int n = 0; n < bottom3d->num_items; ++n) {
     // bottom shape: R x C x H X W
     const int R = roi2d->shape[n][0];
@@ -185,11 +175,11 @@ void roipool_forward(const Tensor* const bottom3d,
       const int threads_per_block = 512;
       const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
       roi_pool_gpu<<<num_blocks, threads_per_block>>>(
-          p_bottom_item,  p_roi_item,  p_top_item,  p_argmax_item,
+          p_bottom_item,  p_roi_item,  p_top_item,
           R,  C,  H,  W,  top_H,  top_W,  option->spatial_scale);
     #else
       roi_pool_cpu(
-          p_bottom_item,  p_roi_item,  p_top_item,  p_argmax_item,
+          p_bottom_item,  p_roi_item,  p_top_item,
           R,  C,  H,  W,  top_H,  top_W,  option->spatial_scale);
     #endif
     }
@@ -202,7 +192,6 @@ void roipool_forward(const Tensor* const bottom3d,
       p_bottom_item += bottom_size;
       p_roi_item += roi_size;
       p_top_item += top_size;
-      p_argmax_item += top_size;
     }
   } // endfor batch
 
@@ -247,10 +236,10 @@ void roipool_forward(const Tensor* const bottom3d,
 // layer shape calculator code
 // --------------------------------------------------------------------------
 
+static
 void roipool_shape(const Tensor* const bottom3d,
                    const Tensor* const roi2d,
                    Tensor* const top4d,
-                   int* const argmax_size,
                    const LayerOption* option)
 {
   // top height & width
@@ -275,9 +264,6 @@ void roipool_shape(const Tensor* const bottom3d,
     top4d->shape[0][0] = total_num_rois;
     top4d->shape[0][1] = C * top_H * top_W;
     top4d->start[0] = 0;
-
-    // argmax data size = total top size
-    *argmax_size = top4d->shape[0][0] * top4d->shape[0][1];
 
     return;
   }
@@ -306,9 +292,6 @@ void roipool_shape(const Tensor* const bottom3d,
       top4d->start[n] = total_size;
       total_size += top_size;
     }
-
-    // argmax data size = total top size
-    *argmax_size = total_size;
   }
 }
 
@@ -320,23 +303,16 @@ void roipool_shape(const Tensor* const bottom3d,
 
 void forward_roipool_layer(void* const net_, void* const layer_)
 {
-  Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
 
-  roipool_forward(layer->p_bottoms[0], layer->p_bottoms[1],
-                  layer->p_tops[0],
-                  net->tempint_data, &layer->option);
+  roipool_forward(get_bottom(layer, 0), get_bottom(layer, 1),
+                  get_top(layer, 0), &layer->option);
 }
 
 void shape_roipool_layer(void* const net_, void* const layer_)
 {
-  Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
 
-  int tempint_size;
-
-  roipool_shape(layer->p_bottoms[0], layer->p_bottoms[1], layer->p_tops[0],
-                &tempint_size, &layer->option);
-
-  update_net_size(net, layer, 0, tempint_size, 0);
+  roipool_shape(get_bottom(layer, 0), get_bottom(layer, 1),
+                get_top(layer, 0), &layer->option);
 }

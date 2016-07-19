@@ -1,7 +1,9 @@
 #include "layer.h"
+#include <string.h>
 
 #ifdef GPU
 __global__
+static
 void bilinear_resize_gpu(const unsigned char img[], real input3d[],
                          const int height, const int width,
                          const int resized_height, const int resized_width,
@@ -39,6 +41,7 @@ void bilinear_resize_gpu(const unsigned char img[], real input3d[],
   }
 }
 #else
+static
 void bilinear_resize_cpu(const unsigned char img[], real input3d[],
                          const int height, const int width,
                          const int resized_height, const int resized_width,
@@ -91,69 +94,6 @@ void bilinear_resize_cpu(const unsigned char img[], real input3d[],
       p_inputB[i * resized_width + j] = B - gs_mean_blue;
       p_inputG[i * resized_width + j] = G - gs_mean_green;
       p_inputR[i * resized_width + j] = R - gs_mean_red;
-/*
-      if (i == 778) {//i == resized_height - 1) {
-        printf("%d %d:  %d %d %d %d %f %f %f %f,  %d %d %d %d   %f %f %f,  %f %f %f\n", i, j, y0, y1, x0, x1, ay, by, ax, bx,
-              img[y1 * stride + x1 * 3], img[y0 * stride + x1 * 3], img[y1 * stride + x0 * 3], img[y0 * stride + x0 * 3],
-              B, G, R, p_inputB[i * resized_width + j], p_inputG[i * resized_width + j], p_inputR[i * resized_width + j]);
-      }
-*/
-    }
-  }
-}
-#endif
-
-#ifdef GPU
-#else
-void bilinear_resize_hwc(const unsigned char img[], real input3d[],
-                         const int height, const int width,
-                         const int resized_height, const int resized_width,
-                         const real img_scale_y, const real img_scale_x)
-{
-  static const real gs_mean_blue = 102.9801f;
-  static const real gs_mean_green = 115.9465f;
-  static const real gs_mean_red = 122.7717f;
-
-  const int stride = width * 3;
-  const int stride_input = resized_width * 3;
-
-  for (int i = 0; i < resized_height; ++i) {
-    const real y = i / img_scale_y;
-    const int y0 = (int)y;
-    const int y1 = MIN(y0 + 1,  height - 1);
-    const real ay = y - y0;
-    const real by = 1 - ay;
-    for (int j = 0; j < resized_width; ++j) {
-      const real x = j / img_scale_x;
-      const int x0 = (int)x;
-      const int x1 = MIN(x0 + 1,  width - 1);
-      const real ax = x - x0;
-      const real bx = 1 - ax;
-      real B = 0, G = 0, R = 0;
-      if (ax > 0 && ay > 0) {
-        B += ax * ay * img[y1 * stride + x1 * 3 + 0];
-        G += ax * ay * img[y1 * stride + x1 * 3 + 1];
-        R += ax * ay * img[y1 * stride + x1 * 3 + 2];
-      }
-      if (ax > 0 && by > 0) {
-        B += ax * by * img[y0 * stride + x1 * 3 + 0];
-        G += ax * by * img[y0 * stride + x1 * 3 + 1];
-        R += ax * by * img[y0 * stride + x1 * 3 + 2];
-      }
-      if (bx > 0 && ay > 0) {
-        B += bx * ay * img[y1 * stride + x0 * 3 + 0];
-        G += bx * ay * img[y1 * stride + x0 * 3 + 1];
-        R += bx * ay * img[y1 * stride + x0 * 3 + 2];
-      }
-      if (bx > 0 && by > 0) {
-        B += bx * by * img[y0 * stride + x0 * 3 + 0];
-        G += bx * by * img[y0 * stride + x0 * 3 + 1];
-        R += bx * by * img[y0 * stride + x0 * 3 + 2];
-      }
-
-      input3d[i * stride_input + j * 3 + 0] = B - gs_mean_blue;
-      input3d[i * stride_input + j * 3 + 1] = G - gs_mean_green;
-      input3d[i * stride_input + j * 3 + 2] = R - gs_mean_red;
     }
   }
 }
@@ -188,14 +128,12 @@ void img2input(const unsigned char img[],
   const int resized_height = ROUND(height * img_scale_y);
   const int resized_width = ROUND(width * img_scale_x);
 
+  const real img_info[] = {
+    (real)resized_height, (real)resized_width, img_scale_y, img_scale_x,
+    (real)height, (real)width
+  };
   const int n = img_info1d->num_items;
   real* const p_img_info1d = img_info1d->data + n * 6;
-  p_img_info1d[0] = (real)resized_height;
-  p_img_info1d[1] = (real)resized_width;
-  p_img_info1d[2] = img_scale_y;
-  p_img_info1d[3] = img_scale_x;
-  p_img_info1d[4] = (real)height;
-  p_img_info1d[5] = (real)width;
 
   printf("%d x %d --> %d x %d\n", height, width, resized_height, resized_width);
   #ifdef GPU
@@ -203,6 +141,8 @@ void img2input(const unsigned char img[],
     const int num_threads = 3 * resized_height * resized_width;
     const int threads_per_block = 512;
     const int num_blocks = DIV_THEN_CEIL(num_threads,  threads_per_block);
+    cudaMemcpyAsync(p_img_info1d, img_info, 6 * sizeof(real),
+                    cudaMemcpyHostToDevice);
     cudaMemcpyAsync(temp_data, img,
                     height * width * 3 * sizeof(unsigned char),
                     cudaMemcpyHostToDevice);
@@ -213,6 +153,7 @@ void img2input(const unsigned char img[],
   }
   #else
   {
+    memcpy(p_img_info1d, img_info, 6 * sizeof(real));
     bilinear_resize_cpu(
         img,  input3d->data + input3d->start[n],
         height,  width,  resized_height,  resized_width,
@@ -250,15 +191,10 @@ void init_input_layer(Net* const net,
         = n * 3 * input3d->shape[n][1] * input3d->shape[n][2];
   }
 
-  img_info1d->data_type = CPU_DATA;
   img_info1d->ndim = 1;
   img_info1d->num_items = BATCH_SIZE;
   for (int n = 0; n < img_info1d->num_items; ++n) {
     img_info1d->shape[n][0] = 6;
     img_info1d->start[n] = n * 6;
-  }
-
-  if (input3d->data_type == SHARED_DATA) {
-    net->layer_size = MAX(net->layer_size,  flatten_size(input3d));
   }
 }
