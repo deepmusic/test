@@ -424,10 +424,14 @@ void odout_forward(const Tensor* const bottom2d,
   const real* p_img_info_cpu = img_info1d->data;
   #endif
 
-  for (int n = 0; n < bottom2d->num_items; ++n) {
-    // bottom shape: num_rois x num_classes
-    const int num_rois = bottom2d->shape[n][0];
-    const int num_classes = bottom2d->shape[n][1];
+  // bottom2d and d_anchor3d are flatten such that
+  // all batch items are channel-wise concatenated into one big item
+  // thus, num_items and num_channels are taken from roi2d->shape,
+  // and num_classes is taken from bottom2d->shape[0]
+  // (bottom2d->shape[1, ...] are all zero)
+  const int num_classes = bottom2d->shape[0][1];
+  for (int n = 0; n < roi2d->num_items; ++n) {
+    const int num_rois = roi2d->shape[n][0];
     // input image height & width
     const real img_H = p_img_info_cpu[0];
     const real img_W = p_img_info_cpu[1];
@@ -469,10 +473,10 @@ void odout_forward(const Tensor* const bottom2d,
   } // endfor batch
 
   top2d->ndim = 2;
-  top2d->num_items = bottom2d->num_items;
+  top2d->num_items = roi2d->num_items;
   {
     int total_size = 0;
-    for (int n = 0; n < bottom2d->num_items; ++n) {
+    for (int n = 0; n < roi2d->num_items; ++n) {
       const int top_size = top2d->shape[n][0] * top2d->shape[n][1];
       top2d->start[n] = total_size;
       total_size += top_size;
@@ -488,6 +492,7 @@ void odout_forward(const Tensor* const bottom2d,
 
 static
 void odout_shape(const Tensor* const bottom2d,
+                 const Tensor* const roi2d,
                  Tensor* const top2d,
                  long int* const p_temp_space,
                  const LayerOption* const option)
@@ -495,11 +500,14 @@ void odout_shape(const Tensor* const bottom2d,
   int total_num_rois = 0;
 
   // calculate shape for each item in the batch
-  top2d->ndim = 2;
-  top2d->num_items = bottom2d->num_items;
-  for (int n = 0; n < bottom2d->num_items; ++n) {
-    const int num_rois = option->pre_nms_topn;
-    const int num_classes = bottom2d->shape[n][1];
+  // bottom2d and d_anchor3d are flatten such that
+  // all batch items are channel-wise concatenated into one big item
+  // thus, num_items and num_channels are taken from roi2d->shape,
+  // and num_classes is taken from bottom2d->shape[0]
+  // (bottom2d->shape[1, ...] are all zero)
+  const int num_classes = bottom2d->shape[0][1];
+  for (int n = 0; n < roi2d->num_items; ++n) {
+    const int num_rois = roi2d->shape[n][0];
 
     // calculate total number of RoIs for determining temporary space size
     total_num_rois += num_rois * num_classes;
@@ -511,6 +519,8 @@ void odout_shape(const Tensor* const bottom2d,
     top2d->shape[n][1] = 6;
     top2d->start[n] = total_num_rois * 6;
   }
+  top2d->ndim = 2;
+  top2d->num_items = roi2d->num_items;
 
   // temporary space size
   {
@@ -548,7 +558,8 @@ void shape_odout_layer(void* const net_, void* const layer_)
   Layer* const layer = (Layer*)layer_;
   long int temp_space;
 
-  odout_shape(get_bottom(layer, 0), get_top(layer, 0),
+  odout_shape(get_bottom(layer, 0), get_bottom(layer, 2),
+              get_top(layer, 0),
               &temp_space, &layer->option);
 
   update_temp_space(net, temp_space);

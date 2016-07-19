@@ -53,6 +53,9 @@ void reshape_shape(const Tensor* const bottom,
       printf("%d]\n", option->reshape[option->reshape_ndim - 1]);
     }
   }
+  for (int n = 0; n < bottom->num_items; ++n) {
+    top->start[n] = bottom->start[n];
+  }
 
   top->ndim = option->reshape_ndim;
   top->num_items = bottom->num_items;

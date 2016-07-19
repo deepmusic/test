@@ -6315,6 +6315,7 @@ layer {
   type: "Softmax"
   bottom: "rpn_cls_score_reshape"
   top: "rpn_cls_prob"
+  softmax_param { axis: 1 }
 }
 layer {
   name: 'rpn_cls_prob_reshape'
@@ -6497,5 +6498,8 @@ layer {
   loss_param {
     ignore_label: -1
     normalize: true
+  }
+  softmax_param {
+    axis: 2
   }
 }

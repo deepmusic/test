@@ -118,6 +118,10 @@ lib._layer_net.argtypes = [ctypes.c_int, ctypes.c_int]
 lib._layer_net.restype = ctypes.POINTER(Tensor)
 lib.add_scale_const_layer.argtypes = [ctypes.POINTER(Net), ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_float, ctypes.c_float]
 lib.add_relu_layer.argtypes = [ctypes.POINTER(Net), ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_float]
+lib.add_proposal_layer.argtypes = [ctypes.POINTER(Net), ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_float), ctypes.c_int, ctypes.POINTER(ctypes.c_float), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_float, ctypes.c_int, ctypes.c_float]
+lib.add_roipool_layer.argtypes = [ctypes.POINTER(Net), ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_float, ctypes.c_int]
+lib.add_dropout_layer.argtypes = [ctypes.POINTER(Net), ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_float, ctypes.c_int, ctypes.c_int]
+lib.add_odout_layer.argtypes = [ctypes.POINTER(Net), ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_float, ctypes.c_float, ctypes.c_int, ctypes.c_float]
 
 def generate():
   lib._generate_net()

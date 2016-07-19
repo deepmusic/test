@@ -2,7 +2,7 @@
 
 void setup_shared_cnn(Net* const net)
 {
-  add_data_layer(net, "input-data", "data", "img_info");
+  add_data_layer(net, "input-data", "data", "im_info");
   add_conv_layer(net, "conv1_1_conv", "data", "conv1_1_conv", NULL, NULL, 1, 16, 7, 7, 2, 2, 3, 3, 1);
   add_scale_const_layer(net, "conv1_1_neg", "conv1_1_conv", "conv1_1_neg", -1.000000, 0.000000, 1);
   { const char* const names[] = { "conv1_1_conv", "conv1_1_neg" }; add_concat_layer(net, "conv1_1_concat", names, "conv1_1", 2); }

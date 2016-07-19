@@ -2,7 +2,7 @@
 
 void setup_shared_cnn_light(Net* const net)
 {
-  add_data_layer(net, "input-data", "data", "img_info");
+  add_data_layer(net, "input-data", "data", "im_info");
   add_conv_layer(net, "conv1", "data", "conv1", NULL, NULL, 1, 32, 4, 4, 2, 2, 1, 1, 1);
   add_relu_layer(net, "relu1", "conv1", "conv1", 0);
   add_conv_layer(net, "conv2", "conv1", "conv2", NULL, NULL, 1, 48, 3, 3, 2, 2, 1, 1, 1);

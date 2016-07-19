@@ -419,6 +419,7 @@ Layer* add_dropout_layer(Net* const net,
                          const char* const layer_name,
                          const char* const bottom_name,
                          const char* const top_name,
+                         const real threshold,
                          const int is_test,
                          const int is_scaled);
 
@@ -434,6 +435,40 @@ Layer* add_softmax_layer(Net* const net,
                          const char* const bottom_name,
                          const char* const top_name,
                          const int channel_axis);
+
+Layer* add_proposal_layer(Net* const net,
+                          const char* const layer_name,
+                          const char* const score_name,
+                          const char* const bbox_name,
+                          const char* const img_info_name,
+                          const char* const top_name,
+                          real anchor_scales[], const int num_scales,
+                          real anchor_ratios[], const int num_ratios,
+                          const int feat_stride,
+                          const int base_size, const int min_size,
+                          const int pre_nms_topn, const int post_nms_topn,
+                          const real nms_thresh,
+                          const int bbox_vote, const real vote_thresh);
+
+Layer* add_roipool_layer(Net* const net,
+                         const char* const layer_name,
+                         const char* const rcnn_input_name,
+                         const char* const roi_name,
+                         const char* const top_name,
+                         const int pooled_h, const int pooled_w,
+                         const real spatial_scale,
+                         const int flatten);
+
+Layer* add_odout_layer(Net* const net,
+                       const char* const layer_name,
+                       const char* const score_name,
+                       const char* const bbox_name,
+                       const char* const roi_name,
+                       const char* const img_info_name,
+                       const char* const top_name,
+                       const int min_size, const int pre_nms_topn,
+                       const real score_thresh, const real nms_thresh,
+                       const int bbox_vote, const real vote_thresh);
 
 void setup_shared_cnn(Net* const net);
 void setup_shared_cnn_light(Net* const net);

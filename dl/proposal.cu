@@ -619,7 +619,7 @@ void proposal_shape(const Tensor* const bottom4d,
     //   exact row size will be determined after forward-pass
     top2d->shape[n][0] = option->post_nms_topn;
     top2d->shape[n][1] = 5;
-    top2d->start[n] = top2d->shape[n][0] * top2d->shape[n][1];
+    top2d->start[n] = n * top2d->shape[n][0] * top2d->shape[n][1];
   }
 
   // temporary space size

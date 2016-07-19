@@ -281,12 +281,14 @@ Layer* add_dropout_layer(Net* const net,
                          const char* const layer_name,
                          const char* const bottom_name,
                          const char* const top_name,
+                         const real threshold,
                          const int is_test,
                          const int is_scaled)
 {
   Layer* const layer =
       add_chain_layer(net, layer_name, bottom_name, top_name);
 
+  layer->option.threshold = threshold;
   layer->option.test = is_test;
   layer->option.scaled = is_scaled;
 
@@ -377,6 +379,67 @@ Layer* add_proposal_layer(Net* const net,
   return layer;
 }
 
+Layer* add_roipool_layer(Net* const net,
+                         const char* const layer_name,
+                         const char* const rcnn_input_name,
+                         const char* const roi_name,
+                         const char* const top_name,
+                         const int pooled_h, const int pooled_w,
+                         const real spatial_scale,
+                         const int flatten)
+{
+  Layer* const layer = add_layer(net, layer_name);
+
+  add_bottom(layer, get_tensor_by_name(net, rcnn_input_name));
+  add_bottom(layer, get_tensor_by_name(net, roi_name));
+  add_top(layer, add_tensor(net, top_name));
+
+  layer->option.pooled_height = pooled_h;
+  layer->option.pooled_width = pooled_w;
+  layer->option.spatial_scale = spatial_scale;
+  layer->option.flatten = flatten;
+
+  layer->f_forward = forward_roipool_layer;
+  layer->f_shape = shape_roipool_layer;
+
+  return layer;
+}
+
+Layer* add_odout_layer(Net* const net,
+                       const char* const layer_name,
+                       const char* const score_name,
+                       const char* const bbox_name,
+                       const char* const roi_name,
+                       const char* const img_info_name,
+                       const char* const top_name,
+                       const int min_size, const int pre_nms_topn,
+                       const real score_thresh, const real nms_thresh,
+                       const int bbox_vote, const real vote_thresh)
+{
+  Layer* const layer = add_layer(net, layer_name);
+
+  add_bottom(layer, get_tensor_by_name(net, score_name));
+  add_bottom(layer, get_tensor_by_name(net, bbox_name));
+  add_bottom(layer, get_tensor_by_name(net, roi_name));
+  add_bottom(layer, get_tensor_by_name(net, img_info_name));
+  add_top(layer, add_tensor(net, top_name));
+
+  layer->option.min_size = min_size;
+  layer->option.pre_nms_topn = pre_nms_topn;
+  layer->option.score_thresh = score_thresh;
+  layer->option.nms_thresh = nms_thresh;
+  layer->option.bbox_vote = bbox_vote;
+  layer->option.vote_thresh = vote_thresh;
+
+  layer->f_forward = forward_odout_layer;
+  layer->f_shape = shape_odout_layer;
+  layer->f_free = free_odout_layer;
+
+  malloc_odout_layer(net, layer);
+
+  return layer;
+}
+
 void setup_frcnn(Net* const net,
                  const char* const rpn_input_name,
                  const char* const rcnn_input_name,
@@ -420,7 +483,7 @@ void setup_frcnn(Net* const net,
   {
     real anchor_scales[5] = { 3.0f, 6.0f, 9.0f, 16.0f, 32.0f };
     real anchor_ratios[5] = { 0.5f, 0.667f, 1.0f, 1.5f, 2.0f };
-    add_proposal_layer(net, "proposal", "rpn_cls_score", "rpn_bbox_pred", "img_info", "rpn_roi",
+    add_proposal_layer(net, "proposal", "rpn_cls_score", "rpn_bbox_pred", "im_info", "rpn_roi",
                        anchor_scales, 5, anchor_ratios, 5, 16, 16, 16, pre_nms_topn, post_nms_topn, 0.7f, 0, 0.7f);
   }
   {
@@ -443,12 +506,12 @@ void setup_frcnn(Net* const net,
                  fc6_dim, 0);
     add_fc_layer(net, "fc6_U", "fc6_L", "fc6_U", NULL, NULL, 4096, 1);
     add_relu_layer(net, "relu6", "fc6_U", "fc6_U", 0);
-    add_dropout_layer(net, "drop6", "fc6_U", "fc6_U", 1, 1);
+    add_dropout_layer(net, "drop6", "fc6_U", "fc6_U", 0, 1, 1);
 
     add_fc_layer(net, "fc7_L", "fc6_U", "fc7_L", NULL, NULL, fc7_dim, 0);
     add_fc_layer(net, "fc7_U", "fc7_L", "fc7_U", NULL, NULL, 4096, 1);
     add_relu_layer(net, "relu7", "fc7_U", "fc7_U", 0);
-    add_dropout_layer(net, "drop7", "fc7_U", "fc7_U", 1, 1);
+    add_dropout_layer(net, "drop7", "fc7_U", "fc7_U", 0, 1, 1);
 
     add_fc_layer(net, "cls_score", "fc7_U", "cls_score", NULL, NULL, 21, 1);
     add_fc_layer(net, "bbox_pred", "fc7_U", "bbox_pred", NULL, NULL, 84, 1);
@@ -456,11 +519,11 @@ void setup_frcnn(Net* const net,
   else {
     add_fc_layer(net, "fc6", "rcnn_roipool", "fc6", NULL, NULL, 4096, 1);
     add_relu_layer(net, "relu6", "fc6", "fc6", 0);
-    add_dropout_layer(net, "drop6", "fc6", "fc6", 1, 1);
+    add_dropout_layer(net, "drop6", "fc6", "fc6", 0, 1, 1);
 
     add_fc_layer(net, "fc7", "fc6", "fc7", NULL, NULL, 4096, 1);
     add_relu_layer(net, "relu7", "fc7", "fc7", 0);
-    add_dropout_layer(net, "drop7", "fc7", "fc7", 1, 1);
+    add_dropout_layer(net, "drop7", "fc7", "fc7", 0, 1, 1);
 
     add_fc_layer(net, "cls_score", "fc7", "cls_score", NULL, NULL, 21, 1);
     add_fc_layer(net, "bbox_pred", "fc7", "bbox_pred", NULL, NULL, 84, 1);
@@ -479,7 +542,7 @@ void setup_frcnn(Net* const net,
     add_bottom(layer, get_tensor_by_name(net, "cls_score"));
     add_bottom(layer, get_tensor_by_name(net, "bbox_pred"));
     add_bottom(layer, get_tensor_by_name(net, "rpn_roi"));
-    add_bottom(layer, get_tensor_by_name(net, "img_info"));
+    add_bottom(layer, get_tensor_by_name(net, "im_info"));
     add_top(layer, add_tensor(net, "out"));
     layer->f_forward = forward_odout_layer;
     layer->f_shape = shape_odout_layer;
@@ -525,7 +588,7 @@ void set_input_pvanet(Net* const net,
 {
 
   Tensor* const input = get_tensor_by_name(net, "data");
-  Tensor* const img_info = get_tensor_by_name(net, "img_info");
+  Tensor* const img_info = get_tensor_by_name(net, "im_info");
   int shape_changed = (input->num_items != num_images);
 
   if (!shape_changed) {

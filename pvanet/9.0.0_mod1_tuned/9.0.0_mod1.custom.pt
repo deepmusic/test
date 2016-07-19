@@ -22,7 +22,7 @@ layer {
   name: "input-data"
   type: "DummyData"
   top: "data"
-  top: "img_info"
+  top: "im_info"
   include { phase: TEST }
   dummy_data_param {
     shape { dim: 1 dim: 3 dim: 1024 dim: 640 }
