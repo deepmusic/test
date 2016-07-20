@@ -1,110 +1,110 @@
 CUDA_LIB_DIR := /usr/local/cuda/lib64
 OPENCV_LIB_DIR := /usr/lib/x86_64-linux-gnu
 
+INCLUDE_DIR := include
+SRC_ROOT := src
+BUILD_ROOT := build
+MODULES := . layers nets
+
+SRC_DIR := $(addprefix $(SRC_ROOT)/, $(MODULES))
+BUILD_DIR := $(patsubst $(SRC_ROOT)/%, $(BUILD_ROOT)/%, $(SRC_DIR))
+SRC_FILES := $(foreach sdir, $(SRC_DIR), $(wildcard $(sdir)/*.cu))
+CPU_OBJ_FILES := $(patsubst $(SRC_ROOT)/%.cu, $(BUILD_ROOT)/%.cpu.o, $(SRC_FILES))
+GPU_OBJ_FILES := $(patsubst $(SRC_ROOT)/%.cu, $(BUILD_ROOT)/%.gpu.o, $(SRC_FILES))
+INCLUDE_FLAG := $(addprefix -I, $(INCLUDE_DIR))
+
 CC := g++
-CFLAGS := -c -O3 -Wall -fPIC
+CFLAGS := -c -O3 -Wall -fPIC $(INCLUDE_FLAG)
 LDFLAGS := -L$(OPENCV_LIB_DIR) -lcblas -lm -lopencv_core -lopencv_highgui -lgomp
 NVCC := /usr/local/cuda/bin/nvcc
-NVCCFLAGS := -c -O3 -use_fast_math -Xcompiler '-fPIC -Wall -DGPU'
+NVCCFLAGS := -c -O3 -use_fast_math -Xcompiler '-fPIC -Wall -DGPU' $(INCLUDE_FLAG)
 NVLDFLAGS := -L$(CUDA_LIB_DIR) -L$(OPENCV_LIB_DIR) -lcudart -lcublas -lopencv_core -lopencv_highgui
 
-all: demo_cpu.bin demo_gpu.bin demo_cpu_compress.bin demo_gpu_compress.bin demo_cpu_light.bin demo_gpu_light.bin demo_cpu_light_compress.bin demo_gpu_light_compress.bin
+all: listdirs demo_cpu.bin demo_gpu.bin demo_cpu_compress.bin demo_gpu_compress.bin demo_cpu_light.bin demo_gpu_light.bin demo_cpu_light_compress.bin demo_gpu_light_compress.bin
 
 # Runtime binary
-demo_cpu.bin: demo.cpp.cpu.test.o libdlcpu.so
+demo_cpu.bin: $(BUILD_ROOT)/demo.cpp.cpu.test.o libdlcpu.so
 	$(CC) -o $@ $^ $(LDFLAGS)
-	rm $<
-demo_gpu.bin: demo.gpu.test.o libdlgpu.so
+demo_gpu.bin: $(BUILD_ROOT)/demo.gpu.test.o libdlgpu.so
 	$(NVCC) -o $@ $^ $(NVLDFLAGS)
-	rm $<
-demo_cpu_compress.bin: demo.cpp.cpu.compress.test.o libdlcpu.so
+demo_cpu_compress.bin: $(BUILD_ROOT)/demo.cpp.cpu.compress.test.o libdlcpu.so
 	$(CC) -o $@ $^ $(LDFLAGS)
-	rm $<
-demo_gpu_compress.bin: demo.gpu.compress.test.o libdlgpu.so
+demo_gpu_compress.bin: $(BUILD_ROOT)/demo.gpu.compress.test.o libdlgpu.so
 	$(NVCC) -o $@ $^ $(NVLDFLAGS)
-	rm $<
-demo_cpu_light.bin: demo.cpp.cpu.light.test.o libdlcpu.so
+demo_cpu_light.bin: $(BUILD_ROOT)/demo.cpp.cpu.light.test.o libdlcpu.so
 	$(CC) -o $@ $^ $(LDFLAGS)
-	rm $<
-demo_gpu_light.bin: demo.gpu.light.test.o libdlgpu.so
+demo_gpu_light.bin: $(BUILD_ROOT)/demo.gpu.light.test.o libdlgpu.so
 	$(NVCC) -o $@ $^ $(NVLDFLAGS)
-	rm $<
-demo_cpu_light_compress.bin: demo.cpp.cpu.light.compress.test.o libdlcpu.so
+demo_cpu_light_compress.bin: $(BUILD_ROOT)/demo.cpp.cpu.light.compress.test.o libdlcpu.so
 	$(CC) -o $@ $^ $(LDFLAGS)
-	rm $<
-demo_gpu_light_compress.bin: demo.gpu.light.compress.test.o libdlgpu.so
+demo_gpu_light_compress.bin: $(BUILD_ROOT)/demo.gpu.light.compress.test.o libdlgpu.so
 	$(NVCC) -o $@ $^ $(NVLDFLAGS)
-	rm $<
-
-# Caffe model loader (WIP)
-loader.bin: loader.cpu.o tensor.cpu.o net.cpu.o
-	$(CC) -o $@ $^ $(LDFLAGS)
-	rm $<
 
 # Shared library
-libdlgpu.so: tensor.gpu.o net.gpu.o nms.gpu.o scale.gpu.o crelu.gpu.o eltwise.gpu.o softmax.gpu.o reshape.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o image.gpu.o frcnn.gpu.o cnn.gpu.o cnn_light.gpu.o wrapper.gpu.o link.gpu.o
+libdlgpu.so: $(GPU_OBJ_FILES) link.gpu.o
 	$(CC) -shared -o $@ $^ $(NVLDFLAGS)
-	rm $^
-libdlcpu.so: tensor.cpu.o net.cpu.o nms.cpu.o scale.cpu.o crelu.cpu.o eltwise.cpu.o softmax.cpu.o reshape.cpu.o conv.cpu.o deconv.cpu.o fc.cpu.o dropout.cpu.o relu.cpu.o roipool.cpu.o pool.cpu.o proposal.cpu.o concat.cpu.o odout.cpu.o image.cpu.o frcnn.cpu.o cnn.cpu.o cnn_light.cpu.o wrapper.cpu.o
+libdlcpu.so: $(CPU_OBJ_FILES)
 	$(CC) -shared -o $@ $^ $(LDFLAGS)
-	rm $^
-link.gpu.o: tensor.gpu.o net.gpu.o nms.gpu.o scale.gpu.o crelu.gpu.o eltwise.gpu.o softmax.gpu.o reshape.gpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o image.gpu.o frcnn.gpu.o cnn.gpu.o cnn_light.gpu.o wrapper.gpu.o
+link.gpu.o: $(GPU_OBJ_FILES)
 	$(NVCC) -Xcompiler '-fPIC' -dlink $^ -o $@
 
 # Static library
-libdlcpu.a: tensor.cpu.o net.cpu.o nms.cpu.o scale.cpu.o crelu.cpu.o eltwise.cpu.o softmax.cpu.o reshape.cpu.o conv.cpu.o deconv.cpu.o fc.cpu.o dropout.cpu.o relu.cpu.o roipool.cpu.o pool.cpu.o proposal.cpu.o concat.cpu.o odout.cpu.o image.cpu.o frcnn.cpu.o cnn.cpu.o cnn_light.cpu.o wrapper.cpu.o
+libdlcpu.a: $(CPU_OBJ_FILES)
 	ar rcs $@ $^
-	rm $^
-libdlgpu.a: tensor.gpu.o net.gpu.o nms.gpu.o scale.gpu.o crelu.gpu.o eltwise.gpu.o softmax.gpu.o reshape.cpu.o conv.gpu.o deconv.gpu.o fc.gpu.o dropout.gpu.o relu.gpu.o roipool.gpu.o pool.gpu.o proposal.gpu.o concat.gpu.o odout.gpu.o image.gpu.o frcnn.gpu.o cnn.gpu.o cnn_light.gpu.o wrapper.gpu.o
+libdlgpu.a: $(GPU_OBJ_FILES)
 	ar rcs $@ $^
-	rm $^
 
+# Clean
 clean:
-	rm -f *.cpu.o *.gpu.o *.bin *.test.o *.so *.a *.pyc
+	@rm -rf $(BUILD_DIR)
 
-conv.cpu.o: conv.cu layer.h
-	cp $< $*.cpp
-	$(CC) $(CFLAGS) -fopenmp $*.cpp -o $@
-	rm -f $*.cpp
+vpath %.cu $(SRC_DIR)
 
-%.cpu.o: %.cu layer.h
-	cp $< $*.c
+listdirs: $(BUILD_DIR)
+
+$(BUILD_DIR):
+	mkdir -p $@
+
+define make-goal
+$1/%.cpu.o: %.cu
+	@cp $< $*.c
 	$(CC) $(CFLAGS) $*.c -o $@
-	rm -f $*.c
-%.cpp.cpu.o: %.cu layer.h
-	cp $< $*.cpp
+	@rm -f $*.c
+$1/%.cpp.cpu.o: %.cu
+	@cp $< $*.cpp
 	$(CC) $(CFLAGS) $*.cpp -o $@
-	rm -f $*.cpp
-
-%.gpu.o: %.cu layer.h
-	$(NVCC) $(NVCCFLAGS) $< -o $@
-
-%.cpu.test.o: %.cu layer.h
-	cp $< $*.c
+	@rm -f $*.cpp
+$1/%.cpu.test.o: %.cu
+	@cp $< $*.c
 	$(CC) $(CFLAGS) -DTEST $*.c -o $@
-	rm -f $*.c
-%.cpp.cpu.test.o: %.cu layer.h
-	cp $< $*.cpp
+	@rm -f $*.c
+$1/%.cpp.cpu.test.o: %.cu
+	@cp $< $*.cpp
 	$(CC) $(CFLAGS) -DTEST $*.cpp -o $@
-	rm -f $*.cpp
-%.cpp.cpu.compress.test.o: %.cu layer.h
-	cp $< $*.cpp
+	@rm -f $*.cpp
+$1/%.cpp.cpu.compress.test.o: %.cu
+	@cp $< $*.cpp
 	$(CC) $(CFLAGS) -DTEST -DCOMPRESS $*.cpp -o $@
-	rm -f $*.cpp
-%.cpp.cpu.light.test.o: %.cu layer.h
-	cp $< $*.cpp
+	@rm -f $*.cpp
+$1/%.cpp.cpu.light.test.o: %.cu
+	@cp $< $*.cpp
 	$(CC) $(CFLAGS) -DTEST -DLIGHT_MODEL $*.cpp -o $@
-	rm -f $*.cpp
-%.cpp.cpu.light.compress.test.o: %.cu layer.h
-	cp $< $*.cpp
+	@rm -f $*.cpp
+$1/%.cpp.cpu.light.compress.test.o: %.cu
+	@cp $< $*.cpp
 	$(CC) $(CFLAGS) -DTEST -DLIGHT_MODEL -DCOMPRESS $*.cpp -o $@
-	rm -f $*.cpp
+	@rm -f $*.cpp
 
-%.gpu.test.o: %.cu layer.h
+$1/%.gpu.o: %.cu
+	$(NVCC) $(NVCCFLAGS) $< -o $@
+$1/%.gpu.test.o: %.cu
 	$(NVCC) $(NVCCFLAGS) -DTEST $< -o $@
-%.gpu.compress.test.o: %.cu layer.h
+$1/%.gpu.compress.test.o: %.cu
 	$(NVCC) $(NVCCFLAGS) -DTEST -DCOMPRESS $< -o $@
-%.gpu.light.test.o: %.cu layer.h
+$1/%.gpu.light.test.o: %.cu
 	$(NVCC) $(NVCCFLAGS) -DTEST -DLIGHT_MODEL $< -o $@
-%.gpu.light.compress.test.o: %.cu layer.h
+$1/%.gpu.light.compress.test.o: %.cu
 	$(NVCC) $(NVCCFLAGS) -DTEST -DLIGHT_MODEL -DCOMPRESS $< -o $@
+endef
+
+$(foreach bdir, $(BUILD_DIR), $(eval $(call make-goal, $(bdir))))
