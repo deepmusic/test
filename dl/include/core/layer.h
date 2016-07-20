@@ -1,7 +1,7 @@
 #ifndef PVA_DL_LAYER_H
 #define PVA_DL_LAYER_H
 
-#include "tensor.h"
+#include "core/tensor.h"
 
 // --------------------------------------------------------------------------
 // definitions

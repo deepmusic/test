@@ -1,4 +1,4 @@
-#include "layer_factory.h"
+#include "layers/layer_factory.h"
 
 void setup_shared_cnn(Net* const net)
 {

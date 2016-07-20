@@ -1,4 +1,4 @@
-#include "layer_factory.h"
+#include "layers/layer_factory.h"
 
 void setup_faster_rcnn(Net* const net,
                        const char* const rpn_input_name,

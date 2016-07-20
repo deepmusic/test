@@ -6,7 +6,7 @@
 #ifndef PVA_DL_LAYER_FACTORY_H
 #define PVA_DL_LAYER_FACTORY_H
 
-#include "net.h"
+#include "core/net.h"
 
 #ifdef __cplusplus
 extern "C" {

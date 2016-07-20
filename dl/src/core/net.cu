@@ -1,4 +1,4 @@
-#include "net.h"
+#include "core/net.h"
 #include <string.h>
 
 void init_net(Net* const net)

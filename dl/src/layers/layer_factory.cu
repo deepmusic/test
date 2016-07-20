@@ -1,5 +1,5 @@
-#include "layer_factory.h"
-#include "operator.h"
+#include "layers/layer_factory.h"
+#include "layers/operator.h"
 #include <string.h>
 
 Layer* add_data_layer(Net* const net,

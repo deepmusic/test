@@ -27,8 +27,8 @@
     - GPU nms post processing (remove 5)
 */
 
-#include "net.h"
-#include "rpn.h"
+#include "core/net.h"
+#include "layers/rpn.h"
 #include <string.h>
 
 #include <time.h>

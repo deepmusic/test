@@ -1,5 +1,5 @@
-#include "net.h"
-#include "rpn.h"
+#include "core/net.h"
+#include "layers/rpn.h"
 
 // --------------------------------------------------------------------------
 // kernel code

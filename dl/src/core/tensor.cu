@@ -1,4 +1,4 @@
-#include "tensor.h"
+#include "core/tensor.h"
 #include <string.h>
 
 // initialize: set all values to 0

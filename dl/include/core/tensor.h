@@ -1,7 +1,7 @@
 #ifndef PVA_DL_TENSOR_H
 #define PVA_DL_TENSOR_H
 
-#include "common.h"
+#include "core/common.h"
 
 // --------------------------------------------------------------------------
 // definitions

@@ -1,7 +1,7 @@
 #ifndef PVA_DL_RPN_FUNC_H
 #define PVA_DL_RPN_FUNC_H
 
-#include "common.h"
+#include "core/common.h"
 
 // --------------------------------------------------------------------------
 // functions related to region proposal operators

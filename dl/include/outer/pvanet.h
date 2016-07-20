@@ -1,7 +1,7 @@
 #ifndef PVA_DL_PVANET_H
 #define PVA_DL_PVANET_H
 
-#include "net.h"
+#include "core/net.h"
 
 // --------------------------------------------------------------------------
 // network creators
