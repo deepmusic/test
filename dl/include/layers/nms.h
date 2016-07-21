@@ -1,29 +1,17 @@
-#ifndef PVA_DL_RPN_FUNC_H
-#define PVA_DL_RPN_FUNC_H
+#ifndef PVA_DL_NMS_H
+#define PVA_DL_NMS_H
 
-#include "core/common.h"
+#include "layers/operator.h"
 
 // --------------------------------------------------------------------------
-// functions related to region proposal operators
-//   iou
-//   soft_box
-//   nms
+// functions for NMS operation
+//   nms: detect significantly overlapped boxes of low confidence scores
+//   malloc_nms_aux_data: auxiliary data initializer for NMS operation
+//   free_nms_aux_data: auxiliary data finalizer for NMS operation
 // --------------------------------------------------------------------------
-
-// "IoU = intersection area / union area" of two boxes A, B
-//   A, B: 4-dim array (x1, y1, x2, y2)
-real iou(const real A[], const real B[]);
-
-// quick-sort a list of boxes in descending order of their scores (CPU)
-//   list_cpu: num_boxes x 5 array,  (x1, y1, x2, y2, score) for each box
-//             located at main memory
-//   if num_top <= end,  only top-k results are guaranteed to be sorted
-//   (for efficient computation)
-void sort_box(real list_cpu[], const int start, const int end,
-              const int num_top);
 
 // given box proposals (sorted in descending order of their scores),
-// discard a box if it is significantly overlapped with
+// detect a box if it is significantly overlapped with
 // one or more previous (= scored higher) boxes
 //   num_boxes: number of box proposals given
 //   boxes: "num_boxes x 5" array (x1, y1, x2, y2, score)
@@ -55,4 +43,4 @@ void malloc_nms_aux_data(void** const p_aux_data,
 // NMS auxiliary data finalizer
 void free_nms_aux_data(void* const aux_data);
 
-#endif // end PVA_DL_RPN_FUNC_H
+#endif // end PVA_DL_NMS_H

@@ -1,3 +1,1 @@
-remove shape inference during forward
-
-refactoring add_data_layer & set_input_pvanet & image.cu
+init proposal anchor

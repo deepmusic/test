@@ -3,6 +3,7 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <vector>
 
 #include <time.h>
 
@@ -92,7 +93,11 @@ void detect_frame(Net* const net,
     const clock_t tick0 = clock();
     real time = 0;
 
-    process_pvanet(net, image->data, image->rows, image->cols, NULL);
+    real* boxes;
+    int num_boxes;
+
+    process_pvanet(net, image->data, image->rows, image->cols,
+                   &boxes, &num_boxes, NULL);
 
     {
       clock_t tick1 = clock();
@@ -104,7 +109,7 @@ void detect_frame(Net* const net,
       }
     }
 
-    draw_boxes(image, net->temp_cpu_data, net->num_output_boxes, time);
+    draw_boxes(image, boxes, num_boxes, time);
 
     cv::imshow("faster-rcnn", *image);
   }
@@ -144,11 +149,13 @@ void test_database(Net* const net,
                    const char* const db_filename,
                    const char* const out_filename)
 {
-  #if BATCH_SIZE == 4
-  static const int batch_size = 4;
-  #else
-  static const int batch_size = 1;
-  #endif
+  std::vector<cv::Mat> images;
+  unsigned char* p_images[BATCH_SIZE];
+  int image_heights[BATCH_SIZE];
+  int image_widths[BATCH_SIZE];
+
+  real* output_boxes;
+  int num_output_boxes[BATCH_SIZE];
 
   char buf[10240];
   char* line[20];
@@ -180,31 +187,20 @@ void test_database(Net* const net,
       buf_count += len;
     }
 
-    if (count == batch_size)
+    if (count == BATCH_SIZE)
     {
-    #if BATCH_SIZE == 4
-      cv::Mat images[] = {
-        cv::imread(line[0]), cv::imread(line[1]),
-        cv::imread(line[2]), cv::imread(line[3])
-      };
-      const unsigned char* const images_data[] = {
-        images[0].data, images[1].data, images[2].data, images[3].data
-      };
-      const int heights[] = {
-        images[0].rows, images[1].rows, images[2].rows, images[3].rows
-      };
-      const int widths[] = {
-        images[0].cols, images[1].cols, images[2].cols, images[3].cols
-      };
-    #else
-      cv::Mat images[] = { cv::imread(line[0]) };
-      const unsigned char* const images_data[] = { images[0].data };
-      const int heights[] = { images[0].rows };
-      const int widths[] = { images[0].cols };
-    #endif
+      for (int n = 0; n < count; ++n) {
+        images.push_back(cv::imread(line[n]));
+      }
+      for (int n = 0; n < count; ++n) {
+        p_images[n] = images[n].data;
+        image_heights[n] = images[n].rows;
+        image_widths[n] = images[n].cols;
+      }
 
-      process_batch_pvanet(net, images_data, heights, widths, batch_size,
-                           fp_out);
+      process_batch_pvanet(net, p_images, image_heights, image_widths,
+                           count, &output_boxes, num_output_boxes, fp_out);
+      images.clear();
 
       tick1 = clock();
       a_time[0] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
@@ -222,9 +218,17 @@ void test_database(Net* const net,
 
   if (count > 0) {
     for (int n = 0; n < count; ++n) {
-      cv::Mat image = cv::imread(line[n]);
-      process_pvanet(net, image.data, image.rows, image.cols, fp_out);
+      images.push_back(cv::imread(line[n]).clone());
     }
+    for (int n = 0; n < count; ++n) {
+      p_images[n] = images[n].data;
+      image_heights[n] = images[n].rows;
+      image_widths[n] = images[n].cols;
+    }
+
+    process_batch_pvanet(net, p_images, image_heights, image_widths,
+                         count, &output_boxes, num_output_boxes, fp_out);
+    images.clear();
 
     tick1 = clock();
     a_time[0] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
@@ -264,12 +268,12 @@ void print_usage(void)
   const char* const postfix3 = "";
   #endif
 
-  printf("[Usage] ./demo%s%s%s.bin <pre_nms_topn> <post_nms_topn> <input_scale> <command> <arg1> <arg2> ...\n\n",
+  printf("[Usage] ./demo%s%s%s.bin <pre_nms_topn> <post_nms_topn> <input_size> <command> <arg1> <arg2> ...\n\n",
          postfix1, postfix2, postfix3);
-  printf("  Common settings for <pre_nms_topn> <post_nms_topn> <input_scale>:\n");
+  printf("  Common settings for <pre_nms_topn> <post_nms_topn> <input_size>:\n");
   printf("    pre_nms_topn = 6000 or 12000\n");
   printf("    post_nms_topn = 100, 200, or 300\n");
-  printf("    input_scale = 480, 576, 720, or 960\n\n");
+  printf("    input_size = 480, 576, 720, or 960\n\n");
   printf("  Settings for <command> <arg1> <arg2> ...:\n");
   printf("  1. [Live demo using WebCam] live <camera id> <width> <height>\n");
   printf("  2. [Image file] snapshot <image filename>\n");
@@ -280,10 +284,10 @@ void print_usage(void)
 static
 int test(const char* const args[], const int num_args)
 {
-  Net pvanet;
+  Net* pvanet;
   const int pre_nms_topn = atoi(args[0]);
   const int post_nms_topn = atoi(args[1]);
-  const int input_scale = atoi(args[2]);
+  const int input_size = atoi(args[2]);
   const char* const command = args[3];
 
   #ifdef GPU
@@ -320,12 +324,10 @@ int test(const char* const args[], const int num_args)
       vc.set(CV_CAP_PROP_FRAME_WIDTH, frame_width);
       vc.set(CV_CAP_PROP_FRAME_HEIGHT, frame_height);
 
-      construct_pvanet(&pvanet, model_path,
-                       is_light_model, fc_compress,
-                       pre_nms_topn, post_nms_topn,
-                       input_scale);
-      test_stream(&pvanet, vc);
-      free_net(&pvanet);
+      pvanet = create_pvanet(model_path, is_light_model, fc_compress,
+                             pre_nms_topn, post_nms_topn, input_size);
+      test_stream(pvanet, vc);
+      free_net(pvanet);
 
       cv::destroyAllWindows();
     }
@@ -340,12 +342,10 @@ int test(const char* const args[], const int num_args)
       const char* const filename = args[4];
       cv::imshow("faster-rcnn", 0);
 
-      construct_pvanet(&pvanet, model_path,
-                       is_light_model, fc_compress,
-                       pre_nms_topn, post_nms_topn,
-                       input_scale);
-      test_image(&pvanet, filename);
-      free_net(&pvanet);
+      pvanet = create_pvanet(model_path, is_light_model, fc_compress,
+                             pre_nms_topn, post_nms_topn, input_size);
+      test_image(pvanet, filename);
+      free_net(pvanet);
 
       cv::destroyAllWindows();
     }
@@ -367,12 +367,10 @@ int test(const char* const args[], const int num_args)
         return -1;
       }
 
-      construct_pvanet(&pvanet, model_path,
-                       is_light_model, fc_compress,
-                       pre_nms_topn, post_nms_topn,
-                       input_scale);
-      test_stream(&pvanet, vc);
-      free_net(&pvanet);
+      pvanet = create_pvanet(model_path, is_light_model, fc_compress,
+                             pre_nms_topn, post_nms_topn, input_size);
+      test_stream(pvanet, vc);
+      free_net(pvanet);
 
       cv::destroyAllWindows();
     }
@@ -387,12 +385,10 @@ int test(const char* const args[], const int num_args)
       const char* const db_filename = args[4];
       const char* const out_filename = args[5];
 
-      construct_pvanet(&pvanet, model_path,
-                       is_light_model, fc_compress,
-                       pre_nms_topn, post_nms_topn,
-                       input_scale);
-      test_database(&pvanet, db_filename, out_filename);
-      free_net(&pvanet);
+      pvanet = create_pvanet(model_path, is_light_model, fc_compress,
+                             pre_nms_topn, post_nms_topn, input_size);
+      test_database(pvanet, db_filename, out_filename);
+      free_net(pvanet);
     }
     else {
       print_usage();

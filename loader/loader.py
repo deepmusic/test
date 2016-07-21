@@ -2,6 +2,7 @@ from proto import caffe_pb2
 from google.protobuf import text_format
 import ctypes
 from pvanet import lib as pvalib
+from pvanet import detect, get_tensor_data
 
 def parse_layer(layer, phase=1, verbose=False, net=None):
   def convert_name(name):
@@ -54,9 +55,13 @@ def parse_layer(layer, phase=1, verbose=False, net=None):
     print '  param: {:s}'.format(param_names)
 
   if layer.type == 'DummyData':
-    command = 'add_data_layer(net, "{:s}", "{:s}", "{:s}");'.format(layer_name, top_names[0], top_names[1])
+    input_size = 600
+    unit_size = 32
+    max_image_size = 2048
+    command = 'add_image_layer(net, "{:s}", "{:s}", "{:s}", {:d}, {:d}, {:d});'.format( \
+              layer_name, top_names[0], top_names[1], input_size, unit_size, max_image_size)
     if generate:
-      pvalib.add_data_layer(net, layer_name, top_names[0], top_names[1])
+      pvalib.add_image_layer(net, layer_name, top_names[0], top_names[1], input_size, unit_size, max_image_size)
 
   elif layer.type == 'Convolution' or layer.type == 'Deconvolution':
     option = layer.convolution_param
@@ -86,15 +91,16 @@ def parse_layer(layer, phase=1, verbose=False, net=None):
     option = layer.power_param
     weight = float(option.scale)
     bias = float(option.shift)
-    command = 'add_scale_const_layer(net, "{:s}", "{:s}", "{:s}", {:f}f, {:f}f, 1);'.format( \
-              layer_name, bottom_names[0], top_names[0], weight, bias)
+    order = float(option.power)
+    command = 'add_power_layer(net, "{:s}", "{:s}", "{:s}", {:f}f, {:f}f, {:f}f, 1);'.format( \
+              layer_name, bottom_names[0], top_names[0], weight, bias, order)
     if generate:
-      pvalib.add_scale_const_layer(net, layer_name, bottom_names[0], top_names[0], weight, bias, 1)
+      pvalib.add_power_layer(net, layer_name, bottom_names[0], top_names[0], weight, bias, order, 1)
 
   elif layer.type == 'Concat':
     command += '{ '
-    command += '{:s} '.format(string_array(bottom_names))
-    command += 'add_concat_layer(net, "{:s}", list, "{:s}", {:d}); '.format( \
+    command += '{:s} '.format(string_array(bottom_names, 'names'))
+    command += 'add_concat_layer(net, "{:s}", names, "{:s}", {:d}); '.format( \
                layer_name, top_names[0], len(bottom_names))
     command += '}'
     if generate:
@@ -123,22 +129,22 @@ def parse_layer(layer, phase=1, verbose=False, net=None):
     arg_str = '(net, "{:s}", "{:s}", "{:s}", {:d}, {:d}, {:d}, {:d}, {:d}, {:d});'.format( \
               layer_name, bottom_names[0], top_names[0],
               kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w)
-    command = 'add_max_pool_layer{:s}'.format(arg_str)
+    command = 'add_pool_layer{:s}'.format(arg_str)
     if generate:
-      pvalib.add_max_pool_layer(net, layer_name, bottom_names[0], top_names[0], kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w)
+      pvalib.add_pool_layer(net, layer_name, bottom_names[0], top_names[0], kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w)
 
   elif layer.type == 'Scale':
     option = layer.scale_param
     bias_term = option.bias_term
-    command = 'add_scale_channel_layer(net, "{:s}", "{:s}", "{:s}", NULL, NULL, {:d});'.format( \
+    command = 'add_scale_layer(net, "{:s}", "{:s}", "{:s}", NULL, NULL, {:d});'.format( \
               layer_name, bottom_names[0], top_names[0], bias_term)
     if generate:
-      pvalib.add_scale_channel_layer(net, layer_name, bottom_names[0], top_names[0], None, None, bias_term)
+      pvalib.add_scale_layer(net, layer_name, bottom_names[0], top_names[0], None, None, bias_term)
 
   elif layer.type == 'Eltwise':
     command += '{ '
-    command += '{:s} '.format(string_array(bottom_names))
-    command += 'add_eltwise_layer(net, "{:s}", list, "{:s}", {:d}); '.format( \
+    command += '{:s} '.format(string_array(bottom_names, 'names'))
+    command += 'add_eltwise_layer(net, "{:s}", names, "{:s}", {:d}); '.format( \
                layer_name, top_names[0], len(bottom_names))
     command += '}'
     if generate:
@@ -187,7 +193,7 @@ def parse_layer(layer, phase=1, verbose=False, net=None):
     bbox_vote = option['bbox_vote'] if option.has_key('bbox_vote') else 0
     vote_thresh = option['vote_thresh'] if option.has_key('vote_thresh') else 0.5
     command += '{ '
-    command += '{:s} '.format(real_array(scales, name='sacles'))
+    command += '{:s} '.format(real_array(scales, name='scales'))
     command += '{:s} '.format(real_array(ratios, name='ratios'))
     command += 'add_proposal_layer(net, "{:s}", "{:s}", "{:s}", "{:s}", "{:s}", '.format( \
                layer_name, bottom_names[0], bottom_names[1], bottom_names[2], top_names[0])
@@ -268,11 +274,17 @@ def load_pva900(net=None):
   proto_name = '../pvanet/9.0.0_mod1_tuned/9.0.0_mod1.new.21cls.pt'
   proto = load_proto(proto_name)
   parse_proto(proto, net=net)
+  if net:
+    pvalib.malloc_net(net)
 
 def load_pva33(net=None):
-  proto_name = '3.3.custom.pt'
+  proto_name = '9.0.0lite.pt'
   proto = load_proto(proto_name)
   parse_proto(proto, net=net)
+  if net:
+    pvalib.get_tensor_by_name(net, 'conv1').contents.data_type = 1
+    pvalib.get_tensor_by_name(net, 'conv3').contents.data_type = 1
+    pvalib.malloc_net(net)
 
 def test():
   code_only = False
@@ -281,30 +293,19 @@ def test():
     load_pva900()
     print '---------------------- PVA 3.3 code ----------------------------'
     load_pva33()
-  else:
-    net = pvalib._net()
-    pvalib.init_net(net)
+  elif True:
+    net = pvalib.create_empty_net()
+    print dir(net)
     net.contents.param_path = '../data/pvanet/pvanet'
-    net.contents.input_scale = 600
     load_pva900(net=net)
-    #pvalib.setup_frcnn(net, 'convf_rpn', 'convf', 384, 3, 3, 1, 512, 512, 12000, 300)
-    pvalib.shape_net(net)
-    pvalib.malloc_net(net)
-    from scipy.ndimage import imread
-    img = imread('../dl/scripts/voc/000004.jpg')
-    pvalib._detect_net(img.tobytes(), img.shape[1], img.shape[0])
-    return
+    detect(net, '../dl/scripts/voc/000004.jpg')
+    print get_tensor_data(pvalib.get_tensor_by_name(net, 'out'))
     pvalib.free_net(net)
-
+  else:
+    net = pvalib.create_empty_net()
     net.contents.param_path = '../data/pvanet/pvanet_light'
-    net.contents.input_scale = 600
     load_pva33(net=net)
-    #pvalib.setup_frcnn(net, 'convf', 'convf', 256, 1, 1, 1, 512, 128, 12000, 300)
-    pvalib.get_tensor_by_name(net, 'conv1').contents.data_type = 1
-    pvalib.get_tensor_by_name(net, 'conv3').contents.data_type = 1
-    pvalib.shape_net(net)
-    pvalib.malloc_net(net)
-    pvalib._detect_net(img.tobytes(), img.shape[1], img.shape[0])
+    detect(net, '../dl/scripts/voc/000004.jpg')
     pvalib.free_net(net)
 
 test()

@@ -133,7 +133,7 @@ void roi_pool_cpu(const real bottom3d[], const real roi2d[],
 
 
 // --------------------------------------------------------------------------
-// layer operator code
+// layer-wise operator code
 // --------------------------------------------------------------------------
 
 // RoI pooling: bottom -> top
@@ -233,7 +233,7 @@ void roipool_forward(const Tensor* const bottom3d,
 
 
 // --------------------------------------------------------------------------
-// layer shape calculator code
+// output shape calculator code
 // --------------------------------------------------------------------------
 
 static
@@ -298,13 +298,12 @@ void roipool_shape(const Tensor* const bottom3d,
 
 
 // --------------------------------------------------------------------------
-// API code
+// functions for layer instance
 // --------------------------------------------------------------------------
 
 void forward_roipool_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
-
   roipool_forward(get_bottom(layer, 0), get_bottom(layer, 1),
                   get_top(layer, 0), &layer->option);
 }
@@ -312,7 +311,19 @@ void forward_roipool_layer(void* const net_, void* const layer_)
 void shape_roipool_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
-
   roipool_shape(get_bottom(layer, 0), get_bottom(layer, 1),
                 get_top(layer, 0), &layer->option);
+}
+
+void init_roipool_layer(void* const net_, void* const layer_)
+{
+  Layer* const layer = (Layer*)layer_;
+
+  // it commonly reduces memory consumption
+  get_top(layer, 0)->data_type = PRIVATE_DATA;
+}
+
+void free_roipool_layer(void* const net_, void* const layer_)
+{
+  return;
 }

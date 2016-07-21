@@ -1,15 +1,15 @@
-#include "layers/layer_factory.h"
+#include "nets/net_factory.h"
 
-void setup_shared_cnn_light(Net* const net)
+void setup_shared_cnn_light(Net* const net, const int input_size)
 {
-  add_data_layer(net, "input-data", "data", "im_info");
+  add_image_layer(net, "input-data", "data", "im_info", input_size, 32, 2048);
   add_conv_layer(net, "conv1", "data", "conv1", NULL, NULL, 1, 32, 4, 4, 2, 2, 1, 1, 1);
   add_relu_layer(net, "relu1", "conv1", "conv1", 0);
   add_conv_layer(net, "conv2", "conv1", "conv2", NULL, NULL, 1, 48, 3, 3, 2, 2, 1, 1, 1);
   add_relu_layer(net, "relu2", "conv2", "conv2", 0);
   add_conv_layer(net, "conv3", "conv2", "conv3", NULL, NULL, 1, 96, 3, 3, 2, 2, 1, 1, 1);
   add_relu_layer(net, "relu3", "conv3", "conv3", 0);
-  add_max_pool_layer(net, "inc3a_pool1", "conv3", "inc3a_pool1", 3, 3, 2, 2, 0, 0);
+  add_pool_layer(net, "inc3a_pool1", "conv3", "inc3a_pool1", 3, 3, 2, 2, 0, 0);
   add_conv_layer(net, "inc3a_conv1", "inc3a_pool1", "inc3a_conv1", NULL, NULL, 1, 96, 1, 1, 1, 1, 0, 0, 1);
   add_relu_layer(net, "inc3a_relu1", "inc3a_conv1", "inc3a_conv1", 0);
   add_conv_layer(net, "inc3a_conv3_1", "conv3", "inc3a_conv3_1", NULL, NULL, 1, 16, 1, 1, 1, 1, 0, 0, 1);
@@ -75,7 +75,7 @@ void setup_shared_cnn_light(Net* const net)
   add_conv_layer(net, "inc3e_conv5_3", "inc3e_conv5_2", "inc3e_conv5_3", NULL, NULL, 1, 32, 3, 3, 1, 1, 1, 1, 1);
   add_relu_layer(net, "inc3e_relu5_3", "inc3e_conv5_3", "inc3e_conv5_3", 0);
   { const char* const names[] = { "inc3e_conv1", "inc3e_conv3_2", "inc3e_conv5_3" }; add_concat_layer(net, "inc3e", names, "inc3e", 3); }
-  add_max_pool_layer(net, "inc4a_pool1", "inc3e", "inc4a_pool1", 3, 3, 2, 2, 0, 0);
+  add_pool_layer(net, "inc4a_pool1", "inc3e", "inc4a_pool1", 3, 3, 2, 2, 0, 0);
   add_conv_layer(net, "inc4a_conv1", "inc4a_pool1", "inc4a_conv1", NULL, NULL, 1, 128, 1, 1, 1, 1, 0, 0, 1);
   add_relu_layer(net, "inc4a_relu1", "inc4a_conv1", "inc4a_conv1", 0);
   add_conv_layer(net, "inc4a_conv3_1", "inc3e", "inc4a_conv3_1", NULL, NULL, 1, 32, 1, 1, 1, 1, 0, 0, 1);
@@ -141,7 +141,7 @@ void setup_shared_cnn_light(Net* const net)
   add_conv_layer(net, "inc4e_conv5_3", "inc4e_conv5_2", "inc4e_conv5_3", NULL, NULL, 1, 32, 3, 3, 1, 1, 1, 1, 1);
   add_relu_layer(net, "inc4e_relu5_3", "inc4e_conv5_3", "inc4e_conv5_3", 0);
   { const char* const names[] = { "inc4e_conv1", "inc4e_conv3_2", "inc4e_conv5_3" }; add_concat_layer(net, "inc4e", names, "inc4e", 3); }
-  add_max_pool_layer(net, "downsample", "conv3", "downsample", 3, 3, 2, 2, 0, 0);
+  add_pool_layer(net, "downsample", "conv3", "downsample", 3, 3, 2, 2, 0, 0);
   add_deconv_layer(net, "upsample", "inc4e", "upsample", NULL, NULL, 256, 256, 4, 4, 2, 2, 1, 1, 0);
   { const char* const names[] = { "downsample", "inc3e", "upsample" }; add_concat_layer(net, "concat", names, "concat", 3); }
   add_conv_layer(net, "convf", "concat", "convf", NULL, NULL, 1, 256, 1, 1, 1, 1, 0, 0, 1);

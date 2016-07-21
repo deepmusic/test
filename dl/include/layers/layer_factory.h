@@ -6,16 +6,19 @@
 #ifndef PVA_DL_LAYER_FACTORY_H
 #define PVA_DL_LAYER_FACTORY_H
 
-#include "core/net.h"
+#include "layers/operator.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-Layer* add_data_layer(Net* const net,
-                      const char* const layer_name,
-                      const char* const data_name,
-                      const char* const img_info_name);
+Layer* add_image_layer(Net* const net,
+                       const char* const layer_name,
+                       const char* const data_name,
+                       const char* const img_info_name,
+                       const int input_size,
+                       const int unit_size,
+                       const int max_image_size);
 
 Layer* add_conv_layer(Net* const net,
                       const char* const layer_name,
@@ -50,29 +53,30 @@ Layer* add_fc_layer(Net* const net,
                     const int num_output,
                     const int bias_term);
 
-Layer* add_max_pool_layer(Net* const net,
-                          const char* const layer_name,
-                          const char* const bottom_name,
-                          const char* const top_name,
-                          const int kernel_h, const int kernel_w,
-                          const int stride_h, const int stride_w,
-                          const int pad_h, const int pad_w);
+Layer* add_pool_layer(Net* const net,
+                      const char* const layer_name,
+                      const char* const bottom_name,
+                      const char* const top_name,
+                      const int kernel_h, const int kernel_w,
+                      const int stride_h, const int stride_w,
+                      const int pad_h, const int pad_w);
 
-Layer* add_scale_const_layer(Net* const net,
-                             const char* const layer_name,
-                             const char* const bottom_name,
-                             const char* const top_name,
-                             const real weight,
-                             const real bias,
-                             const int bias_term);
+Layer* add_power_layer(Net* const net,
+                       const char* const layer_name,
+                       const char* const bottom_name,
+                       const char* const top_name,
+                       const real weight,
+                       const real bias,
+                       const real order,
+                       const int bias_term);
 
-Layer* add_scale_channel_layer(Net* const net,
-                               const char* const layer_name,
-                               const char* const bottom_name,
-                               const char* const top_name,
-                               const char* const weight_name,
-                               const char* const bias_name,
-                               const int bias_term);
+Layer* add_scale_layer(Net* const net,
+                       const char* const layer_name,
+                       const char* const bottom_name,
+                       const char* const top_name,
+                       const char* const weight_name,
+                       const char* const bias_name,
+                       const int bias_term);
 
 Layer* add_concat_layer(Net* const net,
                         const char* const layer_name,

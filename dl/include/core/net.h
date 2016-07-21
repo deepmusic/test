@@ -39,10 +39,11 @@ typedef struct Net_
   int num_shared_blocks;
 
   // temporary space for some layer-wise operators
-  //   temp_data: space allocated at GPU memory (in GPU mode) or main memory
-  //   temp_cpu_data: space allocated at main memory (even in GPU mode)
-  real* temp_data;
+  //   temp_cpu_data: temp space allocated at main memory
+  //   temp_data: in GPU mode, temp space allocated at GPU memory
+  //              in CPU mode, temp_data = temp_cpu_data
   real* temp_cpu_data;
+  real* temp_data;
   long int temp_space;
 
   // a constant array [1, 1, ..., 1] used for conv, deconv, fc layers
@@ -50,17 +51,20 @@ typedef struct Net_
   long int const_space;
 
   // total size of allocated memory (byte)
-  //   space_cpu: main memory size (even in GPU mode)
-  //   space: GPU memory size (in GPU mode) or main memory size
-  //   in CPU mode, total size = space_cpu + space
+  //   space_cpu: size allocated at main memory
+  //   space: in GPU mode, size allocated at GPU memory
+  //          in CPU mode, space = space_cpu
   long int space_cpu;
   long int space;
 
   // flag whether this network is ready to run (= 1) or not (= 0)
   int initialized;
 
-  int input_scale;
-  int num_output_boxes;
+  // pointers to input images and their sizes
+  unsigned char* p_images[BATCH_SIZE];
+  int image_heights[BATCH_SIZE];
+  int image_widths[BATCH_SIZE];
+  int num_images;
 
   // auxiliary data for CuBLAS library
   #ifdef GPU
@@ -81,57 +85,21 @@ typedef struct Net_
 extern "C" {
 #endif
 
-void init_net(Net* const net);
-
-void malloc_net(Net* const net);
-
-void free_net(Net* const net);
+Net* create_empty_net(void);
 
 void forward_net(Net* const net);
 
 void shape_net(Net* const net);
 
-Tensor* get_tensor(Net* const net,
-                   const int tensor_id);
+void malloc_net(Net* const net);
 
-Layer* get_layer(Net* const net,
-                 const int layer_id);
-
-int get_tensor_id(Net* const net,
-                  const Tensor* const tensor);
-
-int get_layer_id(Net* const net,
-                 const Layer* const layer);
-
-Tensor* find_tensor_by_name(Net* const net,
-                            const char* const name);
-
-Layer* find_layer_by_name(Net* const net,
-                          const char* const name);
-
-Tensor* add_tensor(Net* const net,
-                   const char* const name);
-
-Layer* add_layer(Net* const net,
-                 const char* const name);
-
-Tensor* find_or_add_tensor(Net* const net,
-                           const char* const name);
-
-Layer* find_or_add_layer(Net* const net,
-                         const char* const name);
+void free_net(Net* const net);
 
 Tensor* get_tensor_by_name(Net* const net,
                            const char* const name);
 
 Layer* get_layer_by_name(Net* const net,
                          const char* const name);
-
-void save_layer_tops(void* const net_,
-                     void* const layer_);
-
-void print_layer_tops(void* const net_,
-                      void* const layer_);
 
 #ifdef __cplusplus
 } // end extern "C"
@@ -147,8 +115,55 @@ void update_temp_space(Net* const net, const long int space);
 
 void update_const_space(Net* const net, const long int space);
 
-void init_input_layer(Net* const net,
-                      Tensor* const input3d,
-                      Tensor* const img_info1d);
+Tensor* get_tensor(Net* const net,
+                   const int tensor_id);
+
+Layer* get_layer(Net* const net,
+                 const int layer_id);
+
+int get_tensor_id(Net* const net,
+                  const Tensor* const tensor);
+
+int get_layer_id(Net* const net,
+                 const Layer* const layer);
+
+Tensor* add_tensor(Net* const net,
+                   const char* const name);
+
+Layer* add_layer(Net* const net,
+                 const char* const name);
+
+Tensor* find_or_add_tensor(Net* const net,
+                           const char* const name);
+
+Layer* find_or_add_layer(Net* const net,
+                         const char* const name);
+
+void save_layer_tops(void* const net_,
+                     void* const layer_);
+
+void print_layer_tops(void* const net_,
+                      void* const layer_);
+
+
+
+// --------------------------------------------------------------------------
+// simple functions returning static constants
+//   required for Python interface
+// --------------------------------------------------------------------------
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+int _max_num_tensors(void);
+
+int _max_num_layers(void);
+
+int _max_num_shared_blocks(void);
+
+#ifdef __cplusplus
+} // end extern "C"
+#endif
 
 #endif // end PVA_DL_NET_H

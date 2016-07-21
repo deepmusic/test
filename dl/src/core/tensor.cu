@@ -230,3 +230,16 @@ void print_tensor_info(const Tensor* const tensor)
   }
   #endif
 }
+
+
+
+// --------------------------------------------------------------------------
+// simple functions returning static constants
+//   required for Python interface
+// --------------------------------------------------------------------------
+
+int _max_name_len(void) { return MAX_NAME_LEN; }
+
+int _batch_size(void) { return BATCH_SIZE; }
+
+int _max_ndim(void) { return MAX_NDIM; }

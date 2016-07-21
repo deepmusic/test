@@ -7,12 +7,8 @@
 // definitions
 // --------------------------------------------------------------------------
 
-#ifdef DEMO
-  #define BATCH_SIZE 1
-#else
-  #define BATCH_SIZE 4
-#endif
-
+#define MAX_NAME_LEN 64
+#define BATCH_SIZE 1
 #define MAX_NDIM 5
 
 // data_type values
@@ -83,5 +79,26 @@ void save_tensor_data(const char* const filename,
 
 // print shapes for all batch items in tensor
 void print_tensor_info(const Tensor* const tensor);
+
+
+
+// --------------------------------------------------------------------------
+// simple functions returning static constants
+//   required for Python interface
+// --------------------------------------------------------------------------
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+int _max_name_len(void);
+
+int _batch_size(void);
+
+int _max_ndim(void);
+
+#ifdef __cplusplus
+} // end extern "C"
+#endif
 
 #endif // end PVA_DL_TENSOR_H

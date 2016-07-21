@@ -21,14 +21,21 @@
 
 typedef struct LayerOption_
 {
+  // for input image pre-processing operator
+  int input_size;
+  int unit_size;
+  int max_image_size;
+
+  // for operators using bias term
+  int bias;
+
   // for convolution, deconvolution, fully-connected operators
-  //   fully-connected operator uses out_channels, bias, handle only
+  //   fully-connected operator uses out_channels and handle only
   int group;
   int num_output;
   int kernel_h, kernel_w;
   int pad_h, pad_w;
   int stride_h, stride_w;
-  int bias;
   void* handle;
 
   // for RoI pooling operator
@@ -60,9 +67,10 @@ typedef struct LayerOption_
   int test_dropout;
   real dropout_ratio;
 
-  // for scale_const operator
-  real scale_weight;
-  real scale_bias;
+  // for power operator
+  real power_weight;
+  real power_bias;
+  real power_order;
 
   // for softmax operator
   int channel_axis;
@@ -92,20 +100,18 @@ typedef struct Layer_
 
   // data instance used for this layer's operator
   //   only a few operators (deconv, proposal, odout, nms) use it
-  //   they define their own auxiliary data structure
-  //   as well as its initializer and finalizer
+  //   they define their own auxiliary data structures
   void* aux_data;
 
   // function pointer to this layer's operator
   //   f_forwward: forward operator
   //   f_shape: shape calculator for layer outputs
-  void (*f_forward)(void*, void*);
-  void (*f_shape)(void*, void*);
-
-  // function pointer to the finalizer for aux_data
-  //   NULL if this layer's operator doesn't use aux_data
-  //   called when this layer instance is destroyed
-  void (*f_free)(void*, void*);
+  //   f_init: layer instance initializer
+  //   f_free: layer instance finalizer
+  void (*f_forward)(void* net, void* layer);
+  void (*f_shape)(void* net, void* layer);
+  void (*f_init)(void* net, void* layer);
+  void (*f_free)(void* net, void* layer);
 
   // a container of optional arguments
   LayerOption option;
@@ -117,10 +123,14 @@ typedef struct Layer_
 // functions
 // --------------------------------------------------------------------------
 
-void init_layer(Layer* const layer);
+Tensor* get_bottom(const Layer* const layer,
+                   const int bottom_id);
 
-void set_layer_name(Layer* const layer,
-                    const char* const name);
+Tensor* get_top(const Layer* const layer,
+                const int top_id);
+
+Tensor* get_param(const Layer* const layer,
+                  const int param_id);
 
 void set_bottom(Layer* const layer,
                 const int bottom_id,
@@ -143,13 +153,25 @@ void add_top(Layer* const layer,
 void add_param(Layer* const layer,
                Tensor* const tensor);
 
-Tensor* get_bottom(const Layer* const layer,
-                   const int bottom_id);
 
-Tensor* get_top(const Layer* const layer,
-                const int top_id);
 
-Tensor* get_param(const Layer* const layer,
-                  const int param_id);
+// --------------------------------------------------------------------------
+// simple functions returning static constants
+//   required for Python interface
+// --------------------------------------------------------------------------
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+int _max_num_bottoms(void);
+
+int _max_num_tops(void);
+
+int _max_num_params(void);
+
+#ifdef __cplusplus
+} // end extern "C"
+#endif
 
 #endif // end PVA_DL_LAYER_H

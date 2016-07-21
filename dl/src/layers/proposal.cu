@@ -28,7 +28,7 @@
 */
 
 #include "core/net.h"
-#include "layers/rpn.h"
+#include "layers/nms.h"
 #include <string.h>
 
 #include <time.h>
@@ -38,59 +38,18 @@ static clock_t tick0, tick1, tick00;
 
 // --------------------------------------------------------------------------
 // kernel code
-//   generate_anchors: generate anchor boxes of varying sizes and ratios
 //   transform_box: transform a box according to a given gradient
 //   sort_box: sort a list of boxes in descending order of their scores
+//   generate_anchors: generate anchor boxes of varying sizes and ratios
 //   enumerate_proposals: generate all candidate boxes with their scores
 //   retrieve_rois: retrieve boxes that are determined to be kept by NMS
 // --------------------------------------------------------------------------
 
-// given a base box, enumerate transformed boxes of varying sizes and ratios
-//   base_size: base box's width & height (i.e., base box is square)
-//   scales: "num_scales x 1" array of scale factors for base box transform
-//   ratios: "num_ratios x 1" array of height-width ratios
-//   anchors: "num_anchors x 4" array,  (x1, y1, x2, y2) for each box
-//   num_anchors: total number of transformations
-//                = num_scales * num_ratios
-static
-void generate_anchors(const real scales[], const real ratios[],
-                      real anchors[],
-                      const int num_scales, const int num_ratios,
-                      const int base_size)
-{
-  // base box's width & height & center location
-  const real base_area = (real)(base_size * base_size);
-  const real center = 0.5f * (base_size - 1.0f);
-
-  // enumerate all transformed boxes
-  {
-    real* p_anchors = anchors;
-    for (int j0 = 0; j0 < num_scales; j0 += num_ratios) {
-    for (int i = 0; i < num_ratios; ++i) {
-      // transformed width & height for given ratio factors
-      const real ratio_w = (real)ROUND(sqrt(base_area / ratios[i]));
-      const real ratio_h = (real)ROUND(ratio_w * ratios[i]);
-
-      for (int j = 0; j < num_ratios; ++j) {
-        // transformed width & height for given scale factors
-        const real scale_w = 0.5f * (ratio_w * scales[j0 + j] - 1.0f);
-        const real scale_h = 0.5f * (ratio_h * scales[j0 + j] - 1.0f);
-
-        // (x1, y1, x2, y2) for transformed box
-        p_anchors[0] = center - scale_w;
-        p_anchors[1] = center - scale_h;
-        p_anchors[2] = center + scale_w;
-        p_anchors[3] = center + scale_h;
-
-        p_anchors += 4;
-      } // endfor j
-    }} // endfor i, j0
-  }
-}
-
 // transform a box according to a given gradient
 //   box: (x1, y1, x2, y2)
 //   gradient: dx, dy, d(log w), d(log h)
+// with assuring the transformed box to be within image (img_W, img_H),
+// and checking whether the new box's size >= (min_box_W, min_box_H)
 #ifdef GPU
 __device__
 #endif
@@ -141,6 +100,7 @@ int transform_box(real box[],
 //             located at main memory
 //   if num_top <= end,  only top-k results are guaranteed to be sorted
 //   (for efficient computation)
+static
 void sort_box(real list_cpu[], const int start, const int end,
               const int num_top)
 {
@@ -182,6 +142,49 @@ void sort_box(real list_cpu[], const int start, const int end,
   }
   if (right + 1 < num_top && right + 1 < end) {
     sort_box(list_cpu, right + 1, end, num_top);
+  }
+}
+
+// given a base box, enumerate transformed boxes of varying sizes and ratios
+//   base_size: base box's width & height (i.e., base box is square)
+//   scales: "num_scales x 1" array of scale factors for base box transform
+//   ratios: "num_ratios x 1" array of height-width ratios
+//   anchors: "num_anchors x 4" array,  (x1, y1, x2, y2) for each box
+//   num_anchors: total number of transformations
+//                = num_scales * num_ratios
+static
+void generate_anchors(const real scales[], const real ratios[],
+                      real anchors[],
+                      const int num_scales, const int num_ratios,
+                      const int base_size)
+{
+  // base box's width & height & center location
+  const real base_area = (real)(base_size * base_size);
+  const real center = 0.5f * (base_size - 1.0f);
+
+  // enumerate all transformed boxes
+  {
+    real* p_anchors = anchors;
+    for (int j0 = 0; j0 < num_scales; j0 += num_ratios) {
+    for (int i = 0; i < num_ratios; ++i) {
+      // transformed width & height for given ratio factors
+      const real ratio_w = (real)ROUND(sqrt(base_area / ratios[i]));
+      const real ratio_h = (real)ROUND(ratio_w * ratios[i]);
+
+      for (int j = 0; j < num_ratios; ++j) {
+        // transformed width & height for given scale factors
+        const real scale_w = 0.5f * (ratio_w * scales[j0 + j] - 1.0f);
+        const real scale_h = 0.5f * (ratio_h * scales[j0 + j] - 1.0f);
+
+        // (x1, y1, x2, y2) for transformed box
+        p_anchors[0] = center - scale_w;
+        p_anchors[1] = center - scale_h;
+        p_anchors[2] = center + scale_w;
+        p_anchors[3] = center + scale_h;
+
+        p_anchors += 4;
+      } // endfor j
+    }} // endfor i, j0
   }
 }
 
@@ -326,14 +329,15 @@ void retrieve_rois_cpu(const real proposals[],
 
 
 // --------------------------------------------------------------------------
-// layer operator code
+// auxiliary data structure
 // --------------------------------------------------------------------------
 
 // auxiliary data structure for proposal operation
 //   nms_aux_data: auxiliary data for NMS operation, (de)allocated by nms.cu
 //   anchors: "num_anchors * 4" array of anchor boxes
 //            (x1, y1, x2, y2) for each anchor
-typedef struct ProposalAuxData_ {
+typedef struct ProposalAuxData_
+{
   void* nms_aux_data;
   real* anchors;
 } ProposalAuxData;
@@ -344,7 +348,7 @@ void malloc_proposal_aux_data(ProposalAuxData* const aux_data,
                               long int* const p_space_cpu,
                               long int* const p_space)
 {
-  long int space_cpu = 0, space = 0;
+  long int space_cpu, space;
 
   // auxiliary data for NMS
   malloc_nms_aux_data(&aux_data->nms_aux_data, option->pre_nms_topn,
@@ -389,6 +393,12 @@ void free_proposal_aux_data(ProposalAuxData* const aux_data)
 
   memset(aux_data, 0, sizeof(ProposalAuxData));
 }
+
+
+
+// --------------------------------------------------------------------------
+// layer-wise operator code
+// --------------------------------------------------------------------------
 
 // proposal: bottom -> top
 //   bottom: (2 x num_anchors) x H x W tensor
@@ -591,15 +601,14 @@ void proposal_forward(const Tensor* const bottom4d,
   tick1 = clock();
   a_time[3] = (float)(tick1 - tick00) / CLOCKS_PER_SEC;
   a_time[7] += (float)(tick1 - tick00) / CLOCKS_PER_SEC;
-
-  print_tensor_info(top2d);
 }
 
 
 
 // --------------------------------------------------------------------------
-// layer shape calculator code
+// output shape calculator code
 // --------------------------------------------------------------------------
+
 static
 void proposal_shape(const Tensor* const bottom4d,
                     Tensor* const top2d,
@@ -640,14 +649,13 @@ void proposal_shape(const Tensor* const bottom4d,
 
 
 // --------------------------------------------------------------------------
-// API code
+// functions for layer instance
 // --------------------------------------------------------------------------
 
 void forward_proposal_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
-
   proposal_forward(get_bottom(layer, 0), get_bottom(layer, 1),
                    get_bottom(layer, 2),
                    get_top(layer, 0),
@@ -679,11 +687,14 @@ void shape_proposal_layer(void* const net_, void* const layer_)
   update_temp_space(net, temp_space);
 }
 
-void malloc_proposal_layer(void* const net_, void* const layer_)
+void init_proposal_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
   long int space_cpu, space;
+
+  // it commonly reduces memory consumption
+  get_top(layer, 0)->data_type = PRIVATE_DATA;
 
   layer->aux_data = (void*)malloc(sizeof(ProposalAuxData));
 
@@ -693,24 +704,11 @@ void malloc_proposal_layer(void* const net_, void* const layer_)
 
   net->space_cpu += space_cpu + sizeof(ProposalAuxData);
   net->space += space;
-
-  #ifdef DEBUG
-  {
-    #ifdef GPU
-    printf("%s: Memory allocated, CPU %ld byte and GPU %ld byte\n",
-           layer->name, space_cpu, space);
-    #else
-    printf("%s: Memory allocated, %ld byte\n",
-           layer->name, space_cpu + space);
-    #endif
-  }
-  #endif
 }
 
 void free_proposal_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
-
   free_proposal_aux_data((ProposalAuxData*)layer->aux_data);
   free(layer->aux_data);
 }

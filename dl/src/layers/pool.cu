@@ -113,7 +113,7 @@ void max_pool_cpu(const real bottom3d[],
 
 
 // --------------------------------------------------------------------------
-// layer operator code
+// layer-wise operator code
 // --------------------------------------------------------------------------
 
 // max-pooling: bottom -> top
@@ -189,7 +189,7 @@ void pool_forward(const Tensor* const bottom3d,
 
 
 // --------------------------------------------------------------------------
-// layer shape calculator code
+// output shape calculator code
 // --------------------------------------------------------------------------
 static
 void pool_shape(const Tensor* const bottom3d,
@@ -233,19 +233,27 @@ void pool_shape(const Tensor* const bottom3d,
 
 
 // --------------------------------------------------------------------------
-// API code
+// functions for layer instance
 // --------------------------------------------------------------------------
 
-void forward_max_pool_layer(void* const net_, void* const layer_)
+void forward_pool_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
-
   pool_forward(get_bottom(layer, 0), get_top(layer, 0), &layer->option);
 }
 
 void shape_pool_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
-
   pool_shape(get_bottom(layer, 0), get_top(layer, 0), &layer->option);
+}
+
+void init_pool_layer(void* const net_, void* const layer_)
+{
+  return;
+}
+
+void free_pool_layer(void* const net_, void* const layer_)
+{
+  return;
 }

@@ -7,9 +7,7 @@
 
 //#define DEBUG
 //#define MKL
-#define DEMO
 
-#define MAX_NAME_LEN 64
 typedef float real;
 
 
@@ -52,9 +50,3 @@ typedef float real;
 #endif
 
 #endif // end PVA_DL_COMMON_H
-
-
-
-
-
-

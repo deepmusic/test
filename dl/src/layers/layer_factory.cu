@@ -1,24 +1,12 @@
 #include "layers/layer_factory.h"
-#include "layers/operator.h"
 #include <string.h>
 
-Layer* add_data_layer(Net* const net,
-                      const char* const layer_name,
-                      const char* const data_name,
-                      const char* const img_info_name)
-{
-  Layer* const layer = add_layer(net, layer_name);
-  Tensor* const data = add_tensor(net, data_name);
-  Tensor* const img_info = add_tensor(net, img_info_name);
-
-  add_top(layer, data);
-  add_top(layer, img_info);
-
-  img_info->data_type = PRIVATE_DATA;
-  init_input_layer(net, data, img_info);
-
-  return layer;
-}
+// --------------------------------------------------------------------------
+// empty-layer creators for common layer types
+//   add_chain_layer: empty layer of ( 1 input, 1 output )
+//   add_hub_layer: empty layer of ( n inputs, 1 output )
+//   add_param_layer: empty layer of ( 1 input, 1 output, 2 params )
+// --------------------------------------------------------------------------
 
 Layer* add_chain_layer(Net* const net,
                        const char* const layer_name,
@@ -86,6 +74,37 @@ Layer* add_param_layer(Net* const net,
   return layer;
 }
 
+
+
+// --------------------------------------------------------------------------
+// creators for actual layer-wise operator instances
+// --------------------------------------------------------------------------
+
+Layer* add_image_layer(Net* const net,
+                       const char* const layer_name,
+                       const char* const data_name,
+                       const char* const img_info_name,
+                       const int input_size,
+                       const int unit_size,
+                       const int max_image_size)
+{
+  Layer* const layer = add_layer(net, layer_name);
+
+  add_top(layer, add_tensor(net, data_name));
+  add_top(layer, add_tensor(net, img_info_name));
+
+  layer->option.input_size = input_size;
+  layer->option.unit_size = unit_size;
+  layer->option.max_image_size = max_image_size;
+
+  layer->f_forward = forward_image_layer;
+  layer->f_shape = shape_image_layer;
+  layer->f_init = init_image_layer;
+  layer->f_free = free_image_layer;
+
+  return layer;
+}
+
 Layer* add_conv_layer(Net* const net,
                       const char* const layer_name,
                       const char* const bottom_name,
@@ -114,6 +133,8 @@ Layer* add_conv_layer(Net* const net,
 
   layer->f_forward = forward_conv_layer;
   layer->f_shape = shape_conv_layer;
+  layer->f_init = init_conv_layer;
+  layer->f_free = free_conv_layer;
 
   return layer;
 }
@@ -136,9 +157,8 @@ Layer* add_deconv_layer(Net* const net,
 
   layer->f_forward = forward_deconv_layer;
   layer->f_shape = shape_deconv_layer;
+  layer->f_init = init_deconv_layer;
   layer->f_free = free_deconv_layer;
-
-  malloc_deconv_layer(net, layer);
 
   return layer;
 }
@@ -161,17 +181,19 @@ Layer* add_fc_layer(Net* const net,
 
   layer->f_forward = forward_fc_layer;
   layer->f_shape = shape_fc_layer;
+  layer->f_init = init_fc_layer;
+  layer->f_free = free_fc_layer;
 
   return layer;
 }
 
-Layer* add_max_pool_layer(Net* const net,
-                          const char* const layer_name,
-                          const char* const bottom_name,
-                          const char* const top_name,
-                          const int kernel_h, const int kernel_w,
-                          const int stride_h, const int stride_w,
-                          const int pad_h, const int pad_w)
+Layer* add_pool_layer(Net* const net,
+                      const char* const layer_name,
+                      const char* const bottom_name,
+                      const char* const top_name,
+                      const int kernel_h, const int kernel_w,
+                      const int stride_h, const int stride_w,
+                      const int pad_h, const int pad_w)
 {
   Layer* const layer =
       add_chain_layer(net, layer_name, bottom_name, top_name);
@@ -183,48 +205,56 @@ Layer* add_max_pool_layer(Net* const net,
   layer->option.pad_h = pad_h;
   layer->option.pad_w = pad_w;
 
-  layer->f_forward = forward_max_pool_layer;
+  layer->f_forward = forward_pool_layer;
   layer->f_shape = shape_pool_layer;
+  layer->f_init = init_pool_layer;
+  layer->f_free = free_pool_layer;
 
   return layer;
 }
 
-Layer* add_scale_const_layer(Net* const net,
-                             const char* const layer_name,
-                             const char* const bottom_name,
-                             const char* const top_name,
-                             const real weight,
-                             const real bias,
-                             const int bias_term)
+Layer* add_power_layer(Net* const net,
+                       const char* const layer_name,
+                       const char* const bottom_name,
+                       const char* const top_name,
+                       const real weight,
+                       const real bias,
+                       const real order,
+                       const int bias_term)
 {
   Layer* const layer =
       add_chain_layer(net, layer_name, bottom_name, top_name);
 
-  layer->option.scale_weight = weight;
-  layer->option.scale_bias = bias;
+  layer->option.power_weight = weight;
+  layer->option.power_bias = bias;
+  layer->option.power_order = order;
   layer->option.bias = bias_term;
 
-  layer->f_forward = forward_scale_const_layer;
-  layer->f_shape = shape_scale_const_layer;
+  layer->f_forward = forward_power_layer;
+  layer->f_shape = shape_power_layer;
+  layer->f_init = init_power_layer;
+  layer->f_free = free_power_layer;
 
   return layer;
 }
 
-Layer* add_scale_channel_layer(Net* const net,
-                               const char* const layer_name,
-                               const char* const bottom_name,
-                               const char* const top_name,
-                               const char* const weight_name,
-                               const char* const bias_name,
-                               const int bias_term)
+Layer* add_scale_layer(Net* const net,
+                       const char* const layer_name,
+                       const char* const bottom_name,
+                       const char* const top_name,
+                       const char* const weight_name,
+                       const char* const bias_name,
+                       const int bias_term)
 {
   Layer* const layer = add_param_layer(net, layer_name,
       bottom_name, top_name, weight_name, bias_name, bias_term);
 
   layer->option.bias = bias_term;
 
-  layer->f_forward = forward_scale_channel_layer;
-  layer->f_shape = shape_scale_channel_layer;
+  layer->f_forward = forward_scale_layer;
+  layer->f_shape = shape_scale_layer;
+  layer->f_init = init_scale_layer;
+  layer->f_free = free_scale_layer;
 
   return layer;
 }
@@ -240,6 +270,8 @@ Layer* add_concat_layer(Net* const net,
 
   layer->f_forward = forward_concat_layer;
   layer->f_shape = shape_concat_layer;
+  layer->f_init = init_concat_layer;
+  layer->f_free = free_concat_layer;
 
   return layer;
 }
@@ -253,8 +285,10 @@ Layer* add_eltwise_layer(Net* const net,
   Layer* const layer = add_hub_layer(net, layer_name,
       p_bottom_names, top_name, num_bottoms);
 
-  layer->f_forward = forward_eltwise_sum_layer;
+  layer->f_forward = forward_eltwise_layer;
   layer->f_shape = shape_eltwise_layer;
+  layer->f_init = init_eltwise_layer;
+  layer->f_free = free_eltwise_layer;
 
   return layer;
 }
@@ -272,6 +306,8 @@ Layer* add_relu_layer(Net* const net,
 
   layer->f_forward = forward_relu_layer;
   layer->f_shape = shape_relu_layer;
+  layer->f_init = init_relu_layer;
+  layer->f_free = free_relu_layer;
 
   return layer;
 }
@@ -293,6 +329,8 @@ Layer* add_dropout_layer(Net* const net,
 
   layer->f_forward = forward_dropout_layer;
   layer->f_shape = shape_dropout_layer;
+  layer->f_init = init_dropout_layer;
+  layer->f_free = free_dropout_layer;
 
   return layer;
 }
@@ -314,6 +352,8 @@ Layer* add_reshape_layer(Net* const net,
 
   layer->f_forward = forward_reshape_layer;
   layer->f_shape = shape_reshape_layer;
+  layer->f_init = init_reshape_layer;
+  layer->f_free = free_reshape_layer;
 
   return layer;
 }
@@ -331,6 +371,8 @@ Layer* add_softmax_layer(Net* const net,
 
   layer->f_forward = forward_softmax_layer;
   layer->f_shape = shape_softmax_layer;
+  layer->f_init = init_softmax_layer;
+  layer->f_free = free_softmax_layer;
 
   return layer;
 }
@@ -371,9 +413,10 @@ Layer* add_proposal_layer(Net* const net,
 
   layer->f_forward = forward_proposal_layer;
   layer->f_shape = shape_proposal_layer;
+  //layer->f_init = init_proposal_layer;
   layer->f_free = free_proposal_layer;
 
-  malloc_proposal_layer(net, layer);
+  init_proposal_layer(net, layer);
 
   return layer;
 }
@@ -400,6 +443,8 @@ Layer* add_roipool_layer(Net* const net,
 
   layer->f_forward = forward_roipool_layer;
   layer->f_shape = shape_roipool_layer;
+  layer->f_init = init_roipool_layer;
+  layer->f_free = free_roipool_layer;
 
   return layer;
 }
@@ -432,9 +477,8 @@ Layer* add_odout_layer(Net* const net,
 
   layer->f_forward = forward_odout_layer;
   layer->f_shape = shape_odout_layer;
+  layer->f_init = init_odout_layer;
   layer->f_free = free_odout_layer;
-
-  malloc_odout_layer(net, layer);
 
   return layer;
 }

@@ -6,7 +6,7 @@ static float a_time[8] = { 0, };
 static clock_t tick0, tick1, tick00;
 
 // --------------------------------------------------------------------------
-// layer operator code
+// layer-wise operator code
 // --------------------------------------------------------------------------
 
 // fully-connected: bottom -> top
@@ -116,16 +116,6 @@ void fc_forward(const Tensor* const bottom2d,
     //   do_transpose_X (= false),  do_transpose_Y (= false),
     //   m = N,  n = D',  p = 1
     //   alpha = 1,  beta = 1
-/*
-    cblas_sgemm(CblasRowMajor,
-                CblasNoTrans,  CblasNoTrans,
-                N,  top_D,  1,
-                1,
-                const_data,  1,
-                bias1d->data,  top_D,
-                1,
-                top2d->data,  top_D);
-*/
     cblas_sger(CblasRowMajor,
                N,  top_D,
                1,
@@ -143,7 +133,7 @@ void fc_forward(const Tensor* const bottom2d,
 
 
 // --------------------------------------------------------------------------
-// layer shape calculator code
+// output & parameter shape calculator code
 // --------------------------------------------------------------------------
 
 static
@@ -194,7 +184,7 @@ void fc_shape(const Tensor* const bottom2d,
 
 
 // --------------------------------------------------------------------------
-// API code
+// functions for layer instance
 // --------------------------------------------------------------------------
 
 void forward_fc_layer(void* const net_, void* const layer_)
@@ -230,4 +220,14 @@ void shape_fc_layer(void* const net_, void* const layer_)
            &const_space, &layer->option);
 
   update_const_space(net, const_space);
+}
+
+void init_fc_layer(void* const net_, void* const layer_)
+{
+  return;
+}
+
+void free_fc_layer(void* const net_, void* const layer_)
+{
+  return;
 }

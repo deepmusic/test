@@ -1,9 +1,9 @@
-#include "core/common.h"
+#include "layers/nms.h"
 #include <string.h>
 
 // --------------------------------------------------------------------------
 // kernel code
-//   iou: compute overlap between two boxes
+//   iou: compute size of overlap between two boxes
 //   nms_mask: given a set of boxes, compute overlap between all box pairs
 // --------------------------------------------------------------------------
 
@@ -12,6 +12,7 @@
 #ifdef GPU
 __device__
 #endif
+static
 real iou(const real A[], const real B[])
 {
   #ifndef GPU
@@ -137,22 +138,25 @@ void nms_mask_gpu(const real boxes[], uint64 mask[],
 
 
 // --------------------------------------------------------------------------
-// operator code
+// auxiliary data structure
 // --------------------------------------------------------------------------
 
 // auxiliary data structure for NMS operation
 #ifdef GPU
-typedef struct NMSAuxData_ {
+typedef struct NMSAuxData_
+{
   uint64* mask_cpu;
   uint64* dead_bit_cpu;
   uint64* mask_gpu;
 } NMSAuxData;
 #else
-typedef struct NMSAuxData_ {
+typedef struct NMSAuxData_
+{
   unsigned char* is_dead;
 } NMSAuxData;
 #endif
 
+// auxiliary data initializer
 #ifdef GPU
 static
 void malloc_nms_aux_data_gpu(NMSAuxData* const aux_data,
@@ -184,9 +188,11 @@ void malloc_nms_aux_data_cpu(NMSAuxData* const aux_data,
       = (unsigned char*)calloc(num_boxes, sizeof(unsigned char));
 
   *p_space_cpu = num_boxes * sizeof(unsigned char);
+  *p_space_gpu = 0;
 }
 #endif
 
+// auxiliary data finalizer
 #ifdef GPU
 static
 void free_nms_aux_data_gpu(NMSAuxData* const aux_data)
@@ -206,6 +212,12 @@ void free_nms_aux_data_cpu(NMSAuxData* const aux_data)
   memset(aux_data, 0, sizeof(NMSAuxData));
 }
 #endif
+
+
+
+// --------------------------------------------------------------------------
+// operator code
+// --------------------------------------------------------------------------
 
 // given box proposals (sorted in descending order of their scores),
 // discard a box if it is significantly overlapped with
@@ -348,12 +360,18 @@ void nms(const int num_boxes, real boxes[], void* const aux_data,
 }
 #endif
 
+
+
+// --------------------------------------------------------------------------
+// functions for layer-wise operators that use NMS operation
+// --------------------------------------------------------------------------
+
 void malloc_nms_aux_data(void** const p_aux_data,
                          int num_boxes,
                          long int* const p_space_cpu,
                          long int* const p_space_gpu)
 {
-  long int space_cpu = 0, space_gpu = 0;
+  long int space_cpu, space_gpu;
 
   *p_aux_data = (void*)malloc(sizeof(NMSAuxData));
 

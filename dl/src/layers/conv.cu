@@ -279,7 +279,7 @@ void convert_bottom_cpu(const real bottom3d[],
 
 
 // --------------------------------------------------------------------------
-// layer operator code
+// layer-wise operator code
 // --------------------------------------------------------------------------
 
 // convolution: bottom -> top
@@ -507,7 +507,7 @@ void conv_forward(const Tensor* const bottom3d,
 
 
 // --------------------------------------------------------------------------
-// layer shape calculator code
+// output & parameter shape calculator code
 // --------------------------------------------------------------------------
 
 static
@@ -594,7 +594,7 @@ void conv_shape(const Tensor* const bottom3d,
 
 
 // --------------------------------------------------------------------------
-// API code
+// functions for layer instance
 // --------------------------------------------------------------------------
 
 void forward_conv_layer(void* const net_, void* const layer_)
@@ -631,4 +631,14 @@ void shape_conv_layer(void* const net_, void* const layer_)
 
   update_temp_space(net, temp_space);
   update_const_space(net, const_space);
+}
+
+void init_conv_layer(void* const net_, void* const layer_)
+{
+  return;
+}
+
+void free_conv_layer(void* const net_, void* const layer_)
+{
+  return;
 }

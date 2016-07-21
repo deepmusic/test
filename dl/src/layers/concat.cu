@@ -2,7 +2,7 @@
 #include <string.h>
 
 // --------------------------------------------------------------------------
-// layer operator code
+// layer-wise operator code
 // --------------------------------------------------------------------------
 
 // concat: bottom[0], bottom[1], ..., bottom[num_bottoms-1] -> top
@@ -53,7 +53,7 @@ void concat_forward(const Tensor* const bottom3d[],
 
 
 // --------------------------------------------------------------------------
-// layer shape calculator code
+// output shape calculator code
 // --------------------------------------------------------------------------
 
 static
@@ -90,13 +90,12 @@ void concat_shape(const Tensor* const bottom3d[],
 
 
 // --------------------------------------------------------------------------
-// API code
+// functions for layer instance
 // --------------------------------------------------------------------------
 
 void forward_concat_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
-
   concat_forward(layer->p_bottoms, get_top(layer, 0),
                  layer->num_bottoms);
 }
@@ -104,7 +103,16 @@ void forward_concat_layer(void* const net_, void* const layer_)
 void shape_concat_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
-
   concat_shape(layer->p_bottoms, get_top(layer, 0),
                layer->num_bottoms);
+}
+
+void init_concat_layer(void* const net_, void* const layer_)
+{
+  return;
+}
+
+void free_concat_layer(void* const net_, void* const layer_)
+{
+  return;
 }

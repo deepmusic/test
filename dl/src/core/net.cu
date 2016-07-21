@@ -1,9 +1,51 @@
 #include "core/net.h"
 #include <string.h>
 
-void init_net(Net* const net)
+Net* create_empty_net(void)
 {
+  Net* const net = (Net*)malloc(sizeof(Net));
+  
   memset(net, 0, sizeof(Net));
+
+  return net;
+}
+
+void forward_net(Net* const net)
+{
+  if (!net->initialized) {
+    printf("[ERROR] Network is not initialized\n");
+    return;
+  }
+
+  for (int i = 0; i < net->num_layers; ++i) {
+    Layer* const layer = get_layer(net, i);
+    if (layer->f_forward) {
+      (*layer->f_forward)(net, layer);
+    }
+  }
+}
+
+void shape_net(Net* const net)
+{
+  for (int i = 0; i < net->num_layers; ++i) {
+    Layer* const layer = get_layer(net, i);
+    if (layer->f_shape) {
+      (*layer->f_shape)(net, layer);
+    }
+
+    #ifdef DEBUG
+    printf("[Layer %s] ", layer->name);
+    if (layer->f_shape) {
+      for (int top_id = 0; top_id < layer->num_tops; ++top_id) {
+        const Tensor* const tensor = get_top(layer, top_id);
+        print_tensor_info(tensor);
+      }
+    }
+    else {
+      printf("\n");
+    }
+    #endif
+  }
 }
 
 Tensor* get_tensor(Net* const net, const int tensor_id)
@@ -64,6 +106,7 @@ int get_layer_id(Net* const net, const Layer* const layer)
   return layer_id;
 }
 
+static
 Tensor* find_tensor_by_name(Net* const net, const char* const name)
 {
   for (int i = 0; i < net->num_tensors; ++i) {
@@ -75,6 +118,7 @@ Tensor* find_tensor_by_name(Net* const net, const char* const name)
   return NULL;
 }
 
+static
 Layer* find_layer_by_name(Net* const net, const char* const name)
 {
   for (int i = 0; i < net->num_layers; ++i) {
@@ -127,7 +171,7 @@ Layer* add_layer(Net* const net, const char* const name)
 
   {
     Layer* const layer = get_layer(net, net->num_layers - 1);
-    set_layer_name(layer, name);
+    strcpy(layer->name, name);
     return layer;
   }
 }
@@ -168,6 +212,37 @@ Layer* get_layer_by_name(Net* const net, const char* const name)
   return layer;
 }
 
+void update_temp_space(Net* const net, const long int space)
+{
+  if (!net->initialized) {
+    net->temp_space = MAX(net->temp_space,  space);
+  }
+}
+
+void update_const_space(Net* const net, const long int space)
+{
+  if (!net->initialized) {
+    net->const_space = MAX(net->const_space,  space);
+  }
+}
+
+static
+void init_net(Net* const net)
+{
+  if (net->initialized) {
+    printf("[ERROR] Network is already initialized\n");
+    return;
+  }
+
+  for (int i = 0; i < net->num_layers; ++i) {
+    Layer* const layer = get_layer(net, i);
+    if (layer->f_init) {
+      (*layer->f_init)(net, layer);
+    }
+  }
+}
+
+static
 void assign_shared_blocks(Net* const net, int shared_block_id[])
 {
   int is_assigned[MAX_NUM_TENSORS] = { 0, };
@@ -240,6 +315,7 @@ void assign_shared_blocks(Net* const net, int shared_block_id[])
     }
   }
 
+  #ifdef DEBUG
   for (int tensor_id = 0; tensor_id < net->num_tensors; ++tensor_id) {
     if (is_assigned[tensor_id]) {
       const Tensor* const tensor = get_tensor(net, tensor_id);
@@ -249,137 +325,127 @@ void assign_shared_blocks(Net* const net, int shared_block_id[])
              get_layer(net, alive_until[tensor_id])->name);
     }
   }
-}
-
-void update_temp_space(Net* const net, const long int space)
-{
-  if (!net->initialized) {
-    net->temp_space = MAX(net->temp_space,  space);
-  }
-}
-
-void update_const_space(Net* const net, const long int space)
-{
-  if (!net->initialized) {
-    net->const_space = MAX(net->const_space,  space);
-  }
-}
-
-void malloc_net_data(Net* const net)
-{
-  if (!net->initialized) {
-    long int shared_data_space = 0;
-    long int param_data_space = 0;
-    long int private_data_space = 0;
-
-    for (int i = 0; i < net->num_tensors; ++i) {
-      const Tensor* const tensor = get_tensor(net, i);
-      if (tensor->data_type == SHARED_DATA) {
-        shared_data_space = MAX(shared_data_space,  get_data_size(tensor));
-      }
-      else if (tensor->data_type == PARAM_DATA) {
-        param_data_space = MAX(param_data_space,  get_data_size(tensor));
-      }
-      else {
-        private_data_space = MAX(private_data_space,  get_data_size(tensor));
-      }
-    }
-    shared_data_space *= sizeof(real);
-    param_data_space *= sizeof(real);
-    private_data_space *= sizeof(real);
-
-    // memory allocation for shared memory blocks
-    for (int i = 0; i < net->num_shared_blocks; ++i) {
-      #ifdef GPU
-      cudaMalloc(&net->p_shared_blocks[i], shared_data_space);
-      cudaMemset(net->p_shared_blocks[i], 0, shared_data_space);
-      #else
-      net->p_shared_blocks[i] = (real*)malloc(shared_data_space);
-      memset(net->p_shared_blocks[i], 0, shared_data_space);
-      #endif
-    }
-    net->space += net->num_shared_blocks * shared_data_space;
-    printf("Shared data space = %ldMB\n",
-      DIV_THEN_CEIL(net->num_shared_blocks * shared_data_space,  1000000));
-
-    // temporary space at main memory
-    {
-      long int temp_cpu_space = MAX(net->temp_space,  net->const_space);
-      temp_cpu_space = MAX(temp_cpu_space,  shared_data_space);
-      temp_cpu_space = MAX(temp_cpu_space,  param_data_space);
-
-      net->temp_cpu_data = (real*)malloc(temp_cpu_space);
-      memset(net->temp_cpu_data, 0, temp_cpu_space);
-
-      net->space_cpu += temp_cpu_space;
-      printf("Temporary space = %ldMB\n",
-             DIV_THEN_CEIL(temp_cpu_space,  1000000));
-    }
-
-    // temporary space at GPU memory (in GPU mode)
-    //   in CPU mode, temp_data referes to temp_cpu_data
-    #ifdef GPU
-    {
-      cudaMalloc(&net->temp_data, net->temp_space);
-      cudaMemset(net->temp_data, 0, net->temp_space);
-
-      net->space += net->temp_space;
-      printf("Temporary space at GPU = %ldMB\n",
-             DIV_THEN_CEIL(net->temp_space,  1000000));
-    }
-    #else
-    net->temp_data = net->temp_cpu_data;
-    #endif
-
-    // space for constant vector
-    #ifdef GPU
-    {
-      const int const_size = net->const_space / sizeof(real);
-      for (int i = 0; i < const_size; ++i) {
-        net->temp_cpu_data[i] = 1;
-      }
-      cudaMalloc(&net->const_data, net->const_space);
-      cudaMemcpyAsync(net->const_data, net->temp_cpu_data, net->const_space,
-                      cudaMemcpyHostToDevice);
-    }
-    #else
-    {
-      const int const_size = net->const_space / sizeof(real);
-      net->const_data = (real*)malloc(net->const_space);
-      for (int i = 0; i < const_size; ++i) {
-        net->const_data[i] = 1;
-      }
-    }
-    #endif
-    net->space += net->const_space;
-    printf("Const space = %ldKB\n",
-           DIV_THEN_CEIL(net->const_space,  1000));
-  }
+  #endif
 }
 
 void malloc_net(Net* const net)
 {
-  long int space = 0;
-
+  long int shared_data_space, param_data_space, tensor_space;
+  long int layer_space, layer_cpu_space, temp_cpu_space;
   int shared_block_id[MAX_NUM_TENSORS] = { 0, };
+
+  if (net->initialized) {
+    printf("[ERROR] Network is already initialized\n");
+    return;
+  }
+
+  // initialize all layers
+  init_net(net);
+
+  // network's space at this time = space for all layers
+  #ifdef GPU
+  {
+    layer_cpu_space = net->space_cpu;
+    layer_space = net->space;
+  }
+  #else
+  {
+    layer_cpu_space = net->space + net->space_cpu;
+    layer_space = layer_cpu_space;
+  }
+  #endif
+
+  // calculate output shapes and parameter shapes for all layers
+  shape_net(net);
+
+  // shared block assignment for all tensors
   assign_shared_blocks(net, shared_block_id);
 
-  malloc_net_data(net);
+  // compute maximum size of shared data tensors and parameter tensors
+  shared_data_space = 0, param_data_space = 0;
+  for (int i = 0; i < net->num_tensors; ++i) {
+    const Tensor* const tensor = get_tensor(net, i);
+    if (tensor->data_type == SHARED_DATA) {
+      shared_data_space = MAX(shared_data_space,  get_data_size(tensor));
+    }
+    else if (tensor->data_type == PARAM_DATA) {
+      param_data_space = MAX(param_data_space,  get_data_size(tensor));
+    }
+  }
+  shared_data_space *= sizeof(real);
+  param_data_space *= sizeof(real);
 
+  // memory allocation for shared memory blocks
+  for (int i = 0; i < net->num_shared_blocks; ++i) {
+    #ifdef GPU
+    cudaMalloc(&net->p_shared_blocks[i], shared_data_space);
+    cudaMemset(net->p_shared_blocks[i], 0, shared_data_space);
+    #else
+    net->p_shared_blocks[i] = (real*)malloc(shared_data_space);
+    memset(net->p_shared_blocks[i], 0, shared_data_space);
+    #endif
+  }
+
+  // temporary space at main memory
+  //   max( temp_space, const_space, shared_data_space, param_data_space )
+  {
+    temp_cpu_space = MAX(net->temp_space,  net->const_space);
+    temp_cpu_space = MAX(temp_cpu_space,  shared_data_space);
+    temp_cpu_space = MAX(temp_cpu_space,  param_data_space);
+
+    net->temp_cpu_data = (real*)malloc(temp_cpu_space);
+    memset(net->temp_cpu_data, 0, temp_cpu_space);
+  }
+
+  // temporary space at GPU memory (in GPU mode)
+  //   in CPU mode, temp_data referes to temp_cpu_data
+  #ifdef GPU
+  {
+    cudaMalloc(&net->temp_data, net->temp_space);
+    cudaMemset(net->temp_data, 0, net->temp_space);
+  }
+  #else
+  {
+    net->temp_space = temp_cpu_space;
+    net->temp_data = net->temp_cpu_data;
+  }
+  #endif
+
+  // space for constant vector [1, 1, ..., 1]
+  #ifdef GPU
+  {
+    const int const_size = net->const_space / sizeof(real);
+    for (int i = 0; i < const_size; ++i) {
+      net->temp_cpu_data[i] = 1;
+    }
+    cudaMalloc(&net->const_data, net->const_space);
+    cudaMemcpyAsync(net->const_data, net->temp_cpu_data, net->const_space,
+                    cudaMemcpyHostToDevice);
+  }
+  #else
+  {
+    const int const_size = net->const_space / sizeof(real);
+    net->const_data = (real*)malloc(net->const_space);
+    for (int i = 0; i < const_size; ++i) {
+      net->const_data[i] = 1;
+    }
+  }
+  #endif
+
+  // memory allocation for all tensors
+  tensor_space = 0;
   for (int i = 0; i < net->num_tensors; ++i) {
     Tensor* const tensor = get_tensor(net, i);
-    space += malloc_tensor_data(tensor,
-        net->p_shared_blocks[shared_block_id[i]]);
+    tensor_space +=
+        malloc_tensor_data(tensor, net->p_shared_blocks[shared_block_id[i]]);
 
+    // load pre-trained parameter data for parameter tensors
     if (tensor->data_type == PARAM_DATA) {
       char path[1024];
       sprintf(path, "%s/%s.bin", net->param_path, tensor->name);
       load_tensor_data(path, tensor, net->temp_cpu_data);
     }
   }
-  net->space += space;
-  printf("Private & param data space = %ldMB\n",
-         DIV_THEN_CEIL(space,  1000000));
 
   // acquire CuBLAS handle
   #ifdef GPU
@@ -390,21 +456,53 @@ void malloc_net(Net* const net)
   }
   #endif
 
-  net->space_cpu += sizeof(Net);
+  // compute total space
+  #ifdef GPU
+  {
+    net->space_cpu = sizeof(Net) + layer_cpu_space + temp_cpu_space;
+    net->space = layer_space + net->num_shared_blocks * shared_data_space
+                 + tensor_space + net->temp_space + net->const_space;
+  }
+  #else
+  {
+    net->space_cpu = sizeof(Net) + layer_cpu_space + temp_cpu_space
+                     + net->num_shared_blocks * shared_data_space
+                     + tensor_space + net->const_space;
+    net->space = net->space_cpu;
+  }
+  #endif
+
+  // set initialization flag
   net->initialized = 1;
 
-  // print total memory size required
-  {
+  // summarization
   #ifdef GPU
-    printf("%ldMB of main memory allocated\n",
-           DIV_THEN_CEIL(net->space_cpu,  1000000));
-    printf("%ldMB of GPU memory allocated\n",
-           DIV_THEN_CEIL(net->space,  1000000));
+  printf("%ldMB of main memory allocated\n",
+         DIV_THEN_CEIL(net->space_cpu,  1000000));
+  printf("  Net data structure at main memory = %ldKB\n",
+         DIV_THEN_CEIL(sizeof(Net),  1000));
+  printf("  Layer auxiliary data at main memory = %ldMB\n",
+         DIV_THEN_CEIL(layer_cpu_space,  1000000));
+  printf("  Temporary data at main memory = %ldMB\n",
+         DIV_THEN_CEIL(temp_cpu_space,  1000000));
+  printf("%ldMB of GPU memory allocated\n",
+         DIV_THEN_CEIL(net->space,  1000000));
   #else
-    printf("%ldMB of main memory allocated\n",
-           DIV_THEN_CEIL(net->space + net->space_cpu,  1000000));
+  printf("%ldMB of main memory allocated\n",
+         DIV_THEN_CEIL(net->space_cpu,  1000000));
+  printf("  Net data structure = %ldKB\n",
+         DIV_THEN_CEIL(sizeof(Net),  1000));
   #endif
-  }
+  printf("  Layer auxiliary data = %ldMB\n",
+         DIV_THEN_CEIL(layer_space,  1000000));
+  printf("  Shared tensor data = %ldMB\n",
+       DIV_THEN_CEIL(net->num_shared_blocks * shared_data_space,  1000000));
+  printf("  Private & parameter tensor data = %ldMB\n",
+         DIV_THEN_CEIL(tensor_space,  1000000));
+  printf("  Temporary data = %ldMB\n",
+         DIV_THEN_CEIL(net->temp_space,  1000000));
+  printf("  Constant vector data = %ldKB\n",
+         DIV_THEN_CEIL(net->const_space,  1000));
 }
 
 void free_net(Net* const net)
@@ -413,14 +511,11 @@ void free_net(Net* const net)
     return;
   }
 
-  {
-  #ifdef GPU
-    cudaFree(net->temp_data);
-    cudaFree(net->const_data);
-  #else
-    free(net->const_data);
-  #endif
-    free(net->temp_cpu_data);
+  for (int i = 0; i < net->num_layers; ++i) {
+    Layer* const layer = get_layer(net, i);
+    if (layer->f_free) {
+      (*layer->f_free)(net, layer);
+    }
   }
 
   for (int i = 0; i < net->num_shared_blocks; ++i) {
@@ -436,13 +531,14 @@ void free_net(Net* const net)
     free_tensor_data(tensor);
   }
 
-  for (int i = 0; i < net->num_layers; ++i) {
-    Layer* const layer = get_layer(net, i);
-    if (layer->f_free) {
-      (*layer->f_free)(net, layer);
-    }
-    init_layer(layer);
-  }
+  free(net->temp_cpu_data);
+
+  #ifdef GPU
+  cudaFree(net->temp_data);
+  cudaFree(net->const_data);
+  #else
+  free(net->const_data);
+  #endif
 
   #ifdef GPU
   {
@@ -452,40 +548,8 @@ void free_net(Net* const net)
   }
   #endif
 
-  init_net(net);
-}
-
-void forward_net(Net* const net)
-{
-  for (int i = 0; i < net->num_layers; ++i) {
-    Layer* const layer = get_layer(net, i);
-    if (layer->f_forward) {
-      (*layer->f_forward)(net, layer);
-    }
-  }
-}
-
-void shape_net(Net* const net)
-{
-  for (int i = 0; i < net->num_layers; ++i) {
-    Layer* const layer = get_layer(net, i);
-    if (layer->f_shape) {
-      (*layer->f_shape)(net, layer);
-    }
-
-    #ifdef DEBUG
-    printf("[Layer %s] ", layer->name);
-    if (layer->f_shape) {
-      for (int top_id = 0; top_id < layer->num_tops; ++top_id) {
-        const Tensor* const tensor = get_top(layer, top_id);
-        print_tensor_info(tensor);
-      }
-    }
-    else {
-      printf("\n");
-    }
-    #endif
-  }
+  memset(net, 0, sizeof(Net));
+  free(net);
 }
 
 void save_layer_tops(void* const net_, void* const layer_)
@@ -510,10 +574,6 @@ void print_layer_tops(void* const net_, void* const layer_)
     const Tensor* const tensor = get_top(layer, i);
     long int size = get_data_size(tensor);
     int idx[MAX_NDIM + 1] = { 0, };
-
-    if (size > 1000) {
-      size = 1000;
-    }
 
     #ifdef GPU
     cudaMemcpyAsync(net->temp_cpu_data, tensor->data,
@@ -541,3 +601,16 @@ void print_layer_tops(void* const net_, void* const layer_)
     }
   } // endfor i
 }
+
+
+
+// --------------------------------------------------------------------------
+// simple functions returning static constants
+//   required for Python interface
+// --------------------------------------------------------------------------
+
+int _max_num_tensors(void) { return MAX_NUM_TENSORS; }
+
+int _max_num_layers(void) { return MAX_NUM_LAYERS; }
+
+int _max_num_shared_blocks(void) { return MAX_NUM_SHARED_BLOCKS; }

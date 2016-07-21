@@ -270,7 +270,7 @@ void softmax_inplace(real bottom3d[], real temp_data[],
 
 
 // --------------------------------------------------------------------------
-// layer operator code
+// layer-wise operator code
 // --------------------------------------------------------------------------
 
 // channel-wise softmax transform: bottom3d (N x C x D) -> top3d (N x C x D)
@@ -319,7 +319,7 @@ void softmax_forward(const Tensor* const bottom,
 
 
 // --------------------------------------------------------------------------
-// layer shape calculator code
+// output shape calculator code
 // --------------------------------------------------------------------------
 
 static
@@ -362,14 +362,13 @@ void softmax_shape(const Tensor* const bottom,
 
 
 // --------------------------------------------------------------------------
-// API code
+// functions for layer instance
 // --------------------------------------------------------------------------
 
 void forward_softmax_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
-
   softmax_forward(get_bottom(layer, 0), get_top(layer, 0),
                   net->temp_data, &layer->option);
 }
@@ -384,4 +383,14 @@ void shape_softmax_layer(void* const net_, void* const layer_)
                 &temp_space, &layer->option);
 
   update_temp_space(net, temp_space);
+}
+
+void init_softmax_layer(void* const net_, void* const layer_)
+{
+  return;
+}
+
+void free_softmax_layer(void* const net_, void* const layer_)
+{
+  return;
 }

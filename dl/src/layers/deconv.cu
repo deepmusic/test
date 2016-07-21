@@ -92,7 +92,7 @@ void convert_top_cpu(const real top5d[], real top3d[],
 
 
 // --------------------------------------------------------------------------
-// layer operator code
+// auxiliary data structure (used in GPU mode only)
 // --------------------------------------------------------------------------
 
 #ifdef GPU
@@ -102,7 +102,8 @@ void convert_top_cpu(const real top5d[], real top3d[],
 //     p_tops = p_groups[G, ..., 2*G-1]
 //     p_weights = p_groups[2*G, ..., 3*G-1]
 //   p_groups_gpu: "(3 * G) x 1" array in GPU memory
-typedef struct DeconvAuxData_ {
+typedef struct DeconvAuxData_
+{
   real** p_groups;
   real** p_groups_gpu;
 } DeconvAuxData;
@@ -131,6 +132,12 @@ void free_deconv_aux_data(DeconvAuxData* const aux_data)
   memset(aux_data, 0, sizeof(DeconvAuxData));
 }
 #endif
+
+
+
+// --------------------------------------------------------------------------
+// layer-wise operator code
+// --------------------------------------------------------------------------
 
 // deconvolution: bottom -> top
 //   G: number of groups
@@ -346,7 +353,7 @@ void deconv_forward(const Tensor* const bottom3d,
 
 
 // --------------------------------------------------------------------------
-// layer shape calculator code
+// output & parameter shape calculator code
 // --------------------------------------------------------------------------
 
 static
@@ -435,7 +442,7 @@ void deconv_shape(const Tensor* const bottom3d,
 
 
 // --------------------------------------------------------------------------
-// API code
+// functions for layer instance
 // --------------------------------------------------------------------------
 
 void forward_deconv_layer(void* const net_, void* const layer_)
@@ -465,41 +472,29 @@ void shape_deconv_layer(void* const net_, void* const layer_)
   update_const_space(net, const_space);
 }
 
-void malloc_deconv_layer(void* const net_, void* const layer_)
+void init_deconv_layer(void* const net_, void* const layer_)
 {
   #ifdef GPU
-  {
-    Net* const net = (Net*)net_;
-    Layer* const layer = (Layer*)layer_;
-    long int space_cpu, space_gpu;
+  Net* const net = (Net*)net_;
+  Layer* const layer = (Layer*)layer_;
+  long int space_cpu, space_gpu;
 
-    layer->aux_data = (void*)malloc(sizeof(DeconvAuxData));
+  layer->aux_data = (void*)malloc(sizeof(DeconvAuxData));
 
-    malloc_deconv_aux_data((DeconvAuxData*)layer->aux_data,
-                           layer->option.group,
-                           &space_cpu, &space_gpu);
+  malloc_deconv_aux_data((DeconvAuxData*)layer->aux_data,
+                         layer->option.group,
+                         &space_cpu, &space_gpu);
 
-    net->space_cpu += space_cpu + sizeof(DeconvAuxData);
-    net->space += space_gpu;
-
-    #ifdef DEBUG
-    {
-      printf("%s: Memory allocated, CPU %ld byte and GPU %ld byte\n",
-             layer->name, space_cpu, space_gpu);
-    }
-    #endif
-  }
+  net->space_cpu += space_cpu + sizeof(DeconvAuxData);
+  net->space += space_gpu;
   #endif
 }
 
 void free_deconv_layer(void* const net_, void* const layer_)
 {
   #ifdef GPU
-  {
-    Layer* const layer = (Layer*)layer_;
-
-    free_deconv_aux_data((DeconvAuxData*)layer->aux_data);
-    free(layer->aux_data);
-  }
+  Layer* const layer = (Layer*)layer_;
+  free_deconv_aux_data((DeconvAuxData*)layer->aux_data);
+  free(layer->aux_data);
   #endif
 }

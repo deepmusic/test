@@ -106,7 +106,7 @@ void dropout_test_cpu(const real bottom[], real top[],
 
 
 // --------------------------------------------------------------------------
-// layer operator code
+// layer-wise operator code
 // --------------------------------------------------------------------------
 
 // dropout transform: bottom -> top
@@ -209,7 +209,7 @@ void dropout_forward(const Tensor* const bottom,
 
 
 // --------------------------------------------------------------------------
-// layer shape calculator code
+// output shape calculator code
 // --------------------------------------------------------------------------
 
 static
@@ -237,14 +237,13 @@ void dropout_shape(const Tensor* const bottom,
 
 
 // --------------------------------------------------------------------------
-// API code
+// functions for layer instance
 // --------------------------------------------------------------------------
 
 void forward_dropout_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
-
   dropout_forward(get_bottom(layer, 0), (unsigned int*)net->temp_data,
                   get_top(layer, 0), &layer->option);
 }
@@ -255,7 +254,18 @@ void shape_dropout_layer(void* const net_, void* const layer_)
   Layer* const layer = (Layer*)layer_;
   long int temp_space;
 
-  dropout_shape(get_bottom(layer, 0), get_top(layer, 0), &temp_space);
+  dropout_shape(get_bottom(layer, 0), get_top(layer, 0),
+                &temp_space);
 
   update_temp_space(net, temp_space);
+}
+
+void init_dropout_layer(void* const net_, void* const layer_)
+{
+  return;
+}
+
+void free_dropout_layer(void* const net_, void* const layer_)
+{
+  return;
 }

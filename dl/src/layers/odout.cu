@@ -1,17 +1,62 @@
 #include "core/net.h"
-#include "layers/rpn.h"
+#include "layers/nms.h"
 
 // --------------------------------------------------------------------------
 // kernel code
+//   iou: compute size of overlap between two boxes
 //   transform_box: transform a box according to a given gradient
 //   sort_box: sort a list of boxes in descending order of their scores
 //   filter_box: discard boxes whose scores < threshold
+//   enumerate_output: generate all output candidate boxes with their scores
+//   retrieve_output: retrieve boxes that are determined to be kept as output
+//   retrieve_unknown: retrieve boxes that can be seen as "unseen" classes
+//                     CPU mode only
 //   filter_output: remove duplicated boxes, and select final output boxes
 // --------------------------------------------------------------------------
+
+// "IoU = intersection area / union area" of two boxes A, B
+//   A, B: 4-dim array (x1, y1, x2, y2)
+#ifdef GPU
+__device__
+#endif
+static
+real iou(const real A[], const real B[])
+{
+  #ifndef GPU
+  if (A[0] > B[2] || A[1] > B[3] || A[2] < B[0] || A[3] < B[1]) {
+    return 0;
+  }
+  else {
+  #endif
+
+  // overlapped region (= box)
+  const real x1 = MAX(A[0],  B[0]);
+  const real y1 = MAX(A[1],  B[1]);
+  const real x2 = MIN(A[2],  B[2]);
+  const real y2 = MIN(A[3],  B[3]);
+
+  // intersection area
+  const real width = MAX(0.0f,  x2 - x1 + 1.0f);
+  const real height = MAX(0.0f,  y2 - y1 + 1.0f);
+  const real area = width * height;
+
+  // area of A, B
+  const real A_area = (A[2] - A[0] + 1.0f) * (A[3] - A[1] + 1.0f);
+  const real B_area = (B[2] - B[0] + 1.0f) * (B[3] - B[1] + 1.0f);
+
+  // IoU
+  return area / (A_area + B_area - area);
+
+  #ifndef GPU
+  }
+  #endif
+}
 
 // transform a box according to a given gradient
 //   box: (x1, y1, x2, y2)
 //   gradient: dx, dy, d(log w), d(log h)
+// with assuring the transformed box to be within image (img_W, img_H),
+// and checking whether the new box's size >= (min_box_W, min_box_H)
 #ifdef GPU
 __device__
 #endif
@@ -55,6 +100,56 @@ int transform_box(real box[],
 
   // check if new box's size >= threshold
   return (box_w >= min_box_W) * (box_h >= min_box_H);
+}
+
+// quick-sort a list of boxes in descending order of their scores (CPU)
+//   list_cpu: num_boxes x 5 array,  (x1, y1, x2, y2, score) for each box
+//             located at main memory
+//   if num_top <= end,  only top-k results are guaranteed to be sorted
+//   (for efficient computation)
+static
+void sort_box(real list_cpu[], const int start, const int end,
+              const int num_top)
+{
+  const real pivot_score = list_cpu[start * 5 + 4];
+  int left = start + 1, right = end;
+  real temp[5];
+  while (left <= right) {
+    while (left <= end && list_cpu[left * 5 + 4] >= pivot_score) ++left;
+    while (right > start && list_cpu[right * 5 + 4] <= pivot_score) --right;
+    if (left <= right) {
+      for (int i = 0; i < 5; ++i) {
+        temp[i] = list_cpu[left * 5 + i];
+      }
+      for (int i = 0; i < 5; ++i) {
+        list_cpu[left * 5 + i] = list_cpu[right * 5 + i];
+      }
+      for (int i = 0; i < 5; ++i) {
+        list_cpu[right * 5 + i] = temp[i];
+      }
+      ++left;
+      --right;
+    }
+  }
+
+  if (right > start) {
+    for (int i = 0; i < 5; ++i) {
+      temp[i] = list_cpu[start * 5 + i];
+    }
+    for (int i = 0; i < 5; ++i) {
+      list_cpu[start * 5 + i] = list_cpu[right * 5 + i];
+    }
+    for (int i = 0; i < 5; ++i) {
+      list_cpu[right * 5 + i] = temp[i];
+    }
+  }
+
+  if (start < right - 1) {
+    sort_box(list_cpu, start, right - 1, num_top);
+  }
+  if (right + 1 < num_top && right + 1 < end) {
+    sort_box(list_cpu, right + 1, end, num_top);
+  }
 }
 
 // discard boxes whose scores < threshold
@@ -388,7 +483,7 @@ void filter_output(const real bottom2d[],
 
 
 // --------------------------------------------------------------------------
-// layer operator code
+// layer-wise operator code
 // --------------------------------------------------------------------------
 
 static
@@ -488,7 +583,7 @@ void odout_forward(const Tensor* const bottom2d,
 
 
 // --------------------------------------------------------------------------
-// layer shape calculator code
+// output shape calculator code
 // --------------------------------------------------------------------------
 
 static
@@ -536,14 +631,13 @@ void odout_shape(const Tensor* const bottom2d,
 
 
 // --------------------------------------------------------------------------
-// API code
+// functions for layer instance
 // --------------------------------------------------------------------------
 
 void forward_odout_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
-
   odout_forward(get_bottom(layer, 0), get_bottom(layer, 1),
                 get_bottom(layer, 2), get_bottom(layer, 3),
                 get_top(layer, 0),
@@ -566,7 +660,7 @@ void shape_odout_layer(void* const net_, void* const layer_)
   update_temp_space(net, temp_space);
 }
 
-void malloc_odout_layer(void* const net_, void* const layer_)
+void init_odout_layer(void* const net_, void* const layer_)
 {
   Net* const net = (Net*)net_;
   Layer* const layer = (Layer*)layer_;
@@ -577,23 +671,10 @@ void malloc_odout_layer(void* const net_, void* const layer_)
 
   net->space += space_gpu;
   net->space_cpu += space_cpu;
-
-  #ifdef DEBUG
-  {
-    #ifdef GPU
-    printf("%s: Memory allocated, CPU %ld byte and GPU %ld byte\n",
-           layer->name, space_cpu, space_gpu);
-    #else
-    printf("%s: Memory allocated, %ld byte\n",
-           layer->name, space_cpu + space_gpu);
-    #endif
-  }
-  #endif
 }
 
 void free_odout_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
-
   free_nms_aux_data(layer->aux_data);
 }

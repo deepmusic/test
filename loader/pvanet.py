@@ -4,7 +4,7 @@ import numpy as np
 
 lib = ctypes.CDLL('libdlcpu.so')
 
-lib._batch_size_net.restype = ctypes.c_int
+lib._batch_size.restype = ctypes.c_int
 lib._max_ndim.restype = ctypes.c_int
 lib._max_name_len.restype = ctypes.c_int
 
@@ -16,7 +16,7 @@ lib._max_num_tensors.restype = ctypes.c_int
 lib._max_num_layers.restype = ctypes.c_int
 lib._max_num_shared_blocks.restype = ctypes.c_int
 
-batch_size = lib._batch_size_net()
+batch_size = lib._batch_size()
 max_ndim = lib._max_ndim()
 max_name_len = lib._max_name_len()
 
@@ -38,25 +38,28 @@ class Tensor(ctypes.Structure):
               ('data_type', ctypes.c_int)]
 
 class LayerOption(ctypes.Structure):
-  _fields_ = [('num_groups', ctypes.c_int),
-              ('out_channels', ctypes.c_int),
+  _fields_ = [('input_size', ctypes.c_int),
+              ('unit_size', ctypes.c_int),
+              ('max_image_size', ctypes.c_int),
+              ('bias', ctypes.c_int),
+              ('group', ctypes.c_int),
+              ('num_output', ctypes.c_int),
               ('kernel_h', ctypes.c_int),
               ('kernel_w', ctypes.c_int),
               ('pad_h', ctypes.c_int),
               ('pad_w', ctypes.c_int),
               ('stride_h', ctypes.c_int),
               ('stride_w', ctypes.c_int),
-              ('bias', ctypes.c_int),
               ('handle', ctypes.c_void_p),
               ('pooled_height', ctypes.c_int),
               ('pooled_width', ctypes.c_int),
               ('spatial_scale', ctypes.c_float),
-              ('flatten', ctypes.c_int),
+              ('flatten_shape', ctypes.c_int),
               ('negative_slope', ctypes.c_float),
-              ('scales', ctypes.POINTER(ctypes.c_float)),
-              ('ratios', ctypes.POINTER(ctypes.c_float)),
-              ('num_scales', ctypes.c_int),
-              ('num_ratios', ctypes.c_int),
+              ('anchor_scales', ctypes.POINTER(ctypes.c_float)),
+              ('anchor_ratios', ctypes.POINTER(ctypes.c_float)),
+              ('num_anchor_scales', ctypes.c_int),
+              ('num_anchor_ratios', ctypes.c_int),
               ('base_size', ctypes.c_int),
               ('feat_stride', ctypes.c_int),
               ('min_size', ctypes.c_int),
@@ -66,11 +69,12 @@ class LayerOption(ctypes.Structure):
               ('score_thresh', ctypes.c_float),
               ('bbox_vote', ctypes.c_int),
               ('vote_thresh', ctypes.c_float),
-              ('scaled', ctypes.c_int),
-              ('test', ctypes.c_int),
-              ('threshold', ctypes.c_float),
-              ('scale_weight', ctypes.c_float),
-              ('scale_bias', ctypes.c_float),
+              ('scaled_dropout', ctypes.c_int),
+              ('test_dropout', ctypes.c_int),
+              ('dropout_ratio', ctypes.c_float),
+              ('power_weight', ctypes.c_float),
+              ('power_bias', ctypes.c_float),
+              ('power_order', ctypes.c_float),
               ('num_bottoms', ctypes.c_int),
               ('channel_axis', ctypes.c_int),
               ('reshape', ctypes.c_int * max_ndim),
@@ -87,6 +91,7 @@ class Layer(ctypes.Structure):
               ('aux_data', ctypes.c_void_p),
               ('f_forward', ctypes.c_void_p),
               ('f_shape', ctypes.c_void_p),
+              ('f_init', ctypes.c_void_p),
               ('f_free', ctypes.c_void_p),
               ('option', LayerOption)]
 
@@ -98,55 +103,54 @@ class Net(ctypes.Structure):
               ('num_layers', ctypes.c_int),
               ('p_shared_blocks', ctypes.POINTER(ctypes.c_float) * max_num_shared_blocks),
               ('num_shared_blocks', ctypes.c_int),
-              ('num_output_boxes', ctypes.c_int),
-              ('temp_data', ctypes.POINTER(ctypes.c_float)),
               ('temp_cpu_data', ctypes.POINTER(ctypes.c_float)),
+              ('temp_data', ctypes.POINTER(ctypes.c_float)),
               ('temp_space', ctypes.c_long),
               ('const_data', ctypes.POINTER(ctypes.c_float)),
               ('const_space', ctypes.c_long),
               ('space_cpu', ctypes.c_long),
               ('space', ctypes.c_long),
               ('initialized', ctypes.c_int),
-              ('input_scale', ctypes.c_int),
-              ('blas_handle', ctypes.c_int)]
+              ('blas_handle', ctypes.c_int),
+              ('p_images', ctypes.c_char_p * batch_size),
+              ('image_heights', ctypes.c_int * batch_size),
+              ('image_widths', ctypes.c_int * batch_size),
+              ('num_images', ctypes.c_int)]
 
-lib._net.restype = ctypes.POINTER(Net)
+lib.create_empty_net.restype = ctypes.POINTER(Net)
+
+lib.create_pvanet.restype = ctypes.POINTER(Net)
+
 lib.get_tensor_by_name.restype = ctypes.POINTER(Tensor)
+
 lib.get_layer_by_name.restype = ctypes.POINTER(Layer)
-lib._detect_net.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]
-lib._layer_net.argtypes = [ctypes.c_int, ctypes.c_int]
-lib._layer_net.restype = ctypes.POINTER(Tensor)
-lib.add_scale_const_layer.argtypes = [ctypes.POINTER(Net), ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_float, ctypes.c_float]
+
+lib.process_pvanet.argtypes = [ctypes.POINTER(Net), ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+
+lib.add_power_layer.argtypes = [ctypes.POINTER(Net), ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_float, ctypes.c_float, ctypes.c_float, ctypes.c_int]
+
 lib.add_relu_layer.argtypes = [ctypes.POINTER(Net), ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_float]
+
 lib.add_proposal_layer.argtypes = [ctypes.POINTER(Net), ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_float), ctypes.c_int, ctypes.POINTER(ctypes.c_float), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_float, ctypes.c_int, ctypes.c_float]
+
 lib.add_roipool_layer.argtypes = [ctypes.POINTER(Net), ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_float, ctypes.c_int]
+
 lib.add_dropout_layer.argtypes = [ctypes.POINTER(Net), ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_float, ctypes.c_int, ctypes.c_int]
+
 lib.add_odout_layer.argtypes = [ctypes.POINTER(Net), ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_float, ctypes.c_float, ctypes.c_int, ctypes.c_float]
 
-def generate():
-  lib._generate_net()
-
-def release():
-  lib._release_net()
-
-def detect(filename):
+def detect(net, filename):
   img = imread(filename)
   if img is not None:
-    lib._detect_net(img.tobytes(), img.shape[1], img.shape[0])
+    lib.process_pvanet(net, img.tobytes(), img.shape[0], img.shape[1], None, None, None)
 
-def net():
-  return lib._net().contents
-
-def top_data(layer_id, top_id = 0):
+def get_tensor_data(tensor):
   try:
-    top = lib._layer_net(layer_id, top_id).contents
-    shape = np.ctypeslib.as_array(top.shape)[0, :top.ndim]
+    tensor = tensor.contents
+    shape = np.ctypeslib.as_array(tensor.shape)[0, :tensor.ndim]
     size = np.prod(shape)
-    p_data = ctypes.addressof(top.data.contents)
+    p_data = ctypes.addressof(tensor.data.contents)
     data = np.ctypeslib.as_array((ctypes.c_float * size).from_address(p_data)).reshape(shape)
     return data
   except Exception:
     return None
-
-def logging(layer_id):
-  lib._print_layer(layer_id)

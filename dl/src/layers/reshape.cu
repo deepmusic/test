@@ -2,7 +2,7 @@
 #include <string.h>
 
 // --------------------------------------------------------------------------
-// layer shape calculator code
+// output shape calculator code
 // --------------------------------------------------------------------------
 
 static
@@ -62,7 +62,7 @@ void reshape_shape(const Tensor* const bottom,
 
 
 // --------------------------------------------------------------------------
-// layer operator code
+// layer-wise operator code
 // --------------------------------------------------------------------------
 
 static
@@ -88,19 +88,29 @@ void reshape_forward(const Tensor* const bottom,
 
 
 // --------------------------------------------------------------------------
-// API code
+// functions for layer instance
 // --------------------------------------------------------------------------
 
 void forward_reshape_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
-
-  reshape_forward(get_bottom(layer, 0), get_top(layer, 0), &layer->option);
+  reshape_forward(get_bottom(layer, 0), get_top(layer, 0),
+                  &layer->option);
 }
 
 void shape_reshape_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
+  reshape_shape(get_bottom(layer, 0), get_top(layer, 0),
+                &layer->option);
+}
 
-  reshape_shape(get_bottom(layer, 0), get_top(layer, 0), &layer->option);
+void init_reshape_layer(void* const net_, void* const layer_)
+{
+  return;
+}
+
+void free_reshape_layer(void* const net_, void* const layer_)
+{
+  return;
 }

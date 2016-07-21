@@ -1,14 +1,39 @@
 #include "core/layer.h"
-#include <string.h>
 
-void init_layer(Layer* const layer)
+Tensor* get_bottom(const Layer* const layer, const int bottom_id)
 {
-  memset(layer, 0, sizeof(Layer));
+  #ifdef DEBUG
+  if (bottom_id >= layer->num_bottoms) {
+    printf("[ERROR] Layer %s: out-of-bound input index %d\n",
+           layer->name, bottom_id);
+    return NULL;
+  }
+  #endif
+  return layer->p_bottoms[bottom_id];
 }
 
-void set_layer_name(Layer* const layer, const char* const name)
+Tensor* get_top(const Layer* const layer, const int top_id)
 {
-  strcpy(layer->name, name);
+  #ifdef DEBUG
+  if (top_id >= layer->num_tops) {
+    printf("[ERROR] Layer %s: out-of-bound output index %d\n",
+           layer->name, top_id);
+    return NULL;
+  }
+  #endif
+  return layer->p_tops[top_id];
+}
+
+Tensor* get_param(const Layer* const layer, const int param_id)
+{
+  #ifdef DEBUG
+  if (param_id >= layer->num_params) {
+    printf("[ERROR] Layer %s: out-of-bound parameter index %d\n",
+           layer->name, param_id);
+    return NULL;
+  }
+  #endif
+  return layer->p_params[param_id];
 }
 
 void set_bottom(Layer* const layer, const int bottom_id,
@@ -87,38 +112,15 @@ void add_param(Layer* const layer, Tensor* const tensor)
   set_param(layer, layer->num_params - 1, tensor);
 }
 
-Tensor* get_bottom(const Layer* const layer, const int bottom_id)
-{
-  #ifdef DEBUG
-  if (bottom_id >= layer->num_bottoms) {
-    printf("[ERROR] Layer %s: out-of-bound input index %d\n",
-           layer->name, bottom_id);
-    return NULL;
-  }
-  #endif
-  return layer->p_bottoms[bottom_id];
-}
 
-Tensor* get_top(const Layer* const layer, const int top_id)
-{
-  #ifdef DEBUG
-  if (top_id >= layer->num_tops) {
-    printf("[ERROR] Layer %s: out-of-bound output index %d\n",
-           layer->name, top_id);
-    return NULL;
-  }
-  #endif
-  return layer->p_tops[top_id];
-}
 
-Tensor* get_param(const Layer* const layer, const int param_id)
-{
-  #ifdef DEBUG
-  if (param_id >= layer->num_params) {
-    printf("[ERROR] Layer %s: out-of-bound parameter index %d\n",
-           layer->name, param_id);
-    return NULL;
-  }
-  #endif
-  return layer->p_params[param_id];
-}
+// --------------------------------------------------------------------------
+// simple functions returning static constants
+//   required for Python interface
+// --------------------------------------------------------------------------
+
+int _max_num_bottoms(void) { return MAX_NUM_BOTTOMS; }
+
+int _max_num_tops(void) { return MAX_NUM_TOPS; }
+
+int _max_num_params(void) { return MAX_NUM_PARAMS; }

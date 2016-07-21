@@ -8,13 +8,13 @@ layer {
   name: 'input-data'
   type: 'Python'
   top: 'data'
-  top: 'img_info'
+  top: 'im_info'
   top: 'gt_boxes'
   include { phase: TRAIN }
   python_param {
     module: 'roi_data_layer.layer'
     layer: 'RoIDataLayer'
-    param_str: "'num_classes': 85"
+    param_str: "'num_classes': 21"
   }
 }
 
@@ -2636,4 +2636,337 @@ layer {
   type: "ReLU"
   bottom: "convf"
   top: "convf"
+}
+
+
+################################################################################
+## RPN
+################################################################################
+
+### RPN ###
+layer {
+  name: "rpn_conv1"
+  type: "Convolution"
+  bottom: "convf"
+  top: "rpn_conv1"
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
+  convolution_param {
+    num_output: 256
+    kernel_size: 1  stride: 1  pad: 0
+    weight_filler { type: "gaussian"  std: 0.01 }
+    bias_filler { type: "constant"  value: 0 }
+  }
+}
+layer {
+  name: "rpn_relu1"
+  type: "ReLU"
+  bottom: "rpn_conv1"
+  top: "rpn_conv1"
+}
+
+layer {
+  name: "rpn_cls_score"
+  type: "Convolution"
+  bottom: "rpn_conv1"
+  top: "rpn_cls_score"
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
+  convolution_param {
+    num_output: 50
+    kernel_size: 1  stride: 1  pad: 0
+    weight_filler { type: "gaussian"  std: 0.01 }
+    bias_filler { type: "constant"  value: 0 }
+  }
+}
+layer {
+  name: "rpn_bbox_pred"
+  type: "Convolution"
+  bottom: "rpn_conv1"
+  top: "rpn_bbox_pred"
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
+  convolution_param {
+    num_output: 100
+    kernel_size: 1  stride: 1  pad: 0
+    weight_filler { type: "gaussian"  std: 0.01 }
+    bias_filler { type: "constant"  value: 0 }
+  }
+}
+
+layer {
+   bottom: "rpn_cls_score"
+   top: "rpn_cls_score_reshape"
+   name: "rpn_cls_score_reshape"
+   type: "Reshape"
+   reshape_param { shape { dim: 0 dim: 2 dim: -1 dim: 0 } }
+}
+layer {
+  name: 'rpn-data'
+  type: 'Python'
+  bottom: 'rpn_cls_score'
+  bottom: 'gt_boxes'
+  bottom: 'im_info'
+  bottom: 'data'
+  top: 'rpn_labels'
+  top: 'rpn_bbox_targets'
+  top: 'rpn_bbox_inside_weights'
+  top: 'rpn_bbox_outside_weights'
+  include { phase: TRAIN }
+  python_param {
+    module: 'rpn.anchor_target_layer'
+    layer: 'AnchorTargetLayer'
+    param_str: "{'feat_stride': 16, 'ratios': [0.5, 0.667, 1, 1.5, 2], 'scales': [3, 6, 9, 16, 32]}"
+  }
+}
+layer {
+  name: "rpn_loss_cls"
+  type: "SoftmaxWithLoss"
+  bottom: "rpn_cls_score_reshape"
+  bottom: "rpn_labels"
+  propagate_down: 1
+  propagate_down: 0
+  top: "rpn_loss_cls"
+  include { phase: TRAIN }
+  loss_weight: 1
+  loss_param { ignore_label: -1  normalize: true }
+}
+layer {
+  name: "rpn_loss_bbox"
+  type: "SmoothL1Loss"
+  bottom: "rpn_bbox_pred"
+  bottom: "rpn_bbox_targets"
+  bottom: "rpn_bbox_inside_weights"
+  bottom: "rpn_bbox_outside_weights"
+  top: "rpn_loss_bbox"
+  include { phase: TRAIN }
+  loss_weight: 1
+  smooth_l1_loss_param { sigma: 3.0 }
+}
+  
+################################################################################
+## Proposal
+################################################################################
+layer {
+  name: "rpn_cls_prob"
+  type: "Softmax"
+  bottom: "rpn_cls_score_reshape"
+  top: "rpn_cls_prob"
+  softmax_param { axis: 1 }
+}
+layer {
+  name: 'rpn_cls_prob_reshape'
+  type: 'Reshape'
+  bottom: 'rpn_cls_prob'
+  top: 'rpn_cls_prob_reshape'
+  reshape_param { shape { dim: 0 dim: 50 dim: -1 dim: 0 } }
+}
+layer {
+  name: 'proposal'
+  type: 'Python'
+  bottom: 'rpn_cls_prob_reshape'
+  bottom: 'rpn_bbox_pred'
+  bottom: 'im_info'
+  bottom: 'gt_boxes'
+  top: 'rois'
+  top: 'labels'
+  top: 'bbox_targets'
+  top: 'bbox_inside_weights'
+  top: 'bbox_outside_weights'
+  include { phase: TRAIN }
+  python_param {
+    module: 'rpn.proposal_layer'
+    layer: 'ProposalLayer2'
+    param_str: "{'feat_stride': 16, 'num_classes': 21, 'ratios': [0.5, 0.667, 1, 1.5, 2], 'scales': [3, 6, 9, 16, 32]}"
+  }
+}
+layer {
+  name: 'proposal'
+  type: 'Python'
+  bottom: 'rpn_cls_prob_reshape'
+  bottom: 'rpn_bbox_pred'
+  bottom: 'im_info'
+  top: 'rois'
+  top: 'scores'
+  include { phase: TEST }
+  python_param {
+    module: 'rpn.proposal_layer'
+    layer: 'ProposalLayer'
+    param_str: "{'feat_stride': 16, 'ratios': [0.5, 0.667, 1, 1.5, 2], 'scales': [3, 6, 9, 16, 32]}"
+  }
+}
+
+
+################################################################################
+## RCNN
+################################################################################
+layer {
+  name: "roi_pool_conv5"
+  type: "ROIPooling"
+  bottom: "convf"
+  bottom: "rois"
+  top: "roi_pool_conv5"
+  roi_pooling_param {
+    pooled_w: 6  pooled_h: 6
+    spatial_scale: 0.0625 # 1/16
+  }
+}
+layer {
+  name: "fc6"
+  type: "InnerProduct"
+  bottom: "roi_pool_conv5"
+  top: "fc6"
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
+  inner_product_param {
+    num_output: 4096
+    weight_filler { type: "xavier"  std: 0.005 }
+    bias_filler { type: "constant"  value: 0.1 }
+  }
+}
+layer {
+  name: "fc6/bn"
+  type: "BatchNorm"
+  bottom: "fc6"
+  top: "fc6"
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  batch_norm_param { use_global_stats: true }
+}
+layer {
+  name: "fc6/scale"
+  bottom: "fc6"
+  top: "fc6"
+  type: "Scale"
+  param { lr_mult: 1  decay_mult: 0 }
+  param { lr_mult: 1  decay_mult: 0 }
+  scale_param { bias_term: true }
+}
+layer {
+  name: "relu6"
+  type: "ReLU"
+  bottom: "fc6"
+  top: "fc6"
+}
+layer {
+  name: "drop6"
+  type: "Dropout"
+  bottom: "fc6"
+  top: "fc6"
+  dropout_param { dropout_ratio: 0.5 }
+}
+
+################################################################################
+## fc 7
+################################################################################
+layer {
+  name: "fc7"
+  type: "InnerProduct"
+  bottom: "fc6"
+  top: "fc7"
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
+  inner_product_param {
+    num_output: 4096
+    weight_filler { type: "xavier"  std: 0.005 }
+    bias_filler { type: "constant"  value: 0.1 }
+  }
+}
+layer {
+  name: "fc7/bn"
+  type: "BatchNorm"
+  bottom: "fc7"
+  top: "fc7"
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  param { lr_mult: 0  decay_mult: 0 }
+  batch_norm_param { use_global_stats: true }
+}
+layer {
+  name: "fc7/scale"
+  bottom: "fc7"
+  top: "fc7"
+  type: "Scale"
+  param { lr_mult: 1  decay_mult: 0 }
+  param { lr_mult: 1  decay_mult: 0 }
+  scale_param { bias_term: true }
+}
+layer {
+  name: "relu7"
+  type: "ReLU"
+  bottom: "fc7"
+  top: "fc7"
+}
+layer {
+  name: "drop7"
+  type: "Dropout"
+  bottom: "fc7"
+  top: "fc7"
+  dropout_param { dropout_ratio: 0.5 }
+}
+
+################################################################################
+## output
+################################################################################
+layer {
+  name: "cls_score"
+  type: "InnerProduct"
+  bottom: "fc7"
+  top: "cls_score"
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
+  inner_product_param {
+    num_output: 21
+    weight_filler { type: "gaussian"  std: 0.01 }
+    bias_filler { type: "constant"  value: 0 }
+  }
+}
+layer {
+  name: "bbox_pred"
+  type: "InnerProduct"
+  bottom: "fc7"
+  top: "bbox_pred"
+  param { lr_mult: 1  decay_mult: 1 }
+  param { lr_mult: 2  decay_mult: 0 }
+  inner_product_param {
+    num_output: 84
+    weight_filler { type: "gaussian"  std: 0.001 }
+    bias_filler { type: "constant"  value: 0 }
+  }
+}
+layer {
+  name: "loss_cls"
+  type: "SoftmaxWithLoss"
+  bottom: "cls_score"
+  bottom: "labels"
+  propagate_down: 1
+  propagate_down: 0
+  top: "loss_cls"
+  include { phase: TRAIN }
+  loss_weight: 1
+  loss_param { ignore_label: -1  normalize: true }
+}
+layer {
+  name: "loss_bbox"
+  type: "SmoothL1Loss"
+  bottom: "bbox_pred"
+  bottom: "bbox_targets"
+  bottom: "bbox_inside_weights"
+  bottom: "bbox_outside_weights"
+  top: "loss_bbox"
+  include { phase: TRAIN }
+  loss_weight: 1
+}
+layer {
+  name: "cls_prob"
+  type: "Softmax"
+  bottom: "cls_score"
+  top: "cls_prob"
+  include { phase: TEST }
+  loss_param {
+    ignore_label: -1
+    normalize: true
+  }
+  softmax_param { axis: 2 }
 }

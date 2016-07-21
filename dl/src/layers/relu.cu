@@ -59,7 +59,7 @@ void prelu_cpu(const real bottom[], real top[],
 
 
 // --------------------------------------------------------------------------
-// layer operator code
+// layer-wise operator code
 // --------------------------------------------------------------------------
 
 // (soft-)ReLU transform: bottom -> top
@@ -105,7 +105,7 @@ void relu_forward(const Tensor* const bottom,
 
 
 // --------------------------------------------------------------------------
-// layer shape calculator code
+// output shape calculator code
 // --------------------------------------------------------------------------
 
 void relu_shape(const Tensor* const bottom,
@@ -129,19 +129,28 @@ void relu_shape(const Tensor* const bottom,
 
 
 // --------------------------------------------------------------------------
-// API code
+// functions for layer instance
 // --------------------------------------------------------------------------
 
 void forward_relu_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
-
-  relu_forward(get_bottom(layer, 0), get_top(layer, 0), &layer->option);
+  relu_forward(get_bottom(layer, 0), get_top(layer, 0),
+               &layer->option);
 }
 
 void shape_relu_layer(void* const net_, void* const layer_)
 {
   Layer* const layer = (Layer*)layer_;
-
   relu_shape(get_bottom(layer, 0), get_top(layer, 0));
+}
+
+void init_relu_layer(void* const net_, void* const layer_)
+{
+  return;
+}
+
+void free_relu_layer(void* const net_, void* const layer_)
+{
+  return;
 }
