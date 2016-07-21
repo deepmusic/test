@@ -148,7 +148,7 @@ Tensor* add_tensor(Net* const net, const char* const name)
 
   {
     Tensor* const tensor = get_tensor(net, net->num_tensors - 1);
-    set_tensor_name(tensor, name);
+    strcpy(tensor->name, name);
     return tensor;
   }
 }

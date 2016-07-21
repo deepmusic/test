@@ -1,7 +1,6 @@
 #ifndef PVA_DL_NET_H
 #define PVA_DL_NET_H
 
-#include "core/tensor.h"
 #include "core/layer.h"
 
 // --------------------------------------------------------------------------

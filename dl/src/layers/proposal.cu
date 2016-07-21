@@ -27,7 +27,6 @@
     - GPU nms post processing (remove 5)
 */
 
-#include "core/net.h"
 #include "layers/nms.h"
 #include <string.h>
 

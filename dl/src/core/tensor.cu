@@ -1,17 +1,6 @@
 #include "core/tensor.h"
 #include <string.h>
 
-// initialize: set all values to 0
-void init_tensor(Tensor* const tensor)
-{
-  memset(tensor, 0, sizeof(Tensor));
-}
-
-void set_tensor_name(Tensor* const tensor, const char* const name)
-{
-  strcpy(tensor->name, name);
-}
-
 // total number of elements in a tensor
 long int get_data_size(const Tensor* const tensor)
 {
@@ -84,6 +73,7 @@ void free_tensor_data(Tensor* const tensor)
 
 // load binary data from file & store to CPU memory
 //   data: pointer to CPU memory for storing data
+static
 void load_from_binary_file(const char* const filename,
                            int* const ndim,
                            int shape[],

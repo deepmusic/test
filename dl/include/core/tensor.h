@@ -39,12 +39,6 @@ typedef struct Tensor_
 // functions
 // --------------------------------------------------------------------------
 
-// initialize: set all values to 0
-void init_tensor(Tensor* const tensor);
-
-// set tensor's name
-void set_tensor_name(Tensor* const tensor, const char* const name);
-
 // total number of elements in a tensor
 long int get_data_size(const Tensor* const tensor);
 
@@ -56,13 +50,6 @@ long int malloc_tensor_data(Tensor* const tensor,
 
 // deallocate memory
 void free_tensor_data(Tensor* const tensor);
-
-// load binary data from file & store to CPU memory
-//   cpu_data: pointer to CPU memory for storing data
-void load_from_binary_file(const char* const filename,
-                           int* const ndim,
-                           int shape[],
-                           real cpu_data[]);
 
 // load binary data from file & copy to memory where tensor data refers
 //   temp_cpu_data: pointer to CPU memory for loading data temporarily
