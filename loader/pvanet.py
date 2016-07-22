@@ -111,11 +111,12 @@ class Net(ctypes.Structure):
               ('space_cpu', ctypes.c_long),
               ('space', ctypes.c_long),
               ('initialized', ctypes.c_int),
-              ('blas_handle', ctypes.c_int),
               ('p_images', ctypes.c_char_p * batch_size),
               ('image_heights', ctypes.c_int * batch_size),
               ('image_widths', ctypes.c_int * batch_size),
-              ('num_images', ctypes.c_int)]
+              ('num_images', ctypes.c_int),
+              ('elapsed_times', ctypes.c_double * max_num_layers),
+              ('blas_handle', ctypes.c_int)]
 
 lib.create_empty_net.restype = ctypes.POINTER(Net)
 
