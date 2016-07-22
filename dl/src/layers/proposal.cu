@@ -30,11 +30,6 @@
 #include "layers/nms.h"
 #include <string.h>
 
-#include <time.h>
-
-static float a_time[8] = { 0, };
-static clock_t tick0, tick1, tick00;
-
 // --------------------------------------------------------------------------
 // kernel code
 //   transform_box: transform a box according to a given gradient
@@ -460,17 +455,15 @@ void proposal_forward(const Tensor* const bottom4d,
   #ifdef GPU
   real img_info_cpu[BATCH_SIZE * 6];
   const real* p_img_info_cpu = img_info_cpu;
-  cudaMemcpyAsync(img_info_cpu, img_info1d->data,
+  cudaMemcpy(img_info_cpu, img_info1d->data,
                   get_data_size(img_info1d) * sizeof(real),
                   cudaMemcpyDeviceToHost);
   #else
   const real* p_img_info_cpu = img_info1d->data;
   #endif
 
-  tick00 = clock();
-
   for (int n = 0; n < bottom4d->num_items; ++n) {
-    // bottom shape: 2 x num_anchors x H x W
+    // bottom shape: (2 x num_anchors) x H x W
     const int bottom_H = bottom4d->shape[n][1];
     const int bottom_W = bottom4d->shape[n][2];
     // input image height & width
@@ -485,7 +478,6 @@ void proposal_forward(const Tensor* const bottom4d,
     // number of all proposals = num_anchors * H * W
     const int num_proposals = num_anchors * bottom_H * bottom_W;
 
-    tick0 = clock();
     // enumerate all proposals
     //   num_proposals = num_anchors * H * W
     //   (x1, y1, x2, y2, score) for each proposal
@@ -510,10 +502,7 @@ void proposal_forward(const Tensor* const bottom4d,
           option->feat_stride);
     }
     #endif
-    tick1 = clock();
-    a_time[0] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 
-    tick0 = clock();
     // choose candidates according to scores
     #ifdef GPU
     {
@@ -530,10 +519,7 @@ void proposal_forward(const Tensor* const bottom4d,
       sort_box(proposals_cpu, 0, num_proposals - 1, option->pre_nms_topn);
     }
     #endif
-    tick1 = clock();
-    a_time[1] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 
-    tick0 = clock();
     // NMS & RoI retrieval
     {
       // NMS
@@ -578,8 +564,6 @@ void proposal_forward(const Tensor* const bottom4d,
       top2d->start[n] = total_top_size;
       total_top_size += num_rois * 5;
     }
-    tick1 = clock();
-    a_time[2] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 
     // locate next item
     {
@@ -596,10 +580,6 @@ void proposal_forward(const Tensor* const bottom4d,
 
   top2d->ndim = 2;
   top2d->num_items = bottom4d->num_items;
-
-  tick1 = clock();
-  a_time[3] = (float)(tick1 - tick00) / CLOCKS_PER_SEC;
-  a_time[7] += (float)(tick1 - tick00) / CLOCKS_PER_SEC;
 }
 
 
@@ -662,16 +642,6 @@ void forward_proposal_layer(void* const net_, void* const layer_)
                    (unsigned char*)net->temp_cpu_data,
                    (unsigned char*)net->temp_data,
                    &layer->option);
-
-  #ifdef DEBUG
-  {
-    printf("%s:  ", layer->name);
-    for (int i = 0; i < 8; ++i) {
-      printf("%4.2f\t", a_time[i] * 1000);
-    }
-    printf("\n");
-  }
-  #endif
 }
 
 void shape_proposal_layer(void* const net_, void* const layer_)

@@ -1,4 +1,5 @@
 #include "core/net.h"
+#include "util/profile.h"
 #include <string.h>
 
 Net* create_empty_net(void)
@@ -20,7 +21,12 @@ void forward_net(Net* const net)
   for (int i = 0; i < net->num_layers; ++i) {
     Layer* const layer = get_layer(net, i);
     if (layer->f_forward) {
+      long int timestamp_start = tic();
       (*layer->f_forward)(net, layer);
+      #ifdef GPU
+      cudaDeviceSynchronize();
+      #endif
+      update_mean_time(&net->elapsed_times[i], toc(timestamp_start));
     }
   }
 }
@@ -477,32 +483,32 @@ void malloc_net(Net* const net)
 
   // summarization
   #ifdef GPU
-  printf("%ldMB of main memory allocated\n",
-         DIV_THEN_CEIL(net->space_cpu,  1000000));
-  printf("  Net data structure at main memory = %ldKB\n",
-         DIV_THEN_CEIL(sizeof(Net),  1000));
-  printf("  Layer auxiliary data at main memory = %ldMB\n",
-         DIV_THEN_CEIL(layer_cpu_space,  1000000));
-  printf("  Temporary data at main memory = %ldMB\n",
-         DIV_THEN_CEIL(temp_cpu_space,  1000000));
-  printf("%ldMB of GPU memory allocated\n",
-         DIV_THEN_CEIL(net->space,  1000000));
+  printf("%.2lfMB of main memory allocated\n",
+         (double)net->space_cpu / 1000000.0);
+  printf("  Net data structure at main memory = %.2lfMB\n",
+         (double)sizeof(Net) / 1000000.0);
+  printf("  Layer auxiliary data at main memory = %.2lfMB\n",
+         (double)layer_cpu_space / 1000000.0);
+  printf("  Temporary data at main memory = %.2lfMB\n",
+         (double)temp_cpu_space / 1000000.0);
+  printf("%.2lfMB of GPU memory allocated\n",
+         (double)net->space / 1000000.0);
   #else
-  printf("%ldMB of main memory allocated\n",
-         DIV_THEN_CEIL(net->space_cpu,  1000000));
-  printf("  Net data structure = %ldKB\n",
-         DIV_THEN_CEIL(sizeof(Net),  1000));
+  printf("%.2lfMB of main memory allocated\n",
+         (double)net->space_cpu / 1000000.0);
+  printf("  Net data structure = %.2lfMB\n",
+         (double)sizeof(Net) / 1000000.0);
   #endif
-  printf("  Layer auxiliary data = %ldMB\n",
-         DIV_THEN_CEIL(layer_space,  1000000));
-  printf("  Shared tensor data = %ldMB\n",
-       DIV_THEN_CEIL(net->num_shared_blocks * shared_data_space,  1000000));
-  printf("  Private & parameter tensor data = %ldMB\n",
-         DIV_THEN_CEIL(tensor_space,  1000000));
-  printf("  Temporary data = %ldMB\n",
-         DIV_THEN_CEIL(net->temp_space,  1000000));
-  printf("  Constant vector data = %ldKB\n",
-         DIV_THEN_CEIL(net->const_space,  1000));
+  printf("  Layer auxiliary data = %.2lfMB\n",
+         (double)layer_space / 1000000.0);
+  printf("  Shared tensor data = %.2lfMB\n",
+         (double)net->num_shared_blocks * shared_data_space / 1000000.0);
+  printf("  Private & parameter tensor data = %.2lfMB\n",
+         (double)tensor_space / 1000000.0);
+  printf("  Temporary data = %.2lfMB\n",
+         (double)net->temp_space / 1000000.0);
+  printf("  Constant vector data = %.2lfMB\n",
+         (double)net->const_space / 1000000.0);
 }
 
 void free_net(Net* const net)

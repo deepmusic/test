@@ -1,11 +1,5 @@
 #include "layers/operator.h"
 #include <string.h>
-#include <omp.h>
-
-#include <time.h>
-
-static float a_time[8] = { 0, };
-static clock_t tick0, tick1, tick00, tick01;
 
 // --------------------------------------------------------------------------
 // kernel code
@@ -30,8 +24,6 @@ void conv_winograd_cpu(const real bottom3d[],
   real d[4][4];
   real uv[16];
 
-  tick0 = clock();
-  tick01 = tick0;
   {
     const int stride = top_C * bottom_C;
     for (int k = 0; k < top_C; ++k) {
@@ -61,10 +53,7 @@ void conv_winograd_cpu(const real bottom3d[],
       } // endfor c
     } // endfor k
   }
-  tick1 = clock();
-  a_time[0] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 
-  tick0 = clock();
   {
     const int stride = bottom_C * H2 * W2;
     for (int c = 0; c < bottom_C; ++c) {
@@ -101,15 +90,9 @@ void conv_winograd_cpu(const real bottom3d[],
       v[15 * stride] = d[1][1] - d[1][3] - d[3][1] + d[3][3];
     }}} // endfor chw
   }
-  tick1 = clock();
-  a_time[1] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 
-  tick0 = clock();
-  //#pragma omp parallel num_threads(2)
   {
     const int top_area = H2 * W2;
-    //int i;
-    //#pragma omp for nowait
     for (int i = 0; i < 16; ++i) {
       const real* const u = p_weight4x4 + i * top_C * bottom_C;
       const real* const v = p_bottom4x4 + i * bottom_C * top_area;
@@ -119,15 +102,12 @@ void conv_winograd_cpu(const real bottom3d[],
                   top_C,  top_area,  bottom_C,
                   1,
                   u,  bottom_C,
-                  v,  top_area,//bottom_C,
+                  v,  top_area,
                   0,
                   uv_,  top_area);
     }
   }
-  tick1 = clock();
-  a_time[2] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 
-  tick0 = clock();
   {
     const int stride = top_C * H2 * W2;
     for (int k = 0; k < top_C; ++k) {
@@ -160,9 +140,6 @@ void conv_winograd_cpu(const real bottom3d[],
       }
     }}} // endfor khw
   }
-  tick1 = clock();
-  a_time[3] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-  a_time[4] = (float)(tick1 - tick01) / CLOCKS_PER_SEC;
 }
 #endif
 
@@ -317,8 +294,6 @@ void conv_forward(const Tensor* const bottom3d,
   real* p_top_item = top3d->data;
   real* p_temp_data = temp_data;
 
-  tick00 = clock();
-
   for (int n = 0; n < bottom3d->num_items; ++n) {
     // bottom shape: (G * C) x H x W
     const int bottom_H = bottom3d->shape[n][1];  // H
@@ -332,6 +307,7 @@ void conv_forward(const Tensor* const bottom3d,
     top3d->shape[n][0] = G * top_C;
     top3d->shape[n][1] = top_H;
     top3d->shape[n][2] = top_W;
+
   #ifndef GPU
     if (top_C >= 48 &&
         kernel_h == 3 && kernel_w == 3 && stride_h == 1 && stride_w == 1)
@@ -345,9 +321,6 @@ void conv_forward(const Tensor* const bottom3d,
     }
     else {
   #endif
-
-    a_time[0] = a_time[1] = a_time[2] = a_time[3] = a_time[4] = 0;
-    tick01 = clock();
 
     // convert bottom shape
     //   (G * C) x H x W -> (G * C * kernel_h * kernel_w) x (H' * W')
@@ -376,10 +349,6 @@ void conv_forward(const Tensor* const bottom3d,
       // if 1x1 convolution, skip convert_bottom
       p_temp_data = (real*)p_bottom_item;
     }
-
-    tick1 = clock();
-    a_time[1] = (float)(tick1 - tick01) / CLOCKS_PER_SEC;
-    tick0 = clock();
 
     // compute top[g] = dot(weight[g], bottom[g])
     //   weight[g]: C' x (C * kernel_h * kernel_w)
@@ -435,12 +404,7 @@ void conv_forward(const Tensor* const bottom3d,
                   0,
                   p_top_g,  top_area);
     #endif
-    }
-
-    tick1 = clock();
-    a_time[2] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-    a_time[4] = (float)(tick1 - tick01) / CLOCKS_PER_SEC;
-    tick0 = clock();
+    } // endfor g
 
   #ifndef GPU
     }
@@ -484,9 +448,6 @@ void conv_forward(const Tensor* const bottom3d,
     #endif
     }
 
-    tick1 = clock();
-    a_time[5] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-
     // locate next item
     {
       const int bottom_size = G * bottom_C * bottom_H * bottom_W;
@@ -498,10 +459,6 @@ void conv_forward(const Tensor* const bottom3d,
 
   top3d->ndim = 3;
   top3d->num_items = bottom3d->num_items;
-
-  tick1 = clock();
-  a_time[6] = (float)(tick1 - tick00) / CLOCKS_PER_SEC;
-  a_time[7] += (float)(tick1 - tick00) / CLOCKS_PER_SEC;
 }
 
 
@@ -606,16 +563,6 @@ void forward_conv_layer(void* const net_, void* const layer_)
   conv_forward(get_bottom(layer, 0), get_top(layer, 0),
                get_param(layer, 0), p_bias,
                net->temp_data, net->const_data, &layer->option);
-
-  #ifdef DEBUG
-  {
-    printf("%s:  ", layer->name);
-    for (int i = 0; i < 8; ++i) {
-      printf("%4.2f\t", a_time[i] * 1000);
-    }
-    printf("\n");
-  }
-  #endif
 }
 
 void shape_conv_layer(void* const net_, void* const layer_)

@@ -1,10 +1,10 @@
 #!/bin/bash
 
 GPU=true
-LIGHT_NET=false
+LIGHT_NET=true
 COMPRESSION=true
 PRE_NMS_TOPN=6000
-POST_NMS_TOPN=100
+POST_NMS_TOPN=200
 INPUT_SCALE=576
 
 MODEL_NAME=""
@@ -21,4 +21,4 @@ if [ ${COMPRESSION} == true ]; then
 fi
 echo ${MODEL_NAME}
 
-./demo${MODEL_NAME}.bin ${PRE_NMS_TOPN} ${POST_NMS_TOPN} ${INPUT_SCALE} database data/voc2007test.txt detections.bin
+./demo${MODEL_NAME}.bin ${PRE_NMS_TOPN} ${POST_NMS_TOPN} ${INPUT_SCALE} database data/voc2007test_small.txt detections.bin

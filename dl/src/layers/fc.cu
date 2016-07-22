@@ -1,10 +1,5 @@
 #include "layers/operator.h"
 
-#include <time.h>
-
-static float a_time[8] = { 0, };
-static clock_t tick0, tick1, tick00;
-
 // --------------------------------------------------------------------------
 // layer-wise operator code
 // --------------------------------------------------------------------------
@@ -23,8 +18,6 @@ void fc_forward(const Tensor* const bottom2d,
                 const real const_data[],
                 const LayerOption* const option)
 {
-  tick00 = clock();
-
   // weight shape: D' x D
   const int top_D = weight2d->shape[0][0];  // D'
   const int bottom_D = weight2d->shape[0][1]; // D
@@ -38,7 +31,6 @@ void fc_forward(const Tensor* const bottom2d,
   top2d->shape[0][0] = N;
   top2d->shape[0][1] = top_D;
 
-  tick0 = clock();
   // compute top = dot(bottom, weight.transpose())
   //   bottom: N x D
   //   weight: D' x D
@@ -86,10 +78,7 @@ void fc_forward(const Tensor* const bottom2d,
                 top2d->data,  top_D);
   #endif
   }
-  tick1 = clock();
-  a_time[0] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
 
-  tick0 = clock();
   // compute top[i][j] = top[i][j] + bias[j]
   //   top: N x D'
   //   bias: 1 x D'
@@ -124,10 +113,6 @@ void fc_forward(const Tensor* const bottom2d,
                top2d->data,  top_D);
   #endif
   }
-  tick1 = clock();
-  a_time[1] = (float)(tick1 - tick0) / CLOCKS_PER_SEC;
-  a_time[6] = (float)(tick1 - tick00) / CLOCKS_PER_SEC;
-  a_time[7] += (float)(tick1 - tick00) / CLOCKS_PER_SEC;
 }
 
 
@@ -196,16 +181,6 @@ void forward_fc_layer(void* const net_, void* const layer_)
   fc_forward(get_bottom(layer, 0), get_top(layer, 0),
              get_param(layer, 0), p_bias,
              net->const_data, &layer->option);
-
-  #ifdef DEBUG
-  {
-    printf("%s:  ", layer->name);
-    for (int i = 0; i < 8; ++i) {
-      printf("%4.2f\t", a_time[i] * 1000);
-    }
-    printf("\n");
-  }
-  #endif
 }
 
 void shape_fc_layer(void* const net_, void* const layer_)

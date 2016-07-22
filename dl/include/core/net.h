@@ -65,6 +65,9 @@ typedef struct Net_
   int image_widths[BATCH_SIZE];
   int num_images;
 
+  // average elapsed time for each layer
+  double elapsed_times[MAX_NUM_LAYERS];
+
   // auxiliary data for CuBLAS library
   #ifdef GPU
   cublasHandle_t blas_handle;
