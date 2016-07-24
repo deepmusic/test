@@ -1,0 +1,149 @@
+layer {
+  name: "l1"
+  type: "Convolution"
+  bottom: "b1"
+  bottom: "b2"
+  bottom: "b3"
+  top: "t1"
+  param {
+    name: "l1_param0"
+    lr_mult: 0.1
+    decay_mult: 0.1
+  }
+}
+layer {
+  name: "conv1/conv"
+  type: "Convolution"
+  bottom: "t1"
+  top: "conv1"
+  param {
+    name: "conv1/conv_param0"
+    lr_mult: 1
+    decay_mult: 1
+  }
+  convolution_param {
+    num_output: 32
+    bias_term: false
+    pad: 1
+    kernel_size: 3
+    group: 1
+    stride: 1
+    weight_filler {
+      type: "xavier"
+    }
+  }
+}
+layer {
+  name: "conv1/bn"
+  type: "BatcnNorm"
+  bottom: "conv1"
+  top: "conv1"
+  param {
+    name: "conv1/bn_param0"
+    lr_mult: 0
+    decay_mult: 0
+  }
+  param {
+    name: "conv1/bn_param0"
+    lr_mult: 0
+    decay_mult: 0
+  }
+  param {
+    name: "conv1/bn_param0"
+    lr_mult: 0
+    decay_mult: 0
+  }
+}
+layer {
+  name: "conv1/scale"
+  type: "Scale"
+  bottom: "conv1"
+  top: "conv1"
+  param {
+    name: "conv1/scale_param0"
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    name: "conv1/scale_param1"
+    lr_mult: 2
+    decay_mult: 0
+  }
+  scale_param {
+    bias_term: true
+  }
+}
+layer {
+  name: "conv1/relu"
+  type: "ReLU"
+  bottom: "conv1"
+  top: "conv1"
+}
+layer {
+  name: "conv2/conv"
+  type: "Convolution"
+  bottom: "conv1"
+  top: "conv2"
+  param {
+    name: "conv1/conv_param0"
+    lr_mult: 1
+    decay_mult: 1
+  }
+  convolution_param {
+    num_output: 32
+    bias_term: false
+    pad: 1
+    kernel_size: 3
+    group: 1
+    stride: 1
+    weight_filler {
+      type: "xavier"
+    }
+  }
+}
+layer {
+  name: "conv2/bn"
+  type: "BatcnNorm"
+  bottom: "conv2"
+  top: "conv2"
+  param {
+    name: "conv2/bn_param0"
+    lr_mult: 0
+    decay_mult: 0
+  }
+  param {
+    name: "conv2/bn_param0"
+    lr_mult: 0
+    decay_mult: 0
+  }
+  param {
+    name: "conv2/bn_param0"
+    lr_mult: 0
+    decay_mult: 0
+  }
+}
+layer {
+  name: "conv2/scale"
+  type: "Scale"
+  bottom: "conv2"
+  top: "conv2"
+  param {
+    name: "conv1/scale_param0"
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    name: "conv1/scale_param1"
+    lr_mult: 2
+    decay_mult: 0
+  }
+  scale_param {
+    bias_term: true
+  }
+}
+layer {
+  name: "conv2/relu"
+  type: "ReLU"
+  bottom: "conv2"
+  top: "conv2"
+}

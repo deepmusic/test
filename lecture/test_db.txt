@@ -1,0 +1,10 @@
+voc/000001.jpg 1
+voc/000002.jpg 2
+voc/000003.jpg 3
+voc/000004.jpg 4
+voc/000006.jpg 5
+voc/000008.jpg 6
+voc/000010.jpg 7
+voc/000011.jpg 8
+voc/000013.jpg 9
+voc/000014.jpg 10

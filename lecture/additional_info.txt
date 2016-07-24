@@ -1,0 +1,2 @@
+./build/tools/convert_imageset -encode_type="jpg", -encoded=true -gray=false -resize_height=256 -resize_width=256 -shuffle=true /media/ssd/Work/imagenet/ /media/ssd/Work/imagenet/val.txt imagenet_val
+
