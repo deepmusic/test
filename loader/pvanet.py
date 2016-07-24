@@ -143,7 +143,7 @@ lib.add_odout_layer.argtypes = [ctypes.POINTER(Net), ctypes.c_char_p, ctypes.c_c
 def detect(net, filename):
   img = imread(filename)
   if img is not None:
-    lib.process_pvanet(net, img.tobytes(), img.shape[0], img.shape[1], None, None, None)
+    lib.process_pvanet(net, img[:,:,::-1].tobytes(), img.shape[0], img.shape[1], None, None, None)
 
 def get_tensor_data(tensor):
   try:

@@ -298,14 +298,14 @@ def test():
     print dir(net)
     net.contents.param_path = '../data/pvanet/pvanet'
     load_pva900(net=net)
-    detect(net, '../dl/scripts/voc/000004.jpg')
+    detect(net, '../dl/scripts/voc/000014.jpg')
     print get_tensor_data(pvalib.get_tensor_by_name(net, 'out'))
     pvalib.free_net(net)
   else:
     net = pvalib.create_empty_net()
     net.contents.param_path = '../data/pvanet/pvanet_light'
     load_pva33(net=net)
-    detect(net, '../dl/scripts/voc/000004.jpg')
+    detect(net, '../dl/scripts/voc/000014.jpg')
     pvalib.free_net(net)
 
 test()
