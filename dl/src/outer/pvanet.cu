@@ -45,7 +45,9 @@ void set_input_pvanet(Net* const net,
   // if current image shapes != previous image shapes,
   // recompute output shapes for all layers
   if (shape_changed) {
+    #ifdef DEBUG
     printf("shape changed\n");
+    #endif
     shape_net(net);
   }
 }

@@ -6,6 +6,8 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <vector>
 
+#define COMPRESS
+
 static
 const char* gs_class_names[] = {
   "__unknown__",
@@ -150,8 +152,7 @@ void test_image(Net* const net, const char* const filename)
 
 static
 void test_database(Net* const net,
-                   const char* const db_filename,
-                   const char* const out_filename)
+                   const char* const db_filename)
 {
   std::vector<cv::Mat> images;
   unsigned char* p_images[BATCH_SIZE];
@@ -166,16 +167,13 @@ void test_database(Net* const net,
   int count = 0, buf_count = 0;
 
   FILE* fp_list = fopen(db_filename, "r");
-  FILE* fp_out = fopen(out_filename, "wb");
+  FILE* fp_out = NULL;
 
   long int timestamp_start, current_time;
   double mean_time = 0;
 
   if (!fp_list) {
     printf("File not found: %s\n", db_filename);
-  }
-  if (!fp_out) {
-    printf("File write error: %s\n", out_filename);
   }
 
   while (fgets(&buf[buf_count], 1024, fp_list))
@@ -262,45 +260,27 @@ void test_database(Net* const net,
 static
 void print_usage(void)
 {
-  #ifdef GPU
-  const char* const postfix1 = "_gpu";
-  #else
-  const char* const postfix1 = "_cpu";
-  #endif
-
   #ifdef LIGHT_MODEL
-  const char* const postfix2 = "_light";
+  const char* const name = "ODv0.8lite";
   #else
-  const char* const postfix2 = "";
+  const char* const name = "ODv0.8";
   #endif
 
-  #ifdef COMPRESS
-  const char* const postfix3 = "_compress";
-  #else
-  const char* const postfix3 = "";
-  #endif
-
-  printf("[Usage] ./demo%s%s%s.bin <pre_nms_topn> <post_nms_topn> <input_size> <command> <arg1> <arg2> ...\n\n",
-         postfix1, postfix2, postfix3);
-  printf("  Common settings for <pre_nms_topn> <post_nms_topn> <input_size>:\n");
-  printf("    pre_nms_topn = 6000 or 12000\n");
-  printf("    post_nms_topn = 100, 200, or 300\n");
-  printf("    input_size = 480, 576, 720, or 960\n\n");
-  printf("  Settings for <command> <arg1> <arg2> ...:\n");
-  printf("  1. [Live demo using WebCam] live <camera id> <width> <height>\n");
-  printf("  2. [Image file] snapshot <image filename>\n");
-  printf("  3. [Video file] video <video filename>\n");
-  printf("  4. [List of images] database <DB filename> <output filename>\n");
+  printf("[Usage] %s <command> <arg1> <arg2> ...\n\n", name);
+  printf("  1. [Live demo using WebCam] %s live <camera id> <width> <height>\n", name);
+  printf("  2. [Image file] %s snapshot <image filename>\n", name);
+  printf("  3. [Video file] %s video <video filename>\n", name);
+  printf("  4. [List of images] %s database <DB filename>\n", name);
 }
 
 static
 int test(const char* const args[], const int num_args)
 {
   Net* pvanet;
-  const int pre_nms_topn = atoi(args[0]);
-  const int post_nms_topn = atoi(args[1]);
-  const int input_size = atoi(args[2]);
-  const char* const command = args[3];
+  const int pre_nms_topn = 6000;
+  const int post_nms_topn = 200;
+  const int input_size = 576;
+  const char* const command = args[0];
 
   #ifdef GPU
   cudaSetDevice(0);
@@ -321,10 +301,10 @@ int test(const char* const args[], const int num_args)
   #endif
 
   if (strcmp(command, "live") == 0) {
-    if (num_args >= 7) {
-      const int camera_id = atoi(args[4]);
-      const int frame_width = atoi(args[5]);
-      const int frame_height = atoi(args[6]);
+    if (num_args >= 4) {
+      const int camera_id = atoi(args[1]);
+      const int frame_width = atoi(args[2]);
+      const int frame_height = atoi(args[3]);
 
       cv::imshow("faster-rcnn", 0);
       cv::VideoCapture vc(camera_id);
@@ -350,8 +330,8 @@ int test(const char* const args[], const int num_args)
   }
 
   else if (strcmp(command, "snapshot") == 0) {
-    if (num_args >= 5) {
-      const char* const filename = args[4];
+    if (num_args >= 2) {
+      const char* const filename = args[1];
       cv::imshow("faster-rcnn", 0);
 
       pvanet = create_pvanet(model_path, is_light_model, fc_compress,
@@ -368,8 +348,8 @@ int test(const char* const args[], const int num_args)
   }
 
   else if (strcmp(command, "video") == 0) {
-    if (num_args >= 5) {
-      const char* const filename = args[4];
+    if (num_args >= 2) {
+      const char* const filename = args[1];
 
       cv::imshow("faster-rcnn", 0);
       cv::VideoCapture vc(filename);
@@ -393,13 +373,12 @@ int test(const char* const args[], const int num_args)
   }
 
   else if (strcmp(command, "database") == 0) {
-    if (num_args >= 6) {
-      const char* const db_filename = args[4];
-      const char* const out_filename = args[5];
+    if (num_args >= 2) {
+      const char* const db_filename = args[1];
 
       pvanet = create_pvanet(model_path, is_light_model, fc_compress,
                              pre_nms_topn, post_nms_topn, input_size);
-      test_database(pvanet, db_filename, out_filename);
+      test_database(pvanet, db_filename);
       free_net(pvanet);
     }
     else {
@@ -418,7 +397,7 @@ int test(const char* const args[], const int num_args)
 
 int main(int argc, char* argv[])
 {
-  if (argc >= 6) {
+  if (argc >= 3) {
     test(argv + 1, argc - 1);
   }
   else {

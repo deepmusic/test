@@ -20,7 +20,7 @@ NVCC := /usr/local/cuda/bin/nvcc
 NVCCFLAGS := -c -O3 -use_fast_math -Xcompiler '-fPIC -Wall -DGPU' $(INCLUDE_FLAG)
 NVLDFLAGS := -L$(CUDA_LIB_DIR) -L$(OPENCV_LIB_DIR) -lcudart -lcublas -lopencv_core -lopencv_highgui
 
-all: demo_cpu.bin demo_gpu.bin demo_cpu_compress.bin demo_gpu_compress.bin demo_cpu_light.bin demo_gpu_light.bin demo_cpu_light_compress.bin demo_gpu_light_compress.bin
+all: demo_cpu.bin demo_gpu.bin demo_cpu_compress.bin demo_gpu_compress.bin demo_cpu_light.bin demo_gpu_light.bin demo_cpu_light_compress.bin demo_gpu_light_compress.bin ODv0.8.bin ODv0.8lite.bin
 
 # Runtime binary
 demo_cpu.bin: $(BUILD_ROOT)/demo.cpu.test.o libdlcpu.so
@@ -39,6 +39,10 @@ demo_cpu_light_compress.bin: $(BUILD_ROOT)/demo.cpu.light.compress.test.o libdlc
 	$(CC) -o $@ $^ $(LDFLAGS)
 demo_gpu_light_compress.bin: $(BUILD_ROOT)/demo.gpu.light.compress.test.o libdlgpu.so
 	$(NVCC) -o $@ $^ $(NVLDFLAGS)
+ODv0.8.bin: $(BUILD_ROOT)/demo_odv0.8.cpu.test.o libdlcpu.so
+	$(CC) -o $@ $^ $(LDFLAGS)
+ODv0.8lite.bin: $(BUILD_ROOT)/demo_odv0.8.cpu.light.test.o libdlcpu.so
+	$(CC) -o $@ $^ $(LDFLAGS)
 
 # Shared library
 libdlgpu.so: $(BUILD_DIR) $(GPU_OBJ_FILES) $(BUILD_ROOT)/link.gpu.o
