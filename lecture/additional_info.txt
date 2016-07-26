@@ -2,3 +2,4 @@
 
 cudnn v5 required
 
+convert_imageset -encode_type="jpg" -encoded=true -gray=false -shuffle=false ./ test_2.txt test_lmdb_2
