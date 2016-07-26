@@ -69,9 +69,12 @@ def convolution_layer(bottom_name, top_name, num_output, kernel_size, stride=1, 
     param_list = param_layer.param
   layer = empty_layer(layer_name, 'Convolution', [bottom_name], [top_name], param_list=param_list, phase=phase)
   layer.convolution_param.num_output = num_output
-  layer.convolution_param.kernel_size = kernel_size
-  layer.convolution_param.stride = stride
-  layer.convolution_param.pad = pad if pad is not None else (kernel_size - 1) / 2
+  layer.convolution_param.kernel_h = kernel_size
+  layer.convolution_param.kernel_w = kernel_size
+  layer.convolution_param.stride_h = stride
+  layer.convolution_param.stride_w = stride
+  layer.convolution_param.pad_h = pad if pad is not None else (kernel_size - 1) / 2
+  layer.convolution_param.pad_w = pad if pad is not None else (kernel_size - 1) / 2
   layer.convolution_param.group = group
   layer.convolution_param.bias_term = bias_term and len(param_list) > 1
   layer.convolution_param.weight_filler.type = 'xavier'
@@ -197,7 +200,7 @@ def squeeze_module(conv_module, bottom_name, top_name, num_squeeze, num_expand, 
 
 def squeeze_net():
   net = caffe.proto.caffe_pb2.NetParameter()
-  conv_module = conv_scale_relu_module
+  conv_module = conv_relu_module
   #append(net.layer, dummy_data_layer())
   append(net.layer, data_layer('data/imagenet/ilsvrc12_train_lmdb', batch_size=64, phase='TRAIN'))
   append(net.layer, data_layer('data/imagenet/ilsvrc12_val_lmdb', phase='TEST'))
