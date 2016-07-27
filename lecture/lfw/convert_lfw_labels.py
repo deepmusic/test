@@ -1,7 +1,7 @@
 from numpy.random import permutation
 
 def to_img_name(name, id):
-  return 'lfw2/%s/%s_%04d.jpg' % (name, name, int(id))
+  return '%s/%s_%04d.jpg' % (name, name, int(id))
 
 def get_label_pair(line):
   tokens = line.strip().split('\t')
@@ -30,9 +30,10 @@ def get_label_sets(filename, shuffled=False):
     sim_label = pair[2]
     set1.append([img_name1, sim_label])
     set2.append([img_name2, sim_label])
-  shuffled_idx = permutation(len(set1))
-  set1 = [set1[i] for i in shuffled_idx]
-  set2 = [set2[i] for i in shuffled_idx]
+  if shuffled:
+    shuffled_idx = permutation(len(set1))
+    set1 = [set1[i] for i in shuffled_idx]
+    set2 = [set2[i] for i in shuffled_idx]
   return (set1, set2)
 
 def make_lmdb_label_sets(src_file, dst1_file, dst2_file, shuffled=False):
