@@ -1,5 +1,4 @@
 import caffe
-from json import dumps as to_str
 
 def param(param_name, param_id=0, lr_mult=1, decay_mult=1):
   param = caffe.proto.caffe_pb2.ParamSpec()
@@ -113,6 +112,7 @@ def batch_norm_layer(bottom_name, top_name, param_ref_name=None, phase=None):
   else:
     param_name = param_ref_name + '/bn'
   layer.param.extend([param(param_name, param_id=i, lr_mult=0, decay_mult=0) for i in range(3)])
+  layer.batch_norm_param.use_global_stats = True
   return layer
 
 def scale_layer(bottom_name, top_name, bias_term=True, param_ref_name=None, scale_mult=1, phase=None):
@@ -165,15 +165,6 @@ def accuracy_layer(bottom_name, top_name, label_name=None, top_k=1, phase=None):
   layer.accuracy_param.top_k = top_k
   return layer
 
-def python_layer(bottom_names, top_names, module_name, class_name, param_dict=None, phase=None):
-  layer_name = top_names[0] + '/python'
-  layer = empty_layer(layer_name, 'Python', bottom_names, top_names, phase=phase)
-  layer.python_param.module = module_name
-  layer.python_param.layer = class_name
-  if param_dict is not None:
-    layer.python_param.param_str = to_str(param_dict)
-  return layer
-
 def append(lst, elem):
   if elem.__class__ == list:
     lst.extend(elem)
@@ -219,13 +210,12 @@ def squeeze_module(conv_module, bottom_name, top_name, num_squeeze, num_expand, 
   append(module, concat_layer([expand1x1_name, expand3x3_name], top_name, phase=phase))
   return module
 
-def squeeze_net(net=None, name='', data_name='data', conv_module=None, param_ref_name=None, scale_mult=1, phase=None):
+def squeeze_net(net=None, name='', data_name='data', param_ref_name=None, scale_mult=1, phase=None):
   if net is None:
     net = caffe.proto.caffe_pb2.NetParameter()
-  if conv_module is None:
-    conv_module = conv_relu_module
   if param_ref_name is None:
     param_ref_name = name
+  conv_module = conv_relu_module
   append(net.layer, conv_module(data_name, name+'conv1', 64, 3, stride=2, pad=0, param_ref_name=param_ref_name+'conv1', scale_mult=scale_mult, phase=phase))
   append(net.layer, pooling_layer(name+'conv1', name+'pool1', 3, 2, pool='MAX', phase=phase))
   append(net.layer, squeeze_module(conv_module, name+'pool1', name+'fire2', 16, 64, param_ref_name=param_ref_name+'fire2', scale_mult=scale_mult, phase=phase))
@@ -238,7 +228,7 @@ def squeeze_net(net=None, name='', data_name='data', conv_module=None, param_ref
   append(net.layer, squeeze_module(conv_module, name+'fire6', name+'fire7', 48, 192, param_ref_name=param_ref_name+'fire7', scale_mult=scale_mult, phase=phase))
   append(net.layer, squeeze_module(conv_module, name+'fire7', name+'fire8', 64, 256, param_ref_name=param_ref_name+'fire8', scale_mult=scale_mult, phase=phase))
   append(net.layer, squeeze_module(conv_module, name+'fire8', name+'fire9', 64, 256, param_ref_name=param_ref_name+'fire9', scale_mult=scale_mult, phase=phase))
-  #append(net.layer, dropout_layer(name+'fire9', name+'fire9', 0.5, phase=phase))
+  append(net.layer, dropout_layer(name+'fire9', name+'fire9', 0.5, phase=phase))
   append(net.layer, conv_module(name+'fire9', name+'conv10', 1000, 1, param_ref_name=param_ref_name+'conv10', scale_mult=scale_mult, phase=phase))
   append(net.layer, global_pooling_layer(name+'conv10', name+'out', pool='AVE', phase=phase))
   return net
@@ -247,35 +237,33 @@ def classifier():
   net = caffe.proto.caffe_pb2.NetParameter()
   append(net.layer, data_layer('data/imagenet/ilsvrc12_train_lmdb', batch_size=64, phase='TRAIN'))
   append(net.layer, data_layer('data/imagenet/ilsvrc12_val_lmdb', batch_size=25, phase='TEST'))
-  squeeze_net(net=net, name='A/')
-  append(net.layer, accuracy_layer('A/out', 'accuracy', phase='TEST'))
-  append(net.layer, accuracy_layer('A/out', 'accuracy_top5', top_k=5, phase='TEST'))
-  dst_prefix = ['A/']
+  squeeze_net(net=net)
+  append(net.layer, accuracy_layer('out', 'accuracy', phase='TEST'))
+  append(net.layer, accuracy_layer('out', 'accuracy_top5', top_k=5, phase='TEST'))
+  dst_prefix = ['']
   return net, dst_prefix
 
 def siamese_net():
   net = caffe.proto.caffe_pb2.NetParameter()
-  append(net.layer, data_layer('data/lfw/train_lmdb_1', batch_size=55, top_names=['data1', 'label'], crop_size=125, phase='TRAIN'))
-  append(net.layer, data_layer('data/lfw/train_lmdb_2', batch_size=55, top_names=['data2'], crop_size=125, phase='TRAIN'))
-  append(net.layer, data_layer('data/lfw/test_lmdb_1', batch_size=1, top_names=['data1'], crop_size=125, phase='TEST'))
-  append(net.layer, data_layer('data/lfw/test_lmdb_2', batch_size=1, top_names=['data2'], crop_size=125, phase='TEST'))
-  squeeze_net(net=net, name='A/', data_name='data1', scale_mult=0.1)
-  squeeze_net(net=net, name='B/', data_name='data2', param_ref_name='A/', scale_mult=0.1)
-  squeeze_net(net=net, name='ref1/', data_name='data1', scale_mult=0)
-  squeeze_net(net=net, name='ref2/', data_name='data2', param_ref_name='ref1/', scale_mult=0)
-
-  append(net.layer, euclidean_loss_layer('A/out', 'ref1/out', 'diff1'))
-  params = { 'aaa': [1,2,3], 'bbb': 'haha.hoho', 'ccc': 99 }
-  append(net.layer, python_layer(['B/out', 'ref2/out'], ['diff2'], 'pylayer', 'PyLayer', param_dict=params))
-
-  append(net.layer, convolution_layer('A/fire9', 'A/conv11', 1, 1))
-  append(net.layer, convolution_layer('B/fire9', 'B/conv11', 1, 1, param_ref_name='A/conv11'))
-  append(net.layer, global_pooling_layer('A/conv11', 'A/out2', pool='AVE'))
+  append(net.layer, data_layer('data/lfw/train_lmdb_1', batch_size=64, top_names=['data1', 'label'], crop_size=125, phase='TRAIN'))
+  append(net.layer, data_layer('data/lfw/train_lmdb_2', batch_size=64, top_names=['data2'], crop_size=125, phase='TRAIN'))
+  append(net.layer, data_layer('data/lfw/test_lmdb_1', batch_size=10, top_names=['data1'], crop_size=125, phase='TEST'))
+  append(net.layer, data_layer('data/lfw/test_lmdb_2', batch_size=10, top_names=['data2'], crop_size=125, phase='TEST'))
+  squeeze_net(net=net, name='', data_name='data1', scale_mult=1e-2)
+  squeeze_net(net=net, name='B/', data_name='data2', param_ref_name='', scale_mult=1e-2)
+#  squeeze_net(net=net, name='ref1/', data_name='data1', scale_mult=0)
+#  squeeze_net(net=net, name='ref2/', data_name='data2', scale_mult=0)
+  append(net.layer, conv_relu_module('fire9', 'conv11', 1000, 1))
+  append(net.layer, conv_relu_module('B/fire9', 'B/conv11', 1000, 1, param_ref_name='conv11'))
+  append(net.layer, global_pooling_layer('conv11', 'out2', pool='AVE'))
   append(net.layer, global_pooling_layer('B/conv11', 'B/out2', pool='AVE'))
-  append(net.layer, contrastive_loss_layer('A/out2', 'B/out2', 'loss', margin=1, phase='TRAIN'))
-  append(net.layer, euclidean_loss_layer('A/out2', 'B/out2', 'dist', phase='TEST'))
-
-  dst_prefix = ['A/', 'ref1/']
+#  append(net.layer, euclidean_loss_layer('out', 'ref1/out', 'eloss1'))
+#  append(net.layer, euclidean_loss_layer('B/out', 'ref2/out', 'eloss2'))
+  append(net.layer, euclidean_loss_layer('out', 'out', 'eloss1'))
+  append(net.layer, euclidean_loss_layer('B/out', 'B/out', 'eloss2'))
+  append(net.layer, contrastive_loss_layer('out2', 'B/out2', 'loss', margin=10, phase='TRAIN'))
+  append(net.layer, euclidean_loss_layer('out2', 'B/out2', 'loss', phase='TEST'))
+  dst_prefix = ['ref1/', 'ref2/', '']
   return net, dst_prefix
 
 def net_to_file(net, pt_filename):
@@ -315,13 +303,13 @@ def copy_squeeze_net(src, dst, dst_prefix=''):
 def save_squeeze_net(pt_src, model_src, pt_dst, model_dst, dst_prefix_list=None):
   if dst_prefix_list is None:
     dst_prefix_list=['']
-  src = caffe.Net(pt_src, caffe.TRAIN, weights=model_src)
+  src = caffe.Net(pt_src, model_src, caffe.TRAIN)
   dst = caffe.Net(pt_dst, caffe.TRAIN)
   for dst_prefix in dst_prefix_list:
     copy_squeeze_net(src, dst, dst_prefix=dst_prefix)
   dst.save(model_dst)
 
-net, dst_prefix_list = siamese_net()
-#net, dst_prefix_list = classifier()
+#net, dst_prefix_list = siamese_net()
+net, dst_prefix_list = classifier()
 net_to_file(net, 'myproto.pt')
 save_squeeze_net('SqueezeNet/SqueezeNet_v1.1/train_val.prototxt', 'SqueezeNet/SqueezeNet_v1.1/squeezenet_v1.1.caffemodel', 'myproto.pt', 'mymodel.cm', dst_prefix_list)

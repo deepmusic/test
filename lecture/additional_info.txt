@@ -3,3 +3,79 @@
 cudnn v5 required
 
 convert_imageset -encode_type="jpg" -encoded=true -gray=false -shuffle=false ./ test_2.txt test_lmdb_2
+
+caffe train
+caffe test
+caffe time
+
+sudo apt-get install graphviz
+pip install --user pydot
+-> for caffe/python/draw_net.py
+
+../../caffe/build/tools/caffe test -gpu 0 -model myproto.pt -weights train_iter_2000.caffemodel -iterations 1000 2>&1 | tee out2.txt
+grep ", dist = " out2.txt
+
+File descriptor 1 is the standard output (stdout).
+File descriptor 2 is the standard error (stderr).
+2>1 interpreted as "redirect stderr to a file named "1"
+& is interpreted to mean "file descriptor" in the context of redirections
+
+command &2>&1 --> command & 2 > &1
+run "command" in the background
+run "2" and redirect its stdout into its stdout
+
+C++ code modification practice
+1. how to turn logging off
+first lines in main()
+------
+FLAGS_v = 1; //disables vlog(2), vlog(3), vlog(4)
+VLOG(0) << "Verbose 0";
+VLOG(1) << "Verbose 1";
+VLOG(2) << "Verbose 2";
+VLOG(3) << "Verbose 3";
+VLOG(4) << "Verbose 4";
+LOG(INFO) << "LOG(INFO)";
+LOG(WARNING) << "LOG(WARNING)";
+LOG(ERROR) << "LOG(ERROR)";
+------
+
+2. dynamic lr scheduling
+caffe/src/caffe/solvers/sgd_solver.cpp: GetLearningRate() reads base_lr and manipulates it
+----
+caffe/include/caffe/solver.hpp: add functions to manipulate base_lr
++  void SetBaseLearningRate(const Dtype base_lr);
++  Dtype GetBaseLearningRate() { return param_.base_lr(); }
+----
+caffe/src/caffe/solver.cpp:         "
++template <typename Dtype>
++void Solver<Dtype>::SetBaseLearningRate(const Dtype base_lr) {
++  param_.set_base_lr(base_lr);
++}
+----
+caffe/python/caffe/_caffe.cpp: add interface to call the functions
++    .def("get_base_lr", &Solver<Dtype>::GetBaseLearningRate)
++    .def("set_base_lr", &Solver<Dtype>::SetBaseLearningRate)
+----
+
+good source files to study
+caffe/python/caffe/_caffe.cpp
+  especially, BOOST_PYTHON_MODULE(_caffe) { ... }
+caffe/src/caffe/proto/caffe.proto
+
+drawing loss curve
+highly recommended
+
+python layer
+export PYTHONPATH=.:<CAFFE_ROOT>/python
+
+TODO: semi-supervised learning setting
+python data layer: read clustered set info -> load clustered samples from "unlabeled lmdb" and pack into a minibatch
+  data = [labeled sample 1, clustered sample 1, 2, 3, ..., labeled sample 2, clustered sample 1, 2, 3, ..., ...]
+  label = [label 1, -1, -1, -1, ..., label 2, -1, -1, -1, ..., ...]
+python loss layer: compute supervised loss + unsupervised loss
+
+why does non-zero initial euclidean loss occur sometimes?
+occurs when caffemodel is not given
+in the caffemodel, reference nets and trainable nets have the same initial weights, so initial euclidean loss should be 0
+otherwise, two nets have different initial weights (while their siamese subnets internally share their weights), so initial euclidean loss should be nonzero
+
