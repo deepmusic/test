@@ -67,6 +67,7 @@ highly recommended
 
 python layer
 export PYTHONPATH=.:<CAFFE_ROOT>/python
+in caffe.proto, see PythonParameter (module, layer, param_str)
 
 TODO: semi-supervised learning setting
 python data layer: read clustered set info -> load clustered samples from "unlabeled lmdb" and pack into a minibatch
@@ -78,4 +79,13 @@ why does non-zero initial euclidean loss occur sometimes?
 occurs when caffemodel is not given
 in the caffemodel, reference nets and trainable nets have the same initial weights, so initial euclidean loss should be 0
 otherwise, two nets have different initial weights (while their siamese subnets internally share their weights), so initial euclidean loss should be nonzero
+
+implement boosting algorithm
+1. python data layer
+  data, label,
+  flag, selected data index, weight
+2. loss layer
+  loss, weight_new
+  propagate_down[0] = flag
+  propagate_down[1] = 1 - flag
 
