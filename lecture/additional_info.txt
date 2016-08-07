@@ -89,3 +89,9 @@ implement boosting algorithm
   propagate_down[0] = flag
   propagate_down[1] = 1 - flag
 
+TODO
+caffe.Net -> use older interface (not work on Windows)
+lmdb data path for TRAIN, TEST
+properly labeled lmdb data
+new dataset for incremental learning
+code revision for squeeze.py

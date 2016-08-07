@@ -22,10 +22,10 @@ class GraphVisualizer(object):
 
   def filter_old_loss(self):
     for lst in self.loss_list:
-      mean_val = np.mean(lst)
+      threshold = np.mean(lst) * 2 - np.min(lst)
       count = 0
       for val in lst:
-        if val < mean_val:
+        if val < threshold:
           break
         count += 1
       del lst[:count]
@@ -46,7 +46,7 @@ class GraphVisualizer(object):
       if num_loss < 2:
         continue
 
-      x_data = np.linspace(0, num_loss-1, min(num_loss, 1000), dtype=int)
+      x_data = np.array(np.linspace(0, num_loss-1, min(num_loss, 1000)), dtype=int)
       y_data = [lst[x] for x in x_data]
       x_data += self.total_count - num_loss
       self.axes.plot(x_data, y_data, label=name)
@@ -74,8 +74,12 @@ def init(solver_name, solverstate_name=None, caffemodel_name=None):
     solver.net.copy_from(caffemodel_name)
   return solver
 
-def train(solver, visualize=False, average_until=100, ignored=None):
+def train(solver, visualize=False, average_until=10000, ignored=None):
   mean_factor = None
+  mean_loss_list = []
+
+  plateau_stepsize = 20000
+
   if visualize:
     try:
       graph = GraphVisualizer()
@@ -98,6 +102,12 @@ def train(solver, visualize=False, average_until=100, ignored=None):
       else:
         mean_loss = mean_loss * mean_factor + loss * (1 - mean_factor)
         mean_time = mean_time * mean_factor + time * (1 - mean_factor)
+      mean_loss_list.append(mean_loss)
+      if len(mean_loss_list) > plateau_stepsize and mean_loss > 0.999 * mean_loss_list[-plateau_stepsize]:
+        print 'plateau occurred: %.3f vs. %.3f' % (mean_loss, mean_loss_list[-plateau_stepsize])
+        solver.set_base_lr(solver.get_base_lr() * 0.5)
+        plateau_stepsize *= 2
+        mean_loss_list = []
       if visualize:
         graph.update(legend, mean_loss, mean_time)
       else:
@@ -111,5 +121,6 @@ def train(solver, visualize=False, average_until=100, ignored=None):
 
 caffe.set_mode_gpu()
 caffe.set_device(0)
-solver = init('mysolver.pt', caffemodel_name='mymodel.cm')
-train(solver, visualize=True, ignored=['diff1', 'diff2'])
+solver = init('practice2_1_solver.pt')
+solver.restore('practice2_1_train_iter_11849.solverstate')
+train(solver, visualize=True)#, ignored=['diff1', 'diff2'])

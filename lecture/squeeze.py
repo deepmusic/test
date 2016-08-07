@@ -223,7 +223,7 @@ def squeeze_net(net=None, name='', data_name='data', conv_module=None, param_ref
   if net is None:
     net = caffe.proto.caffe_pb2.NetParameter()
   if conv_module is None:
-    conv_module = conv_relu_module
+    conv_module = conv_bn_scale_relu_module
   if param_ref_name is None:
     param_ref_name = name
   append(net.layer, conv_module(data_name, name+'conv1', 64, 3, stride=2, pad=0, param_ref_name=param_ref_name+'conv1', scale_mult=scale_mult, phase=phase))
@@ -247,10 +247,10 @@ def classifier():
   net = caffe.proto.caffe_pb2.NetParameter()
   append(net.layer, data_layer('data/imagenet/ilsvrc12_train_lmdb', batch_size=64, phase='TRAIN'))
   append(net.layer, data_layer('data/imagenet/ilsvrc12_val_lmdb', batch_size=25, phase='TEST'))
-  squeeze_net(net=net, name='A/')
-  append(net.layer, accuracy_layer('A/out', 'accuracy', phase='TEST'))
-  append(net.layer, accuracy_layer('A/out', 'accuracy_top5', top_k=5, phase='TEST'))
-  dst_prefix = ['A/']
+  squeeze_net(net=net, name='')
+  append(net.layer, accuracy_layer('out', 'accuracy', phase='TEST'))
+  append(net.layer, accuracy_layer('out', 'accuracy_top5', top_k=5, phase='TEST'))
+  dst_prefix = ['']
   return net, dst_prefix
 
 def siamese_net():
@@ -321,7 +321,7 @@ def save_squeeze_net(pt_src, model_src, pt_dst, model_dst, dst_prefix_list=None)
     copy_squeeze_net(src, dst, dst_prefix=dst_prefix)
   dst.save(model_dst)
 
-net, dst_prefix_list = siamese_net()
-#net, dst_prefix_list = classifier()
+#net, dst_prefix_list = siamese_net()
+net, dst_prefix_list = classifier()
 net_to_file(net, 'myproto.pt')
 save_squeeze_net('SqueezeNet/SqueezeNet_v1.1/train_val.prototxt', 'SqueezeNet/SqueezeNet_v1.1/squeezenet_v1.1.caffemodel', 'myproto.pt', 'mymodel.cm', dst_prefix_list)

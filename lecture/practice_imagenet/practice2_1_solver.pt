@@ -1,0 +1,21 @@
+net: "practice2_1.pt"
+
+max_iter: 300000
+iter_size: 2
+
+lr_policy: "fixed"
+base_lr: 0.03
+#gamma: 0.3165
+#stepsize: 60000
+
+type: "SGD"
+momentum: 0.9
+weight_decay: 0.0002
+solver_mode: GPU
+
+display: 20
+snapshot: 20000
+snapshot_prefix: "practice2_1_train"
+
+test_interval: 20000
+test_iter: 500

@@ -1,0 +1,16 @@
+I0731 17:13:13.112571  4320 solver.cpp:228] Iteration 5300, loss = 6.30323
+I0731 17:13:17.914196  4320 solver.cpp:228] Iteration 5320, loss = 6.20185
+I0731 17:13:22.719498  4320 solver.cpp:228] Iteration 5340, loss = 6.07311
+I0731 17:13:27.562438  4320 solver.cpp:228] Iteration 5360, loss = 6.54011
+I0731 17:13:32.386984  4320 solver.cpp:228] Iteration 5380, loss = 6.09064
+I0731 17:13:37.349972  4320 solver.cpp:228] Iteration 5400, loss = 6.23807
+I0731 17:13:42.183959  4320 solver.cpp:228] Iteration 5420, loss = 6.37434
+I0731 17:13:47.031260  4320 solver.cpp:228] Iteration 5440, loss = 6.23044
+I0731 17:13:51.907269  4320 solver.cpp:228] Iteration 5460, loss = 6.07967
+I0731 17:13:56.666668  4320 solver.cpp:228] Iteration 5480, loss = 5.78873
+I0731 17:14:01.482854  4320 solver.cpp:228] Iteration 5500, loss = 6.35784
+I0731 17:14:06.290547  4320 solver.cpp:228] Iteration 5520, loss = 6.47814
+I0731 17:14:11.108572  4320 solver.cpp:228] Iteration 5540, loss = 6.34374
+I0731 17:14:15.938592  4320 solver.cpp:228] Iteration 5560, loss = 5.99613
+I0731 17:14:20.815739  4320 solver.cpp:228] Iteration 5580, loss = 6.25773
+
