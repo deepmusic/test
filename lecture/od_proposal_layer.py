@@ -5,7 +5,7 @@ import xml.etree.ElementTree as et
 import json
 import os
 
-def iou_2p(Bx, By):
+def iou(Bx, By):
   Ax = (Bx[:,2] - Bx[:,0]) * (Bx[:,3] - Bx[:,1])
   Ay = (By[:,2] - By[:,0]) * (By[:,3] - By[:,1])
   AU = Ax + Ay
@@ -20,73 +20,91 @@ def iou_2p(Bx, By):
   return IOU
 
 def x2Bx(pi, pj, x):
+  # x = (xl, xr, xt, xb)
+  # Bx = (p1_j, p1_i, p2_j, p2_i)
+  Bx = np.zeros(len(x), 4)
   Bx[:,0] = pj - x[:,0]
-  Bx[:,1] = pj + x[:,1]
-  Bx[:,2] = pi - x[:,2]
+  Bx[:,1] = pi - x[:,2]
+  Bx[:,2] = pj + x[:,1]
   Bx[:,3] = pi + x[:,3]
   return Bx
 
-def target(B, pi, pj):
-  for n, box in enumerate(B):
-    is_in[:, n] = (box[0] <= pj) * (pj <= box[2]) \
+def By2y(pi, pj, By):
+  y = np.zeros(len(By), 4)
+  y[:,0] = pj - By[:,0]
+  y[:,1] = By[:,2] - pj
+  y[:,2] = pi - By[:,1]
+  y[:,3] = By[:,3] - pi
+  return y
+
+def target(pi, pj, By):
+  is_in = np.zeros((pi.shape[0], By.shape[0]), \
+                   dtype=np.bool)
+  for n, box in enumerate(By):
+    # p1_j <= pj <= p2_j  and  p1_i <= pi <= p2_i
+    is_in[:, n] = (box[0] <= pj) * (pj <= box[2]) * \
                   (box[1] <= pi) * (pi <= box[3])
   return is_in
 
+def process(X, BY):
+  batch_size, height, width, _ = X.shape
+  num_p = height * width
+  ri = np.array(range(height)) + 0.5
+  rj = np.array(range(width)) + 0.5
+  pj, pi = np.meshgrid(rj, ri)
+  pj = pj.reshape(-1)
+  pi = pi.reshape(-1)
+  X = X.reshape(batch_size, num_p, 4)
+  Y = np.array((batch_size, num_p, 4),
+               dtype=np.float32)
+  label = np.array((batch_size, num_p),
+                   dtype=np.float32)
+  for n, x in enumerate(X):
+    By = BY[BY[:,0] == n, 1:5]
+    is_in = target(pi, pj, By)
+    Bx = x2Bx(pi, pj, x)
+    IOU = iou(Bx, By)
+    target = np.argmax(IOU * is_in, axis=1)
+    Y[n, ...] = By2y(pi, pj, By[target,:])
+    label[n, is_in.any(axis=1)] = 1  # 1 - area((p, pj), center of By) ?
+    label[n, (-is_in).all(axis=1)] = 0
+  return label, Y
+
 class ProposalLayer(Layer):
   def setup(self, bottom, top):
+    # bottom[0]: predicted box for each pixel
+    #            x = (xl, xr, xt, xb)
+    # bottom[1]: ground-truth boxes By
+    #            box = (n, p1_j, p1_i, p2_j, p2_i)
+    #            n: n-th batch item
     params = json.loads(self.param_str_)
     print params
     self.scale = params['scale']
-    self.pi = np.array(range(bottom[0].shape(2))) + 0.5
-    self.pj = np.array(range(bottom[0].shape(3))) + 0.5
+    # batch size
+    batch_size = bottom[0].shape(0)
+    # number of pixels
     num_p = bottom[0].shape(2) * bottom[0].shape(3)
-    top[0].reshape(1, num_p)
-    top[1].reshape(1, num_p * 4)
-    top[2].reshape(1, num_p * 4)
+    # target objectness for each pixel
+    # (positive = 1, negative = 0)
+    top[0].reshape(batch_size, num_p)
+    # target bounding-box for each pixel
+    # y = (yl, yr, yt, yb)
+    top[1].reshape(batch_size, num_p * 4)
 
   def reshape(self, bottom, top):
     pass
 
   def forward(self, bottom, top):
-    assert(bottom[0].shape(0) == 1)
-    assert(bottom[1].shape(0) == 1)
-    x = bottom[1].data[n].reshape(4, -1)
-
-    line = self.source.readline()
-    fdir, fname, objs = parse(line.strip())
-    if self.use_folder:
-      path = os.path.join(self.img_dir, fdir, fname)
-    else:
-      path = os.path.join(self.img_dir, fname)
-    print path
-    img = cv2.imread(path)
-
-    short_side = min(img.shape[0], img.shape[1])
-    long_side = max(img.shape[0], img.shape[1])
-    scale = self.short_min / short_side
-    if round(scale * long_side) > self.long_max:
-      scale = long_max / long_side
-    top[2].reshape(1, 6)
-    scale_h = int(img.shape[0] * scale / 32) * 32.0 / img.shape[0]
-    scale_w = int(img.shape[1] * scale / 32) * 32.0 / img.shape[1]
-    h = int(round(img.shape[0] * scale_h))
-    w = int(round(img.shape[1] * scale_w))
-    im_info = [h, w, scale_h, scale_w, img.shape[0], img.shape[1]]
-    top[2].data[...] = im_info
-
-    img = cv2.resize(img, (w, h), interpolation=cv2.INTER_LINEAR)
-    img = np.rollaxis(img, 2, 0)
-    img = np.array(img, dtype=np.float32)
-    img[0,:,:] -= self.mean[0]
-    img[1,:,:] -= self.mean[1]
-    img[2,:,:] -= self.mean[2]
-    top[0].reshape(1, 3, img.shape[1], img.shape[2])
-    top[0].data[...] = img
-    print top[0].data.shape
-    top[1].reshape(len(objs), 5)
-    for i, (label, box) in enumerate(objs):
-      top[1].data[i, 0:4] = np.asarray(box, dtype=np.float32)
-      top[1].data[i, 4] = label_dict[label]
+    # bottom[0]: (batch_size x 4 x height x width)
+    # -> X: (batch_size x height x width x 4)
+    X = np.rollaxis(bottom[0].data, 1, 4)
+    BY = bottom[2].data
+    BY[:,1:5] /= self.scale
+    label, Y = process(X, BY)
+    top[0].reshape(label.shape)
+    top[0].data[...] = label
+    top[1].reshape(Y.shape)
+    top[1].data[...] = Y
 
   def backward(self, top, propagate_down, bottom):
     pass
