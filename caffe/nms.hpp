@@ -3,11 +3,13 @@
 
 #include <vector>
 
+#include "caffe/blob.hpp"
+
 namespace caffe {
 
 template <typename Dtype>
 void nms_cpu(const int num_boxes,
-             const Dtype boxes_cpu[],
+             const Dtype boxes[],
              int index_out[],
              int* const num_out,
              const int base_index,
@@ -17,7 +19,8 @@ void nms_cpu(const int num_boxes,
 template <typename Dtype>
 void nms_gpu(const int num_boxes,
              const Dtype boxes_gpu[],
-             int index_out[],
+             Blob<int>* const p_mask,
+             int index_out_cpu[],
              int* const num_out,
              const int base_index,
              const Dtype nms_thresh,

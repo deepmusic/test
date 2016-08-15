@@ -1,4 +1,4 @@
-#include <caffe/layers/fast_rcnn_layers.hpp>
+#include <caffe/fast_rcnn_layers.hpp>
 #include <caffe/util/nms.hpp>
 
 #define ROUND(x) ((int)((x) + (Dtype)0.5))
@@ -311,9 +311,8 @@ void ProposalLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     nms_cpu(pre_nms_topn,  proposals_.cpu_data(),
             roi_indices_.mutable_cpu_data(),  &num_rois,
             0,  nms_thresh_,  post_nms_topn_);
-
-    printf("# rois = %d\n", num_rois);
 /*
+    printf("# rois = %d\n", num_rois);
     const int* const roi_indices = roi_indices_.cpu_data();
     for (int i = 0; i < num_rois; ++i) {
       printf("roi %d = %d\n", i, roi_indices[i]);

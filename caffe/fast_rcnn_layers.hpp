@@ -13,8 +13,9 @@
 #include "caffe/blob.hpp"
 #include "caffe/common.hpp"
 #include "caffe/layer.hpp"
-#include "caffe/layers/loss_layer.hpp"
 #include "caffe/proto/caffe.pb.h"
+
+#include "caffe/layers/loss_layer.hpp"
 
 namespace caffe {
 
@@ -136,7 +137,7 @@ class ProposalLayer : public Layer<Dtype> {
   Blob<Dtype> anchors_;
   Blob<Dtype> proposals_;
   Blob<int> roi_indices_;
-  bool anchor_initialized_;
+  Blob<int> nms_mask_;
 };
 
 }  // namespace caffe

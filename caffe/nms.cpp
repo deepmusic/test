@@ -38,7 +38,7 @@ template static double iou(const double A[], const double B[]);
 
 template <typename Dtype>
 void nms_cpu(const int num_boxes,
-             const Dtype boxes_cpu[],
+             const Dtype boxes[],
              int index_out[],
              int* const num_out,
              const int base_index,
@@ -61,9 +61,7 @@ void nms_cpu(const int num_boxes,
     }
 
     for (int j = i + 1; j < num_boxes; ++j) {
-      if (!is_dead[j] &&
-          iou(&boxes_cpu[i * 5], &boxes_cpu[j * 5]) > nms_thresh)
-      {
+      if (!is_dead[j] && iou(&boxes[i * 5], &boxes[j * 5]) > nms_thresh) {
         is_dead[j] = 1;
       }
     }
@@ -75,14 +73,14 @@ void nms_cpu(const int num_boxes,
 
 template
 void nms_cpu(const int num_boxes,
-             const float boxes_cpu[],
+             const float boxes[],
              int index_out[],
              int* const num_out,
              const int base_index,
              const float nms_thresh, const int max_num_out);
 template
 void nms_cpu(const int num_boxes,
-             const double boxes_cpu[],
+             const double boxes[],
              int index_out[],
              int* const num_out,
              const int base_index,

@@ -69,13 +69,15 @@ class PlotableAnnotation(Annotation):
     crop = np.zeros((crop_size*2, crop_size*2, 3), \
                     dtype=np.uint8)
     print crop.shape
+    box = [crop_size-(x-self.xmin), crop_size-(y-self.ymin), crop_size+x-self.xmin, crop_size+y-self.ymin]
     crop[ct:crop_size*2-cb, cl:crop_size*2-cr, :] = \
         img[it:ib, il:ir, :]
-    return crop
+    return crop, box
 
 for line in open('annotation_voc2007.txt', 'r'):
   a = PlotableAnnotation(line)
-  img = a.load(prefix='/home/kye-hyeon/Work/data/pvtdb/', midfix='/JPEGImages/', postfix='')
+  img, box = a.load(prefix='/home/kye-hyeon/Work/data/pvtdb/', midfix='/JPEGImages/', postfix='')
+  cv2.rectangle(img, (box[0], box[1]), (box[2], box[3]), (0, 0, 255), 2)
   cv2.imshow(a.img_name, img)
   key = cv2.waitKey(0)
   cv2.destroyAllWindows()

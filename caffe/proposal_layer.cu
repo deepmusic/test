@@ -1,10 +1,5 @@
-#include <caffe/layers/fast_rcnn_layers.hpp>
+#include <caffe/fast_rcnn_layers.hpp>
 #include <caffe/util/nms.hpp>
-
-#define ROUND(x) ((int)((x) + (Dtype)0.5))
-
-using std::max;
-using std::min;
 
 namespace caffe {
 
@@ -101,42 +96,6 @@ void sort_box(Dtype list_cpu[], const int start, const int end,
 template <typename Dtype>
 __global__
 static
-void generate_anchors_gpu(const int nthreads,
-                          int base_size,
-                          const Dtype ratios[],
-                          const Dtype scales[],
-                          const int num_ratios,
-                          const int num_scales,
-                          Dtype anchors[])
-{
-  CUDA_KERNEL_LOOP(index, nthreads) {
-    const int i = index / num_scales;
-    const int j = index % num_scales;
-
-    // base box's width & height & center location
-    const Dtype base_area = (Dtype)(base_size * base_size);
-    const Dtype center = (Dtype)0.5 * (base_size - (Dtype)1);
-
-    // transformed width & height for given ratio factors
-    const Dtype ratio_w = (Dtype)ROUND(sqrt(base_area / ratios[i]));
-    const Dtype ratio_h = (Dtype)ROUND(ratio_w * ratios[i]);
-
-    // transformed width & height for given scale factors
-    const Dtype scale_w = (Dtype)0.5 * (ratio_w * scales[j] - (Dtype)1);
-    const Dtype scale_h = (Dtype)0.5 * (ratio_h * scales[j] - (Dtype)1);
-
-    // (x1, y1, x2, y2) for transformed box
-    Dtype* const p_anchors = anchors + index * 4;
-    p_anchors[0] = center - scale_w;
-    p_anchors[1] = center - scale_h;
-    p_anchors[2] = center + scale_w;
-    p_anchors[3] = center + scale_h;
-  }
-}
-
-template <typename Dtype>
-__global__
-static
 void enumerate_proposals_gpu(const int nthreads,
                              const Dtype bottom4d[],
                              const Dtype d_anchor4d[],
@@ -208,8 +167,8 @@ void ProposalLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
   const Dtype* p_bottom_item = bottom[0]->gpu_data();
   const Dtype* p_d_anchor_item = bottom[1]->gpu_data();
   const Dtype* p_img_info_cpu = bottom[2]->cpu_data();
-  Dtype* p_roi_item = top[0]->mutable_cpu_data();
-  Dtype* p_score_item = (top.size() > 1) ? top[1]->mutable_cpu_data() : NULL;
+  Dtype* p_roi_item = top[0]->mutable_gpu_data();
+  Dtype* p_score_item = (top.size() > 1) ? top[1]->mutable_gpu_data() : NULL;
 
   vector<int> proposals_shape(2);
   vector<int> top_shape(2);
@@ -255,12 +214,11 @@ void ProposalLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
 
     sort_box(proposals_.mutable_cpu_data(), 0, num_proposals - 1, pre_nms_topn_);
 
-    nms_cpu(pre_nms_topn,  proposals_.cpu_data(),
+    nms_gpu(pre_nms_topn,  proposals_.gpu_data(),  &nms_mask_,
             roi_indices_.mutable_cpu_data(),  &num_rois,
             0,  nms_thresh_,  post_nms_topn_);
-
-    printf("# rois = %d\n", num_rois);
 /*
+    printf("# rois = %d\n", num_rois);
     for (int i = 0; i < num_rois; ++i) {
       printf("roi %d = %d\n", i, roi_indices[i]);
     }
