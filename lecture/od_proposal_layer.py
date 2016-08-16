@@ -1,9 +1,6 @@
 from caffe import Layer
 import numpy as np
-import cv2
-import xml.etree.ElementTree as et
 import json
-import os
 
 def iou(Bx, By):
   Ax = (Bx[:,2] - Bx[:,0]) * (Bx[:,3] - Bx[:,1])
@@ -55,26 +52,27 @@ def process(X, BY):
   pj = pj.reshape(-1)
   pi = pi.reshape(-1)
   X = X.reshape(batch_size, num_p, 4)
-  Y = np.array((batch_size, num_p, 4),
+  Y = np.zeros((batch_size, num_p, 5),
                dtype=np.float32)
-  label = np.array((batch_size, num_p),
-                   dtype=np.float32)
+  obj_score = np.zeros((batch_size, num_p),
+                       dtype=np.float32)
   for n, x in enumerate(X):
     By = BY[BY[:,0] == n, 1:5]
     is_in = target(pi, pj, By)
     Bx = x2Bx(pi, pj, x)
     IOU = iou(Bx, By)
+    obj_score[n, :] = np.max(IOU, axis=1)
     target = np.argmax(IOU * is_in, axis=1)
-    Y[n, ...] = By2y(pi, pj, By[target,:])
-    label[n, is_in.any(axis=1)] = 1  # 1 - area((p, pj), center of By) ?
-    label[n, (-is_in).all(axis=1)] = 0
-  return label, Y
+    Y[n, :, 0:4] = By2y(pi, pj, By[target,:])
+    is_bg = (-is_in).all(axis=1)
+    Y[n, is_bg, 4] = 1
+  return obj_score, Y
 
-class ProposalLayer(Layer):
+class ODProposalLayer(Layer):
   def setup(self, bottom, top):
-    # bottom[0]: predicted box for each pixel
+    # bottom[0]: predicted box at each pixel
     #            x = (xl, xr, xt, xb)
-    # bottom[1]: ground-truth boxes By
+    # bottom[1]: ground-truth boxes
     #            box = (n, p1_j, p1_i, p2_j, p2_i)
     #            n: n-th batch item
     params = json.loads(self.param_str_)
@@ -84,12 +82,13 @@ class ProposalLayer(Layer):
     batch_size = bottom[0].shape(0)
     # number of pixels
     num_p = bottom[0].shape(2) * bottom[0].shape(3)
-    # target objectness for each pixel
-    # (positive = 1, negative = 0)
+    # true objectness for each predicted box
+    # (maximum IoU score with ground-truth boxes)
     top[0].reshape(batch_size, num_p)
-    # target bounding-box for each pixel
-    # y = (yl, yr, yt, yb)
-    top[1].reshape(batch_size, num_p * 4)
+    # target box for each predicted box
+    # ignored if bg = 1 (background box)
+    # y = (yl, yr, yt, yb, bg)
+    top[1].reshape(batch_size, num_p * 5)
 
   def reshape(self, bottom, top):
     pass
@@ -100,9 +99,9 @@ class ProposalLayer(Layer):
     X = np.rollaxis(bottom[0].data, 1, 4)
     BY = bottom[2].data
     BY[:,1:5] /= self.scale
-    label, Y = process(X, BY)
-    top[0].reshape(label.shape)
-    top[0].data[...] = label
+    obj_score, Y = process(X, BY)
+    top[0].reshape(obj_score.shape)
+    top[0].data[...] = obj_score
     top[1].reshape(Y.shape)
     top[1].data[...] = Y
 

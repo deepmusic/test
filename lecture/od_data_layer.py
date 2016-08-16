@@ -49,9 +49,9 @@ labels = ('__background__', \
 label_dict = { label: i \
                for i, label in enumerate(labels) }
 
-class DataLayer(Layer):
+class ODDataLayer(Layer):
   def setup(self, bottom, top):
-    params = json.loads(self.param_str_)
+    params = json.loads(self.param_str)
     print params
     self.source = open(params['source'], 'r')
     self.use_folder = params['use_folder']
