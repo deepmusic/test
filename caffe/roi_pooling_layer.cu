@@ -7,10 +7,7 @@
 
 #include <cfloat>
 
-#include "caffe/layers/fast_rcnn_layers.hpp"
-
-using std::max;
-using std::min;
+#include "caffe/fast_rcnn_layers.hpp"
 
 namespace caffe {
 

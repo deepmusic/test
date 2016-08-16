@@ -7,7 +7,7 @@
 
 #include <cfloat>
 
-#include "caffe/layers/fast_rcnn_layers.hpp"
+#include "caffe/fast_rcnn_layers.hpp"
 
 #ifdef _MSC_VER
 #define round(x) ((int)((x) + 0.5))

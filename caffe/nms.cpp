@@ -1,5 +1,4 @@
-#include <caffe/util/nms.hpp>
-#include <stdio.h>
+#include "caffe/util/nms.hpp"
 
 using std::max;
 using std::min;
