@@ -5,21 +5,21 @@ import json
 def iou(Bx, By):
   Ax = (Bx[:,2] - Bx[:,0]) * (Bx[:,3] - Bx[:,1])
   Ay = (By[:,2] - By[:,0]) * (By[:,3] - By[:,1])
-  AU = Ax + Ay
   IOU = np.zeros((Bx.shape[0], By.shape[0]))
   for n, box in enumerate(By):
+    AU = Ax + Ay[n]
     J1 = np.maximum(Bx[:,0], box[0])
     I1 = np.maximum(Bx[:,1], box[1])
     J2 = np.minimum(Bx[:,2], box[2])
     I2 = np.minimum(Bx[:,3], box[3])
     AI = np.maximum(I2 - I1, 0) * np.maximum(J2 - J1, 0)
-    IOU[:, n] = AI / (AU - AI)
+    IOU[:, n] = AI / (AU - AI + 1e-6)
   return IOU
 
 def x2Bx(pi, pj, x):
   # x = (xl, xr, xt, xb)
   # Bx = (p1_j, p1_i, p2_j, p2_i)
-  Bx = np.zeros(len(x), 4)
+  Bx = np.zeros((len(x), 4), dtype=np.float32)
   Bx[:,0] = pj - x[:,0]
   Bx[:,1] = pi - x[:,2]
   Bx[:,2] = pj + x[:,1]
@@ -27,14 +27,14 @@ def x2Bx(pi, pj, x):
   return Bx
 
 def By2y(pi, pj, By):
-  y = np.zeros(len(By), 4)
+  y = np.zeros((len(By), 4), dtype=np.float32)
   y[:,0] = pj - By[:,0]
   y[:,1] = By[:,2] - pj
   y[:,2] = pi - By[:,1]
   y[:,3] = By[:,3] - pi
   return y
 
-def target(pi, pj, By):
+def find_inner_gt(pi, pj, By):
   is_in = np.zeros((pi.shape[0], By.shape[0]), \
                    dtype=np.bool)
   for n, box in enumerate(By):
@@ -58,7 +58,7 @@ def process(X, BY):
                        dtype=np.float32)
   for n, x in enumerate(X):
     By = BY[BY[:,0] == n, 1:5]
-    is_in = target(pi, pj, By)
+    is_in = find_inner_gt(pi, pj, By)
     Bx = x2Bx(pi, pj, x)
     IOU = iou(Bx, By)
     obj_score[n, :] = np.max(IOU, axis=1)
@@ -75,13 +75,13 @@ class ODProposalLayer(Layer):
     # bottom[1]: ground-truth boxes
     #            box = (n, p1_j, p1_i, p2_j, p2_i)
     #            n: n-th batch item
-    params = json.loads(self.param_str_)
+    params = json.loads(self.param_str)
     print params
     self.scale = params['scale']
     # batch size
-    batch_size = bottom[0].shape(0)
+    batch_size, _, h, w = bottom[0].data.shape
     # number of pixels
-    num_p = bottom[0].shape(2) * bottom[0].shape(3)
+    num_p = h * w
     # true objectness for each predicted box
     # (maximum IoU score with ground-truth boxes)
     top[0].reshape(batch_size, num_p)
@@ -97,9 +97,10 @@ class ODProposalLayer(Layer):
     # bottom[0]: (batch_size x 4 x height x width)
     # -> X: (batch_size x height x width x 4)
     X = np.rollaxis(bottom[0].data, 1, 4)
-    BY = bottom[2].data
+    BY = bottom[1].data
     BY[:,1:5] /= self.scale
     obj_score, Y = process(X, BY)
+    print obj_score
     top[0].reshape(obj_score.shape)
     top[0].data[...] = obj_score
     top[1].reshape(Y.shape)

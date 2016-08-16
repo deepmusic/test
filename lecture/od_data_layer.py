@@ -103,8 +103,10 @@ class ODDataLayer(Layer):
     print top[0].data.shape
     top[1].reshape(len(objs), 5)
     for i, (label, box) in enumerate(objs):
-      top[1].data[i, 0:4] = np.asarray(box, dtype=np.float32)
-      top[1].data[i, 4] = label_dict[label]
+      top[1].data[i, 1:5] = np.asarray(box, dtype=np.float32)
+      top[1].data[i, 0] = 0
+      #top[1].data[i, 0:4] = np.asarray(box, dtype=np.float32)
+      #top[1].data[i, 4] = label_dict[label]
 
   def backward(self, top, propagate_down, bottom):
     pass

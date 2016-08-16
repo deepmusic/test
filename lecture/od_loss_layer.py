@@ -9,7 +9,7 @@ def iou(x, y):
   I_h = np.minimum(x[:,2], y[:,2]) + \
         np.minimum(x[:,3], y[:,3])
   AI = I_w * I_h
-  AU = Ax + Ay - AI
+  AU = Ax + Ay - AI + 1e-6
   return (AI, AU)
 
 class ODLossLayer(Layer):
@@ -22,6 +22,9 @@ class ODLossLayer(Layer):
     #            (pixel of bg = 1 is ignored)
     # top[0]: loss = ln IoU(x, y)
     top[0].reshape(1)
+
+  def reshape(self, bottom, top):
+    pass
 
   def forward(self, bottom, top):
     X = bottom[0].data
