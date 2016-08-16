@@ -52,7 +52,6 @@ label_dict = { label: i \
 class ODDataLayer(Layer):
   def setup(self, bottom, top):
     params = json.loads(self.param_str)
-    print params
     self.source = open(params['source'], 'r')
     self.use_folder = params['use_folder']
     self.img_dir = params['img_dir']
@@ -62,7 +61,8 @@ class ODDataLayer(Layer):
     top[0].reshape(1, 3, self.short_min / 32 * 32, \
                          self.long_max / 32 * 32)
     top[1].reshape(1, 5)
-    top[2].reshape(1, 6)
+    if len(top) > 2:
+      top[2].reshape(1, 6)
     self.short_min = float(self.short_min)
     self.long_max = float(self.long_max)
 
@@ -76,21 +76,22 @@ class ODDataLayer(Layer):
       path = os.path.join(self.img_dir, fdir, fname)
     else:
       path = os.path.join(self.img_dir, fname)
-    print path
+    #print path
     img = cv2.imread(path)
 
     short_side = min(img.shape[0], img.shape[1])
     long_side = max(img.shape[0], img.shape[1])
     scale = self.short_min / short_side
     if round(scale * long_side) > self.long_max:
-      scale = long_max / long_side
-    top[2].reshape(1, 6)
+      scale = self.long_max / long_side
     scale_h = int(img.shape[0] * scale / 32) * 32.0 / img.shape[0]
     scale_w = int(img.shape[1] * scale / 32) * 32.0 / img.shape[1]
     h = int(round(img.shape[0] * scale_h))
     w = int(round(img.shape[1] * scale_w))
-    im_info = [h, w, scale_h, scale_w, img.shape[0], img.shape[1]]
-    top[2].data[...] = im_info
+    if len(top) > 2:
+      im_info = [h, w, scale_h, scale_w, img.shape[0], img.shape[1]]
+      top[2].reshape(1, 6)
+      top[2].data[...] = im_info
 
     img = cv2.resize(img, (w, h), interpolation=cv2.INTER_LINEAR)
     img = np.rollaxis(img, 2, 0)
@@ -100,7 +101,7 @@ class ODDataLayer(Layer):
     img[2,:,:] -= self.mean[2]
     top[0].reshape(1, 3, img.shape[1], img.shape[2])
     top[0].data[...] = img
-    print top[0].data.shape
+    #print top[0].data.shape
     top[1].reshape(len(objs), 5)
     for i, (label, box) in enumerate(objs):
       top[1].data[i, 1:5] = np.asarray(box, dtype=np.float32)

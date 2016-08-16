@@ -9,7 +9,6 @@ layer {
   type: 'Python'
   top: 'data'
   top: 'gt_boxes'
-  top: 'im_info'
   python_param {
     module: 'od_data_layer'
     layer: 'ODDataLayer'
@@ -2425,11 +2424,11 @@ layer {
   name: "score/conv"
   type: "Convolution"
   bottom: "convf"
-  top: "score"
+  top: "obj_score"
   param { lr_mult: 1  decay_mult: 1 }
   param { lr_mult: 2  decay_mult: 0 }
   convolution_param {
-    num_output: 1
+    num_output: 2
     kernel_size: 1  stride: 1  pad: 0
     weight_filler { type: "xavier"  std: 0.1 }
     bias_filler { type: "constant"  value: 0.1 }
@@ -2451,16 +2450,32 @@ layer {
 layer {
   name: "loss/score"
   type: "SoftmaxWithLoss"
-  bottom: "score"
+  bottom: "obj_score"
   bottom: "score_target"
+  propagate_down: 1
+  propagate_down: 0
   top: "loss_score"
 }
+#layer {
+#  name: "loss/score"
+#  type: "Python"
+#  bottom: "obj_score"
+#  bottom: "score_target"
+#  propagate_down: 1
+#  propagate_down: 0
+#  top: "loss_score"
+#  python_param {
+#    module: 'pylayer'
+#    layer: 'PyLayer'
+#  }
+#}
 layer {
   name: "loss/bbox"
   type: "Python"
   bottom: "bbox"
   bottom: "bbox_target"
   top: "loss_bbox"
+  loss_weight: 1
   python_param {
     module: 'od_loss_layer'
     layer: 'ODLossLayer'

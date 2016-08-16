@@ -44,10 +44,10 @@ def find_inner_gt(pi, pj, By):
   return is_in
 
 def process(X, BY):
-  batch_size, height, width, _ = X.shape
-  num_p = height * width
-  ri = np.array(range(height)) + 0.5
-  rj = np.array(range(width)) + 0.5
+  batch_size, h, w, _ = X.shape
+  num_p = h * w
+  ri = np.array(range(h)) + 0.5
+  rj = np.array(range(w)) + 0.5
   pj, pi = np.meshgrid(rj, ri)
   pj = pj.reshape(-1)
   pi = pi.reshape(-1)
@@ -58,14 +58,19 @@ def process(X, BY):
                        dtype=np.float32)
   for n, x in enumerate(X):
     By = BY[BY[:,0] == n, 1:5]
-    is_in = find_inner_gt(pi, pj, By)
+    #is_in = find_inner_gt(pi, pj, By)
     Bx = x2Bx(pi, pj, x)
     IOU = iou(Bx, By)
-    obj_score[n, :] = np.max(IOU, axis=1)
-    target = np.argmax(IOU * is_in, axis=1)
+    IOU_max = np.max(IOU, axis=1)
+    target = np.argmax(IOU, axis=1)
+    #target = np.argmax(IOU * is_in, axis=1)
     Y[n, :, 0:4] = By2y(pi, pj, By[target,:])
-    is_bg = (-is_in).all(axis=1)
+    is_bg = (Y[n, :, 0:4] < 0).any(axis=1) + \
+            (IOU_max < 0.1)
+    #is_bg = (-is_in).all(axis=1)
     Y[n, is_bg, 4] = 1
+    obj_score[n,:] = IOU_max > 0.3
+  obj_score = obj_score.reshape(batch_size, h, w)
   return obj_score, Y
 
 class ODProposalLayer(Layer):
@@ -76,34 +81,33 @@ class ODProposalLayer(Layer):
     #            box = (n, p1_j, p1_i, p2_j, p2_i)
     #            n: n-th batch item
     params = json.loads(self.param_str)
-    print params
     self.scale = params['scale']
+
+  def reshape(self, bottom, top):
     # batch size
     batch_size, _, h, w = bottom[0].data.shape
     # number of pixels
     num_p = h * w
     # true objectness for each predicted box
     # (maximum IoU score with ground-truth boxes)
-    top[0].reshape(batch_size, num_p)
+    top[0].reshape(batch_size, h, w)
     # target box for each predicted box
     # ignored if bg = 1 (background box)
     # y = (yl, yr, yt, yb, bg)
-    top[1].reshape(batch_size, num_p * 5)
-
-  def reshape(self, bottom, top):
-    pass
+    top[1].reshape(batch_size, num_p, 5)
 
   def forward(self, bottom, top):
     # bottom[0]: (batch_size x 4 x height x width)
     # -> X: (batch_size x height x width x 4)
     X = np.rollaxis(bottom[0].data, 1, 4)
+    batch_size, h, w, _ = X.shape
+    num_p = h * w
     BY = bottom[1].data
     BY[:,1:5] /= self.scale
     obj_score, Y = process(X, BY)
-    print obj_score
-    top[0].reshape(obj_score.shape)
+    #top[0].reshape(batch_size, h, w)
     top[0].data[...] = obj_score
-    top[1].reshape(Y.shape)
+    #top[1].reshape(batch_size, num_p, 5)
     top[1].data[...] = Y
 
   def backward(self, top, propagate_down, bottom):
