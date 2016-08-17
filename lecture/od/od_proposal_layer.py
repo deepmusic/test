@@ -34,14 +34,36 @@ def By2y(pi, pj, By):
   y[:,3] = By[:,3] - pi
   return y
 
-def find_inner_gt(pi, pj, By):
-  is_in = np.zeros((pi.shape[0], By.shape[0]), \
-                   dtype=np.bool)
-  for n, box in enumerate(By):
-    # p1_j <= pj <= p2_j  and  p1_i <= pi <= p2_i
-    is_in[:, n] = (box[0] <= pj) * (pj <= box[2]) * \
-                  (box[1] <= pi) * (pi <= box[3])
-  return is_in
+def distance(pi, pj, By):
+  dist = np.zeros((pi.shape[0], By.shape[0]))
+  yi = 0.5 * (By[:,1] + By[:,3])
+  yj = 0.5 * (By[:,0] + By[:,2])
+  yh = By[:,3] - By[:,1]
+  yw = By[:,2] - By[:,0]
+  for n in range(len(yi)):
+    if yh[n] > yw[n]:
+      dist[:,n] = np.abs(pj - yj[n]) + \
+          np.abs(pi - yi[n]) * (yw[n] / yh[n])
+    else:
+      dist[:,n] = np.abs(pi - yi[n]) + \
+          np.abs(pj - yj[n]) * (yh[n] / yw[n])
+    not_in = (pj < By[n,0]) + (pj > By[n,1]) + \
+             (pi < By[n,2]) + (pi > By[n,3])
+    dist[not_in, n] = np.inf
+  return dist
+
+def nms(Bx, score, nms_thresh=0.7):
+  idx = score.argsort()[::-1]
+  Bx = Bx[idx, :]
+  alive = np.ones((Bx.shape[0],), dtype=np.bool)
+  for n, bx in enumerate(Bx):
+    if alive[n]:
+      rest = np.where(alive[n+1:])[0] + n+1
+      Bx_ = Bx[rest, :].reshape(len(rest), 4)
+      bx = bx.reshape(1, 4)
+      IOU = iou(Bx_, bx).reshape(-1)
+      alive[rest] = (IOU < nms_thresh)
+  return (Bx[alive, :], score[idx[alive]])
 
 def reconstruct(bbox_pred, obj_score, gt_boxes):
   X = np.rollaxis(bbox_pred, 1, 4)
@@ -53,15 +75,33 @@ def reconstruct(bbox_pred, obj_score, gt_boxes):
   pj = pj.reshape(-1)
   pi = pi.reshape(-1)
   X = X.reshape(batch_size, num_p, 4)
-  S = obj_score[:,1,:,:].reshape(batch_size, num_p)
-  for n, (x, s) in enumerate(zip(X, S)):
+  S = obj_score.reshape(batch_size, num_p)
+  for n, (x, score) in enumerate(zip(X, S)):
     Bx = x2Bx(pi, pj, x)
-    top = s.argsort()[::-1]
-    Bx = Bx[top, :]
-    By = gt_boxes[gt_boxes[:,0] == n, 1:5]
-    IOU = iou(Bx, By)
-    print IOU.max(axis=0)
-  return (IOU.argmax(axis=0), Bx)
+    candidates = score > 0.5
+    if candidates.any():
+      Bx = Bx[candidates]
+      score = score[candidates]
+      Bx, score = nms(Bx, score)
+      By = gt_boxes[gt_boxes[:,0] == n, 1:5]
+      IOU = iou(Bx, By)
+      print IOU.max(axis=0)
+  return (Bx, score)
+
+def visualize(filename, Bx, data, scale):
+  import cv2
+  img = data[0].copy()
+  img[0] += 103
+  img[1] += 116
+  img[2] += 123
+  img = np.array(np.rollaxis(img, 0, 3), \
+                 dtype=np.uint8).copy()
+  for bx in Bx * scale:
+    color = np.array(255 * np.random.rand(3,), \
+                     dtype=np.int)
+    cv2.rectangle(img, (bx[0], bx[1]), (bx[2], bx[3]), \
+                  color, 1)
+  return img
 
 def process(X, BY):
   batch_size, h, w, _ = X.shape
@@ -78,18 +118,16 @@ def process(X, BY):
                        dtype=np.float32)
   for n, x in enumerate(X):
     By = BY[BY[:,0] == n, 1:5]
-    #is_in = find_inner_gt(pi, pj, By)
     Bx = x2Bx(pi, pj, x)
     IOU = iou(Bx, By)
     IOU_max = np.max(IOU, axis=1)
-    target = np.argmax(IOU, axis=1)
-    #target = np.argmax(IOU * is_in, axis=1)
+    dist = distance(pi, pj, By)
+    target = np.argmin(dist, axis=1)
     Y[n, :, 0:4] = By2y(pi, pj, By[target,:])
     is_bg = (Y[n, :, 0:4] < 0).any(axis=1) + \
             (IOU_max < 0.1)
-    #is_bg = (-is_in).all(axis=1)
     Y[n, is_bg, 4] = 1
-    obj_score[n,:] = IOU_max > 0.5
+    obj_score[n,:] = IOU_max
   obj_score = obj_score.reshape(batch_size, h, w)
   return obj_score, Y
 
@@ -132,3 +170,18 @@ class ODProposalLayer(Layer):
 
   def backward(self, top, propagate_down, bottom):
     pass
+
+if __name__ == '__main__':
+  from caffe import Net, TEST
+  import cv2
+  net = Net('od.pt', 'od_train_iter_58277.caffemodel', TEST)
+  for count in range(100):
+    net.forward()
+    Bx, score = reconstruct(net.blobs['bbox'].data, net.blobs['obj_score'].data, net.blobs['gt_boxes'].data)
+    img = visualize('data/pvtdb/VOC2007/JPEGImages/%06d.jpg' % count, \
+              Bx, net.blobs['data'].data, 32)
+    cv2.imshow('%06d.jpg' % count, img)
+    key = cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    if key == 27:
+      break
