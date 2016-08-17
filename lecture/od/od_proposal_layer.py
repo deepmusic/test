@@ -43,6 +43,26 @@ def find_inner_gt(pi, pj, By):
                   (box[1] <= pi) * (pi <= box[3])
   return is_in
 
+def reconstruct(bbox_pred, obj_score, gt_boxes):
+  X = np.rollaxis(bbox_pred, 1, 4)
+  batch_size, h, w, _ = X.shape
+  num_p = h * w
+  ri = np.array(range(h)) + 0.5
+  rj = np.array(range(w)) + 0.5
+  pj, pi = np.meshgrid(rj, ri)
+  pj = pj.reshape(-1)
+  pi = pi.reshape(-1)
+  X = X.reshape(batch_size, num_p, 4)
+  S = obj_score[:,1,:,:].reshape(batch_size, num_p)
+  for n, (x, s) in enumerate(zip(X, S)):
+    Bx = x2Bx(pi, pj, x)
+    top = s.argsort()[::-1]
+    Bx = Bx[top, :]
+    By = gt_boxes[gt_boxes[:,0] == n, 1:5]
+    IOU = iou(Bx, By)
+    print IOU.max(axis=0)
+  return (IOU.argmax(axis=0), Bx)
+
 def process(X, BY):
   batch_size, h, w, _ = X.shape
   num_p = h * w
@@ -69,7 +89,7 @@ def process(X, BY):
             (IOU_max < 0.1)
     #is_bg = (-is_in).all(axis=1)
     Y[n, is_bg, 4] = 1
-    obj_score[n,:] = IOU_max > 0.3
+    obj_score[n,:] = IOU_max > 0.5
   obj_score = obj_score.reshape(batch_size, h, w)
   return obj_score, Y
 

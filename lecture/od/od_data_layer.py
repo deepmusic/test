@@ -52,7 +52,8 @@ label_dict = { label: i \
 class ODDataLayer(Layer):
   def setup(self, bottom, top):
     params = json.loads(self.param_str)
-    self.source = open(params['source'], 'r')
+    self.source_file = params['source']
+    self.source = open(self.source_file, 'r')
     self.use_folder = params['use_folder']
     self.img_dir = params['img_dir']
     self.mean = params['mean']
@@ -71,6 +72,10 @@ class ODDataLayer(Layer):
 
   def forward(self, bottom, top):
     line = self.source.readline()
+    if line is None or len(line) == 0:
+      self.source.close()
+      self.source = open(self.source_file, 'r')
+      line = self.source.readline()
     fdir, fname, objs = parse(line.strip())
     if self.use_folder:
       path = os.path.join(self.img_dir, fdir, fname)
@@ -92,6 +97,7 @@ class ODDataLayer(Layer):
       im_info = [h, w, scale_h, scale_w, img.shape[0], img.shape[1]]
       top[2].reshape(1, 6)
       top[2].data[...] = im_info
+    scale_xyxy = np.array([scale_w, scale_h, scale_w, scale_h])
 
     img = cv2.resize(img, (w, h), interpolation=cv2.INTER_LINEAR)
     img = np.rollaxis(img, 2, 0)
@@ -104,7 +110,8 @@ class ODDataLayer(Layer):
     #print top[0].data.shape
     top[1].reshape(len(objs), 5)
     for i, (label, box) in enumerate(objs):
-      top[1].data[i, 1:5] = np.asarray(box, dtype=np.float32)
+      box = np.array(box, dtype=np.float32) * scale_xyxy
+      top[1].data[i, 1:5] = box
       top[1].data[i, 0] = 0
       #top[1].data[i, 0:4] = np.asarray(box, dtype=np.float32)
       #top[1].data[i, 4] = label_dict[label]

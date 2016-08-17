@@ -1,0 +1,14 @@
+net: "od.pt"
+#test_iter: 0
+#test_interval: 0
+base_lr: 0.0001
+lr_policy: "fixed"
+#gamma: 0.9773
+#stepsize: 3000
+display: 100
+max_iter: 2000000
+momentum: 0.9
+weight_decay: 0.0002
+snapshot: 20000
+snapshot_prefix: "od_train"
+solver_mode: GPU
