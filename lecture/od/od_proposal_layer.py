@@ -78,11 +78,11 @@ def reconstruct(bbox_pred, obj_score, gt_boxes):
   S = obj_score.reshape(batch_size, num_p)
   for n, (x, score) in enumerate(zip(X, S)):
     Bx = x2Bx(pi, pj, x)
-    candidates = score > 0.5
+    candidates = score > 0
     if candidates.any():
       Bx = Bx[candidates]
       score = score[candidates]
-      Bx, score = nms(Bx, score)
+      Bx, score = nms(Bx, score, nms_thresh=0.3)
       By = gt_boxes[gt_boxes[:,0] == n, 1:5]
       IOU = iou(Bx, By)
       print IOU.max(axis=0)
@@ -116,43 +116,54 @@ def process(X, BY):
                dtype=np.float32)
   obj_score = np.zeros((batch_size, num_p),
                        dtype=np.float32)
+  gt_class = np.zeros((batch_size, num_p),
+                      dtype=np.float32)
   for n, x in enumerate(X):
-    By = BY[BY[:,0] == n, 1:5]
-    Bx = x2Bx(pi, pj, x)
-    IOU = iou(Bx, By)
-    IOU_max = np.max(IOU, axis=1)
+    label_n = np.where(BY[:,0] == n)[0]
+    By = BY[label_n, 1:5]
+    classes = BY[label_n, 5]
+    # regression target for box prediction
     dist = distance(pi, pj, By)
     target = np.argmin(dist, axis=1)
     Y[n, :, 0:4] = By2y(pi, pj, By[target,:])
+    # classification target
+    gt_class[n,:] = classes[target]
+    # regression target for objectness score
+    # (= max IoU of current prediction with true boxes)
+    Bx = x2Bx(pi, pj, x)
+    IOU = iou(Bx, By)
+    IOU_max = np.max(IOU, axis=1)
     is_bg = (Y[n, :, 0:4] < 0).any(axis=1) + \
             (IOU_max < 0.1)
     Y[n, is_bg, 4] = 1
+    gt_class[n, is_bg] = 0
     obj_score[n,:] = IOU_max
   obj_score = obj_score.reshape(batch_size, h, w)
-  return obj_score, Y
+  return obj_score, Y, gt_class
 
 class ODProposalLayer(Layer):
   def setup(self, bottom, top):
     # bottom[0]: predicted box at each pixel
-    #            x = (xl, xr, xt, xb)
-    # bottom[1]: ground-truth boxes
-    #            box = (n, p1_j, p1_i, p2_j, p2_i)
-    #            n: n-th batch item
+    #   x = (xl, xr, xt, xb)
+    # bottom[1]: label information
+    #   (n, p1_j, p1_i, p2_j, p2_i, class)
+    #   n: batch item index (0,...,batch_size-1)
     params = json.loads(self.param_str)
     self.scale = params['scale']
 
   def reshape(self, bottom, top):
-    # batch size
+    # batch size & number of pixels
     batch_size, _, h, w = bottom[0].data.shape
-    # number of pixels
     num_p = h * w
     # true objectness for each predicted box
     # (maximum IoU score with ground-truth boxes)
     top[0].reshape(batch_size, h, w)
-    # target box for each predicted box
+    # true box for each predicted box
     # ignored if bg = 1 (background box)
     # y = (yl, yr, yt, yb, bg)
     top[1].reshape(batch_size, num_p, 5)
+    # class label for predicted box
+    top[2].reshape(batch_size, num_p)
 
   def forward(self, bottom, top):
     # bottom[0]: (batch_size x 4 x height x width)
@@ -162,22 +173,21 @@ class ODProposalLayer(Layer):
     num_p = h * w
     BY = bottom[1].data
     BY[:,1:5] /= self.scale
-    obj_score, Y = process(X, BY)
-    #top[0].reshape(batch_size, h, w)
+    obj_score, Y, gt_class = process(X, BY)
     top[0].data[...] = obj_score
-    #top[1].reshape(batch_size, num_p, 5)
     top[1].data[...] = Y
+    top[2].data[...] = gt_class
 
   def backward(self, top, propagate_down, bottom):
     pass
 
 if __name__ == '__main__':
-  from caffe import Net, TEST
+  from caffe import Net, TRAIN
   import cv2
-  net = Net('od.pt', 'od_train_iter_58277.caffemodel', TEST)
+  net = Net('od2.pt', 'od_train_iter_62692.caffemodel', TRAIN)
   for count in range(100):
     net.forward()
-    Bx, score = reconstruct(net.blobs['bbox'].data, net.blobs['obj_score'].data, net.blobs['gt_boxes'].data)
+    Bx, score = reconstruct(net.blobs['bbox'].data, net.blobs['obj_score'].data, net.blobs['label'].data)
     img = visualize('data/pvtdb/VOC2007/JPEGImages/%06d.jpg' % count, \
               Bx, net.blobs['data'].data, 32)
     cv2.imshow('%06d.jpg' % count, img)

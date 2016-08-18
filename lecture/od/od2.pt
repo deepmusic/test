@@ -13,7 +13,7 @@ layer {
   python_param {
     module: 'od_data_layer'
     layer: 'ODDataLayer'
-    param_str: '{ "source": "voc2007.txt", "use_folder": false, "img_dir": "data/pvtdb/VOC2007/JPEGImages", "mean": [103, 116, 123], "base_size": [128, 256, 384, 512, 640], "max_size": 1000 }'
+    param_str: '{ "source": "voc2007.txt", "use_folder": false, "img_dir": "data/pvtdb/VOC2007/JPEGImages", "mean": [103, 116, 123], "base_size": [384], "max_size": 1000 }'
   }
 }
 layer {
