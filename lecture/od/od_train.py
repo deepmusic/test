@@ -5,16 +5,16 @@ import numpy as np
 
 # Initialize solver
 caffe.set_mode_gpu()
-solver = caffe.SGDSolver('solver.pt')
-solver.net.copy_from('od_train_iter_102788.caffemodel')
+solver = caffe.SGDSolver(sys.argv[1])
+solver.net.copy_from(sys.argv[2])
 
 # Initialize figure
 fig, axes = matplotlib.pyplot.subplots()
 fig.show()
 
 loss_list = []
-sub_loss_tags = solver.net.outputs
-sub_loss_list = { tag: [] for tag in sub_loss_tags }
+loss_tags = solver.net.outputs
+sub_loss_list = { tag: [] for tag in loss_tags }
 max_iter = 121000
 
 window = [0, 1000]
@@ -25,9 +25,9 @@ while solver.iter < max_iter:
   start = timelib.time()
   solver.step(1)
   time = timelib.time() - start
-  loss = np.zeros((len(sub_loss_tags),))
-  for n, tag in enumerate(sub_loss_tags):
-    loss[n] = solver.net.blobs[tag].data.flatten()
+  loss = [solver.net.blobs[tag].data.flatten() \
+          for tag in loss_tags]
+  loss = np.array(loss)
 
   if len(loss_list) == 0:
     mean_loss = loss
@@ -37,8 +37,8 @@ while solver.iter < max_iter:
     mean_time = 0.999 * mean_time + 0.001 * time
   total_loss = mean_loss[0]
   loss_list.append(total_loss)
-  for n, tag in enumerate(sub_loss_tags):
-    sub_loss_list[tag].append(mean_loss[n])
+  for i, tag in enumerate(loss_tags):
+    sub_loss_list[tag].append(mean_loss[i])
 
   if len(loss_list) - window[0] > window[1] and \
        total_loss > 0.99 * loss_list[-window[1]]:
@@ -58,10 +58,11 @@ while solver.iter < max_iter:
   if solver.iter % 500 == 0:
     axes.clear()
     axes.set_title('Running time = %.3fs/iteration' % mean_time)
-    for tag in sub_loss_tags:
-      axes.plot(range(iter0, iter0+len(loss_list)), sub_loss_list[tag], label=tag)
+    for tag in loss_tags:
+      axes.plot(range(iter0, iter0+len(loss_list)), \
+                sub_loss_list[tag], label=tag)
     axes.grid(True)
-    axes.legend(loc='upper right')
+    axes.legend(loc='right')
     fig.canvas.draw()
     matplotlib.pyplot.pause(0.01)
 
