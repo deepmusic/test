@@ -173,6 +173,16 @@ def save_bin(net, path):
       save_data(key, net.params[name][param_id].data)
 
 
+def convert_pvtdb_to_voc(net):
+  order = [0,11,1,2,12,13,3,4,5,14,15,16,6,7,8,9,17,18,19,10,20]
+  net.params['cls_score'][0].data[...] = net.params['cls_score'][0].data[order,:]
+  net.params['cls_score'][1].data[...] = net.params['cls_score'][1].data[order]
+  temp = net.params['bbox_pred'][0].data.reshape(21,4,4096)
+  net.params['bbox_pred'][0].data[...] = temp[order,:,:].reshape(84,4096)
+  temp = net.params['bbox_pred'][1].data.reshape(21,4)
+  net.params['bbox_pred'][1].data[...] = temp[order,:].reshape(84)
+
+
 def parse_args():
   import sys, argparse
   parser = argparse.ArgumentParser(description='Non-zero shift bug fix for PVA-9.0.0 model')
@@ -201,7 +211,7 @@ if __name__ == "__main__":
   print(args)
 
   net = load_inception(args.proto_src, args.proto_dest, args.model_src)
-  combine_conv_bn_scale_pva900(net)
-  compress_fc(net, 'fc6')
-  compress_fc(net, 'fc7')
+  combine_conv_bn_scale_pva33(net)
+  #compress_fc(net, 'fc6')
+  #compress_fc(net, 'fc7')
   net.save(args.model_dest)
